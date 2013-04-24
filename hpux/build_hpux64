@@ -1,0 +1,23 @@
+#!/bin/sh
+
+MACHINE=`uname -m`
+case $MACHINE in
+   ia64) ARCH="ia64";
+   ;;
+   *) ARCH="pa20_64";
+   ;;
+esac
+
+export DESTDIR=${PWD}/tmp
+rm -rf $DESTDIR
+mkdir $DESTDIR
+export PATH=$DESTDIR/usr/local/bin/$ARCH:${PATH}
+export LD_LIBRARY_PATH=$DESTDIR/usr/local/lib/$ARCH
+cd cvsnt
+make distclean
+./configure CC="aCC" CXX="aCC" CFLAGS="-O3 +DD64 -Ae -mt" CXXFLAGS="-O3 +DD64 -AA -mt" LDFLAGS="-Wl,+b -Wl,/usr/local/lib/$ARCH" CPPFLAGS="-D_HPUX_SOURCE -D_POSIX_SOURCE -D__HP_NO_STRING_OVERLOADS -D_RWSTD_MULTI_THREAD -D_REENTRANT" --prefix=/usr/local --bindir=/usr/local/bin/$ARCH --libdir=/usr/local/lib/$ARCH --sysconfdir=/etc --disable-mdns
+make DESTDIR=${DESTDIR}
+make install DESTDIR=${DESTDIR}
+cd ..
+BUILD=`${DESTDIR}/usr/local/$ARCH/bin/cvsnt ver -q`
+./make_package cvsnt $BUILD 64

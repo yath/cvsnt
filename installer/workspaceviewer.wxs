@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2003/01/wi'>
+<Fragment Id="workspaceviewer">
+      <DirectoryRef Id="CVSNT_INSTALLDIR" src="$(var.CVSNT_BASE)\">
+         <Directory Id="WorkspaceViewerStuff" Name=".">
+	    <Component Id="WorkspaceViewer" Guid="C54D774C-1F47-4b81-8468-6CF5F23C681C" DiskId="1">
+	      <File Id="WorkspaceViewer.exe" Name="WORKSP~2.EXE" LongName="WorkspaceViewer.exe">
+	        <Shortcut Id="workspaceviewer.exe" Advertise="no" Name="WORKSP~2.LNK" Directory="CvsntStartMenuFolder" LongName="Workspace Viewer.lnk" />
+	      </File>
+	    </Component>
+         </Directory>
+      </DirectoryRef>
+
+   <FeatureRef Id="Cvsnt">
+      <Feature Id="WorkspaceViewer" Title="Workspace Viewer" Description="Workspace and repository browser" AllowAdvertise="no" Level="3">
+        <ComponentRef Id="WorkspaceViewer" />
+	<ComponentRef Id="MSSystemDlls" />
+      </Feature>
+   </FeatureRef>
+  </Fragment>
+</Wix>

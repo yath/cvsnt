@@ -1,0 +1,12 @@
+#!/bin/sh
+if [ -f /usr/local/bin/cvsnt ]; then
+  rm -f /usr/bin/cvs
+  rm -f /usr/local/bin/cvs
+  ln -sf cvsnt /usr/local/bin/cvs
+fi
+
+if [ -f /usr/bin/sparcv9/cvsnt ]; then
+  rm -f /usr/bin/sparcv9/cvs
+  rm -f /usr/local/bin/sparcv9/cvs
+  ln -sf cvsnt /usr/local/bin/sparcv9/cvs
+fi

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2003/01/wi'>
+  <Product Manufacturer="March Hare Software" Id="????????-????-????-????-????????????" Language="1033" Name="CVSNT $(var.CVSNT_VERSION)" Version="$(var.CVSNT_VERSION)" UpgradeCode="F221CBC9-2DCD-439E-8244-AD1B2017817A">
+    <Package Id="????????-????-????-????-????????????" Keywords="CVS,CVSNT,Installer,Version Control,VSS" Description="CVSNT Version Control System" Comments="Commercial Support And Training available From March Hare Software.  See http://www.march-hare.com/cvspro.  The contents of this package are licensed under the GNU GPL." Manufacturer="March Hare Software" InstallerVersion="200" Languages="1033" Compressed="yes" SummaryCodepage="1252" />
+    <Upgrade Id="F221CBC9-2DCD-439E-8244-AD1B2017817A">
+      <UpgradeVersion MigrateFeatures="yes" Maximum="$(var.CVSNT_VERSION)" IncludeMaximum="yes" />
+    </Upgrade>
+
+    <Media Id="1" EmbedCab="yes" CompressionLevel="high" Cabinet="cvsnt.cab" />
+
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="SystemFolder" />
+      <Directory Id="System64Folder" />
+      <Directory Id="WindowsFolder" />
+      <Directory Id="ProgramMenuFolder" />
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="CvsntDir" Name="CVSNT">
+  	  <Directory Id="CVSNT_INSTALLDIR" />
+        </Directory>
+      </Directory>
+    </Directory>
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Directory Id="CvsntStartMenuFolder" Name="CVSNT">
+	<Directory Id="CvsntDocumentationFolder" Name="DOCUME~1" LongName="Documentation" />
+      </Directory>
+    </DirectoryRef>
+
+    <FragmentRef Id="cvsnt" />  
+    <FragmentRef Id="server" /> 
+    <FragmentRef Id="workspaceviewer" />
+
+    <FragmentRef Id="standard-ui" />
+
+    <AdminExecuteSequence />
+    <InstallExecuteSequence>
+      <StopServices>Privileged</StopServices>
+      <RemoveExistingProducts Before="InstallInitialize" />
+        <Custom Action="RunPostinst" After="InstallFinalize">&amp;ServerComponents=3</Custom>
+	<StartServices>Privileged</StartServices>
+	<RegisterTypeLibraries>Privileged</RegisterTypeLibraries>
+	<BindImage />
+	<ScheduleReboot After="CostFinalize">$ServiceSysFiles=3 Or $ServiceSysFiles=2</ScheduleReboot>
+    </InstallExecuteSequence>
+    
+    <Property Id="SERVER">1</Property>
+    <Property Id="ARPHELPLINK">http://www.march-hare.com/cvspro</Property>
+    <Binary Id="dlgbmp" src="Binary\dlgbmp.bmp" />
+    <Binary Id="License" src="gpl.rtf" />
+  </Product>
+</Wix>

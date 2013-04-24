@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2003/01/wi'>
+<Fragment Id="unison">
+      <DirectoryRef Id="CVSNT_INSTALLDIR" src="$(var.CVSNT_BASE)\">
+         <Directory Id="UnisonStuff" Name=".">
+	   <Component Id="unison" Guid="D5B5427F-1A61-40b6-8412-6008EE29A062" DiskId="5">
+	      <File Id="unison.exe" Name="unison.exe" src="d:/march-hare/unison/unison.exe" />
+            </Component>
+         </Directory>
+      </DirectoryRef>
+
+    <FeatureRef Id="ServerComponents">
+      <Feature Id="Unison" Title="Repository Synchronisation" Description="Unison directory synchronisation tool." AllowAdvertise="no" Level="3">
+        <ComponentRef Id="unison" />
+        <ComponentRef Id="MSSystemDlls" />
+      </Feature>
+    </FeatureRef>
+  </Fragment>
+</Wix>

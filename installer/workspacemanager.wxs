@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2003/01/wi'>
+<Fragment Id="workspacemanager">
+      <DirectoryRef Id="CVSNT_INSTALLDIR" src="$(var.MARCH_HARE)\">
+         <Directory Id="WorkspaceManagerStuff" Name=".">
+	   <Component Id="WorkspaceManager" Guid="7A652787-168E-4e25-ADE3-65BA6B267B05" DiskId="5">
+	      <File Id="WorkspaceManager.exe" Name="WORKSP~1.EXE" LongName="WorkspaceManager.exe">
+	        <Shortcut Id="WorkspaceManager.exe" Name="WORKSP~1.EXE" Directory="CvsntStartMenuFolder" Advertise="no" LongName="Workspace Manager"/>
+	      </File>
+            </Component>
+         </Directory>
+      </DirectoryRef>
+
+   <FeatureRef Id="Cvsnt">
+    <Feature Id="WorkspaceManager" Title="Workspace Manager" Description="CVSNT Workspace Manager" AllowAdvertise="no" Level="3">
+      <ComponentRef Id="WorkspaceManager" />
+      <ComponentRef Id="MSSystemDlls" />
+    </Feature>
+   </FeatureRef>
+  </Fragment>
+</Wix>

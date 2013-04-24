@@ -1,0 +1,20 @@
+<u3manifest version="1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<application uuid="F60FEB72-00E3-42a8-9110-30476F9738C6" version="2.5.03">
+		<icon>cvsagent.ico</icon>
+		<name>CvsAgent</name>
+		<vendor url="http://www.cvsnt.com/">March-Hare Software Ltd</vendor>
+		<description>Securely store your cvsnt passwords on your USB dongle</description>
+		<options>
+			<upgrade appData="add" deviceExec="overwrite"/>
+			<autorun/>
+			<minFreeSpace>1.0</minFreeSpace>
+		</options>
+		<i18n>
+		</i18n>
+	</application>
+		<actions>
+			<appStart cmd="%U3_HOST_EXEC_PATH%\cvsagent.exe">-u3</appStart> 
+			<appStop cmd="%U3_HOST_EXEC_PATH%\cvsagent.exe">-stop</appStop>
+			<deviceUninstall cmd="%U3_HOST_EXEC_PATH%\cvsagent.exe">-uninstall</deviceUninstall>
+		</actions>
+</u3manifest>

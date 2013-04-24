@@ -1,0 +1,63 @@
+How to build CVSNT from CVS sources
+=================================================
+Created 2006-01-22 Bo Berglund
+
+In order to build CVSNT from the CVS sources you need to do this:
+
+TOOLS
+-----
+1.1 Install Visual Studio .NET 2003
+1.2 Install the Platform SDK for Windows Server 2003 SP1 April 2005 Edition or later
+1.3 Create an environment variable PLATFORMSDK pointing at the location where the
+    Platform SDK was installed 
+    example: set PLATFORMSDK=C:\Program Files\Microsoft Platform SDK
+
+SOURCE FILES AND DEPENDENCIES
+-----------------------------
+2.1 Check out the cvsnt module from :pserver:cvs@cvs.cvsnt.org:/usr/local/cvs on branch CVSNT_2_0_x)
+2.2 Check out the cvsdeps module from :pserver:cvs@cvs.cvsnt.org:/usr/local/cvs
+2.3 Create an environment variable CVSNTDEPS
+    example: set CVSNTDEPS=<path to cvsdeps sandbox>
+
+VISUAL STUDIO 2003 CONFIGURATION
+--------------------------------
+3.1 In Visual studio Tools/Options/Projects/VC++ Directories/Include files add the following paths:
+    $(CVSNTDEPS)\bonjour\include
+    $(CVSNTDEPS)\howl\include
+    $(CVSNTDEPS)\Iconv\Include
+    $(CVSNTDEPS)\infozip
+    $(CVSNTDEPS)\infozip\c-headers
+    $(CVSNTDEPS)\OpenSSL\include
+    $(CVSNTDEPS)\postgres\include
+    $(CVSNTDEPS)\Sqlite\Include
+    $(CVSNTDEPS)\u3 sdk\dapi
+
+3.2 In Visual studio Tools/Options/Projects/VC++ Directories/Library files add the following paths:
+    $(CVSNTDEPS)\bonjour\lib
+    $(CVSNTDEPS)\howl\lib
+    $(CVSNTDEPS)\Iconv\lib
+    $(CVSNTDEPS)\infozip
+    $(CVSNTDEPS)\OpenSSL\lib
+    $(CVSNTDEPS)\postgres\lib
+    $(CVSNTDEPS)\sqlite\lib
+    $(CVSNTDEPS)\u3 sdk\dapi
+
+3.3 In Visual studio Tools/Options/Projects/VC++ Directories/Include files:
+    Add a line referencing the Windows Server 2003 SDK to the *top* of the list:
+    $(PLATFORMSDK)\Include
+    
+3.4 In Visual studio Tools/Options/Projects/VC++ Directories/Library files:
+    Add a line referencing the Windows Server 2003 SDK to the *top* of the list
+    $(PLATFORMSDK)\Lib
+
+BUILDING CVSNT
+--------------
+4.1 Open the solution file <module cvsnt sandbox path>\cvsnt.sln
+
+4.2 Set the build type to Release in Build/Configuration Manager
+
+4.3 Now start the build: Build/Rebuild Solution
+
+This should give you a successful build even though there are a number of warnings
+displayed.
+

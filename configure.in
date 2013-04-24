@@ -1,0 +1,1009 @@
+dnl configure.in for cvs
+AC_INIT([cvsnt],[0],[tmh@cvsnt.org])
+cc -o version_check $srcdir/src/version_check.c
+AC_CANONICAL_SYSTEM
+AM_INIT_AUTOMAKE($PACKAGE_NAME, `./version_check`)
+AC_PREREQ(2.59)
+AM_CONFIG_HEADER(config.h src/options.h)
+AC_CONFIG_SRCDIR(config.h.in)
+AM_MAINTAINER_MODE
+
+AC_PROG_AWK
+AC_PROG_CC
+AC_PROG_CXX
+AC_PROG_CPP
+AC_REQUIRE_CPP
+AC_PROG_INSTALL
+AC_PROG_MAKE_SET
+AC_PROG_YACC
+AC_PROG_LN_S
+AC_DISABLE_STATIC
+
+AX_CC_MAXOPT
+CFLAGS="$CFLAGS $OPTFLAGS"
+CXXFLAGS="$CXXFLAGS $OPTFLAGS"
+
+AC_LIBTOOL_DLOPEN
+AC_LIBLTDL_CONVENIENCE
+AC_CONFIG_SUBDIRS(libltdl)
+AC_SUBST(INCLTDL)
+AC_SUBST(LIBLTDL)
+
+# For broken libtools (eg. the one in debian sarge) where AC_LIBTOOL_PICMODE
+# is nonfunctional and the defaults are backwards..
+if test "${with_pic+set}" != set; then
+   with_pic="yes"
+fi
+AC_PROG_LIBTOOL
+
+AC_PATH_PROG(PERL, perl, no)
+AC_PATH_PROG(CSH, csh, no)
+AC_PATH_PROG(PR, pr, no)
+# For diff/util.c
+if test x"$PR" != "xno"; then
+	AC_DEFINE_UNQUOTED([PR_PROGRAM], ["$PR"], [Path to the pr utility])
+fi
+
+# FHS isn't really compatible with GNU, but we prefer FHS generally since the
+# primary target is Linux - also many linux distros don't even *have* a /usr/etc
+#
+if test "$prefix" = "/usr" -o "$prefix" = "NONE"; then
+  if test "$sysconfdir" = "\${prefix}/etc"; then
+     sysconfdir="/etc"
+  fi
+fi
+
+# If Visibility support is available switch that on, to reduce the exported
+# symbol space.
+AC_ARG_ENABLE(visibility,
+[  --enable-visibility     Enable gcc visibility options],
+[],
+[enable_visibility="no"])
+if test x$enable_visibility = xyes; then
+
+AC_MSG_CHECKING(whether GNUC visibility support)
+AC_CACHE_VAL(ac_cv_fvisibility_ok,
+[ac_save_cc="$CC"
+CC="$CC -fvisibility=hidden"
+AC_TRY_RUN([int main() { return 0; }],
+  ac_cv_fvisibility_ok=yes,
+  ac_cv_fvisibility_ok=no,
+  ac_cv_fvisibility_ok=no)
+CC="$ac_save_cc"])
+AC_MSG_RESULT($ac_cv_fvisibility_ok)
+if test $ac_cv_fvisibility_ok = yes; then
+AC_MSG_CHECKING(for GNUC visibility attribute)
+GLIB_CHECK_COMPILE_WARNINGS([
+void
+__attribute__ ((visibility ("hidden")))
+     f_hidden (void)
+{
+}
+void
+__attribute__ ((visibility ("default")))
+     f_default (void)
+{
+}
+int main (int argc, char **argv)
+{
+        f_hidden();
+        f_default();
+        return 0;
+}
+],g_have_gnuc_visibility=yes,g_have_gnuc_visibility=no)
+AC_MSG_RESULT($g_have_gnuc_visibility)
+if test x$g_have_gnuc_visibility = xyes; then
+  AC_DEFINE(HAVE_GCC_VISIBILITY, 1, [supports GCC visibility attributes])
+  CFLAGS="$CFLAGS -fvisibility=hidden"
+  CXXFLAGS="$CXXFLAGS -fvisibility=hidden -fvisibility-inlines-hidden"
+fi
+fi
+
+fi
+
+dnl FIXME This is truly gross.
+missing_dir=`cd $ac_aux_dir && pwd`
+dnl FIXME I pulled this default list from sanity.sh.  Perhaps these lists
+dnl can be stored in one location?
+glocs="$PATH:/usr/local/bin:/usr/contrib/bin:/usr/gnu/bin:/local/bin:/local/gnu/bin:/gnu/bin"
+AC_PATH_PROGS(ROFF, groff roff, $missing_dir/missing roff, $glocs)
+AC_PATH_PROG(PS2PDF, ps2pdf, $missing_dir/missing ps2pdf)
+AC_PATH_PROG(TEXI2DVI, texi2dvi, $missing_dir/missing texi2dvi)
+
+AC_SYS_INTERPRETER
+if test X"$ac_cv_sys_interpreter" != X"yes" ; then
+  # silly trick to avoid problems in AC macros...
+  ac_msg='perl scripts using #! may not be invoked properly'
+  AC_MSG_WARN($ac_msg)
+fi
+
+AC_DEFINE(_GNU_SOURCE,1,[Defined to enable GNU extensions])
+AC_DEFINE(_LARGEFILE_SOURCE,1,[Defined to enable large files on some systems])
+
+# BSD's logo is a devil for a reason, hey?
+AC_CACHE_CHECK(for BSD VPATH bug in make, ccvs_cv_bsd_make_vpath_bug,
+[if test ! -d ac_test_dir ; then
+	AC_TRY_COMMAND([mkdir ac_test_dir])
+fi
+cat >conftestmake <<EOF
+VPATH = ac_test_dir
+ac_test_target: ac_test_dep
+	echo BSD VPATH bug present >&2
+ac_test_dep: ac_test_dep_dep
+EOF
+touch ac_test_dir/ac_test_dep_dep
+touch ac_test_dir/ac_test_dep
+touch ac_test_target
+# Don't know why, but the following test doesn't work under FreeBSD 4.2
+# without this sleep command
+sleep 1
+if AC_TRY_COMMAND([make -f conftestmake 2>&1 >/dev/null |grep ^BSD\ VPATH\ bug\ present\$ >/dev/null]) ; then
+	ccvs_cv_bsd_make_vpath_bug=yes
+else
+	ccvs_cv_bsd_make_vpath_bug=no
+fi
+AC_TRY_COMMAND([rm -rf ac_test_dir ac_test_target conftestmake])])
+# We also don't need to worry about the bug when $srcdir = $builddir
+AM_CONDITIONAL(MAKE_TARGETS_IN_VPATH, \
+		test $ccvs_cv_bsd_make_vpath_bug = no \
+		|| test $srcdir = .)
+
+AC_ISC_POSIX
+if test "$ISC" = yes; then
+CFLAGS="$CFLAGS -D_SYSV3"
+fi
+
+AC_ARG_WITH(ssl,
+[  --with-ssl=DIRECTORY    OpenSSL directory],
+[CPPFLAGS="$CPPFLAGS -I$withval/include"
+  LDFLAGS="$LDFLAGS -L$withval/lib"]
+,[])
+
+AC_MSG_CHECKING(support for mdns)
+AC_ARG_ENABLE(mdns,
+[  --enable-mdns           include MDNS support (default)
+  --disable-mdns          don't include MDNS support],
+[],
+[enable_mdns="yes"])
+AC_MSG_RESULT($enable_mdns)
+
+with_howl="yes"
+AC_ARG_WITH(howl,
+[  --with-howl=DIRECTORY   Howl directory],
+  with_howl=$withval,
+[ if test "x$withval" = "xno" -o "x$enable_mdns" = "xno"; then
+    with_howl="no"
+  else 
+    CPPFLAGS="$CPPFLAGS -I$withval/include"
+    LDFLAGS="$LDFLAGS -L$withval/lib"
+  fi
+]
+,[
+if test -f /usr/include/howl/howl.h; then
+  CPPFLAGS="$CPPFLAGS -I/usr/include/howl"
+elif test -f /usr/local/include/howl/howl.h; then
+  CPPFLAGS="$CPPFLAGS -I/usr/local/include/howl"
+fi
+])
+
+AC_HEADER_STDC
+AC_HEADER_DIRENT
+AC_HEADER_SYS_WAIT
+AC_CHECK_HEADERS(errno.h unistd.h string.h memory.h utime.h fcntl.h ndbm.h \
+		 limits.h sys/file.h grp.h stdio.h stdarg.h sys/un.h \
+                 sys/param.h sys/select.h sys/time.h sys/timeb.h sys/socket.h \
+                 io.h direct.h sys/bsdtypes.h sys/resource.h syslog.h glob.h \
+		 paths.h getopt.h malloc.h stddef.h sys/uio.h \
+		 security/pam_misc.h pam/pam_misc.h \
+		 security/pam_appl.h pam/pam_appl.h \
+		 netinet/in.h arpa/inet.h iconv.h libcharset.h locale.h localcharset.h langinfo.h \
+		 regex.h howl.h pthread.h sys/times.h dns_sd.h \
+		 termios.h sys/termios.h wchar.h)
+AC_HEADER_STAT
+AC_HEADER_TIME
+
+AC_CHECK_SIZEOF(int,cross)
+AC_CHECK_SIZEOF(long,cross)
+AC_CHECK_SIZEOF(short,cross)
+
+AC_TYPE_SIGNAL
+AC_TYPE_UID_T
+AC_TYPE_MODE_T
+AC_TYPE_OFF_T
+AC_TYPE_SIZE_T
+AC_TYPE_PID_T
+AC_TYPE_SOCKLEN_T
+AC_CHECK_TYPES([ptrdiff_t], [], [], 
+[#ifdef HAVE_MALLOC_H
+#include <malloc.h>
+#endif
+#ifdef HAVE_STDDEF_H
+#include <stddef.h>
+#endif])
+AC_CHECK_MEMBERS([struct stat.st_rdev])
+AC_CHECK_MEMBERS([struct stat.st_blksize])
+AC_CHECK_TYPE(ino_t,unsigned)
+AC_CHECK_TYPE(loff_t,off_t)
+AC_SYS_LARGEFILE
+
+AC_LANG_SAVE
+AC_LANG_CPLUSPLUS
+
+ac_cv_pthread_cppflags=""
+ac_cv_pthread_ldflags=""
+
+AC_ARG_ENABLE(64bit,
+[  --enable-64bit          Use special flags for 64bit 
+  --disable-64bit         Use special flags for 32bit],
+[],
+[enable_64bit="no"])
+
+case "${target_os}" in
+  hpux*)
+  #CPPFLAGS="${CPPFLAGS} -D_INCLUDE__STDC_A1_SOURCE -D_GLIBCXX_HAVE_MBSTATE_T -D_XOPEN_SOURCE=500 -D_XOPEN_SOURCE_EXTENDED"
+  #  AC_DEFINE(NO_GETPASS,,[Define to force use of replacement getpass])
+# #   AC_DEFINE(UTF8_CHARSET,"utf8",[Define if using non-standard name for UTF-8])
+    ;;
+
+  solaris*)
+    CPPFLAGS="$CPPFLAGS -fPIC"
+    LDFLAGS="$LDFLAGS -lrt"
+    ;;
+  darwin*)
+    LDFLAGS="$LDFLAGS -L`pwd`/osx"
+    CPPFLAGS="$CPPFLAGS -I`pwd`/cvsapi/mysql/mysql-3.23"
+    MSQ_LDFLAGS="-lz"
+    ;;
+  *)
+    ;;
+esac
+
+# Pass our args to subprojects
+ac_configure_args="$ac_configure_args CFLAGS=\"$CFLAGS\" CXXFLAGS=\"$CXXFLAGS\" LDFLAGS=\"$LDFLAGS\" CPPFLAGS=\"$CPPFLAGS\""
+
+dnl Special for gcc 2.95, which as a broken char_traits
+AC_MSG_CHECKING([for broken char_traits])
+AC_COMPILE_IFELSE(AC_LANG_SOURCE(
+[#include <string>
+
+struct test_char_traits : public std::char_traits<char>
+{
+	static bool eq( char c1, char c2 ) { return c1==c2; }
+};
+]),
+AC_MSG_RESULT(no),
+[AC_DEFINE(char_traits,string_char_traits,[Defined to string_char_traits on gcc 2.95])
+AC_MSG_RESULT(yes)])
+
+dnl Special for gcc 2.95 - if wstring isn't there we must declare it ourselves
+dnl Note that some libraries have things like __DEFINE_WSTRING macros... we don't
+dnl use those as there's no standard for it
+AC_MSG_CHECKING([for std::wstring])
+AC_COMPILE_IFELSE(AC_LANG_SOURCE(
+[#include <string>
+
+int main(int argc, char *argv[])
+{
+  std::wstring foo;
+  return 0;
+}
+]),
+[AC_DEFINE(HAVE_WSTRING,,[Define if we have standard wstring])
+ AC_MSG_RESULT(yes)],
+AC_MSG_RESULT(no))
+
+AC_LANG_RESTORE
+
+# Check for correct method of ac_copy
+# Apparently from mozilla
+dnl Does this platform require array notation to assign to a va_list?
+dnl If cross-compiling, we assume va_list is "normal".  If this breaks
+dnl you, set ac_cv_valistisarray=true and maybe define HAVE_VA_LIST_AS_ARRAY
+dnl also just to be sure.
+AC_MSG_CHECKING(whether va_list assignments need array notation)
+AC_CACHE_VAL(ac_cv_valistisarray,
+        [AC_TRY_RUN([#include <stdlib.h>
+                    #include <stdarg.h>
+                    void foo(int i, ...) {
+                       va_list ap1, ap2;
+                       va_start(ap1, i);
+                       ap2 = ap1;
+                       if (va_arg(ap2, int) != 123 || va_arg(ap1, int) != 123) { exit(1); }
+                       va_end(ap1); va_end(ap2);
+                    }
+                    int main()
+                    { foo(0, 123); return(0); }],
+                   [ac_cv_valistisarray=false],
+                   [ac_cv_valistisarray=true],
+                   [ac_cv_valistisarray=false])])
+                                            
+if test "$ac_cv_valistisarray" = true ; then
+       AC_DEFINE(HAVE_VA_LIST_AS_ARRAY,[],Defined if va_list is an array)
+       AC_MSG_RESULT(yes)
+else
+       AC_MSG_RESULT(no)
+fi 
+
+# Check for posix threads
+ACX_PTHREAD([],[])
+# Convert output to something that's remotely usable
+PTHREAD_LIBS="$PTHREAD_CFLAGS $PTHREAD_LIBS"
+PTHREAD_CPPFLAGS="$PTHREAD_CFLAGS"
+AC_SUBST(PTHREAD_CPPFLAGS)
+AC_SUBST(PTHREAD_LIBS)
+
+AC_REPLACE_FUNCS(mkdir rename strstr dup2 strerror waitpid \
+		memmove strtoul daemon timegm getdelim getline \
+		ftruncate regcomp getopt_long)
+
+AC_SEARCH_LIBS(libiconv_open, iconv_plug iconv,
+  [], [AC_SEARCH_LIBS(iconv_open, iconv_plug iconv)])
+
+AC_CHECK_LIB(socket,getaddrinfo)
+
+AC_SEARCH_LIBS(res_query, resolv)
+
+AC_REPLACE_FUNCS(getaddrinfo getnameinfo inet_aton)
+
+if test "x$with_howl" != "xno"; then
+  # Check for howl mDNS library.  This is dependent on pthreads so if
+  # howl exists pthreads must also
+  saved_libs="$LIBS"
+  saved_cppflags="$CPPFLAGS"
+  LIBS="$PTHREAD_LIBS"
+  CPPFLAGS="$CPPFLAGS $PTHREAD_CPPFLAGS"
+  AC_SEARCH_LIBS(sw_discovery_run, howl, [AC_MSG_CHECKING([for howl])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <howl.h>]], [[int i;]])],[ac_cv_have_howl="yes"],[])
+  AC_MSG_RESULT($ac_cv_have_howl)], ac_cv_have_howl="no")
+  HOWL_LIBS="$LIBS"
+  AC_SUBST(HOWL_LIBS)
+  CPPFLAGS="$saved_cppflags"
+  LIBS="$saved_libs"
+else
+  HOWL_LIBS="";
+  AC_SUBST(HOWL_LIBS)
+  ac_cv_have_howl="no"
+fi
+
+if test "x$enable_mdns" = "xyes"; then
+  # Check for dns_sd, macos has this in its system
+  saved_libs="$LIBS"
+  saved_cppflags="$CPPFLAGS"
+  LIBS="$PTHREAD_LIBS"
+  CPPFLAGS="$CPPFLAGS $PTHREAD_CPPFLAGS"
+  AC_SEARCH_LIBS(DNSServiceBrowse, dnssd, [AC_MSG_CHECKING([for dns_sd])
+       AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <dns_sd.h>]], [[int i;]])],[ac_cv_have_dns_sd="yes"],[])
+       AC_MSG_RESULT($ac_cv_have_dns_sd)], ac_cv_have_dns_sd="no")
+  DNS_SD_LIBS="$LIBS"
+  AC_SUBST(DNS_SD_LIBS)
+  CPPFLAGS="$saved_cppflags"
+  LIBS="$saved_libs"
+else
+  ac_cv_have_dns_sd="no"
+fi
+
+AM_CONDITIONAL(WITH_HOWL, test x$ac_cv_have_howl = xyes)
+AM_CONDITIONAL(WITH_DNS_SD, test x$ac_cv_have_dns_sd = xyes)
+
+AC_ARG_WITH(internal-pcre,
+[  --with-internal-pcre    Use internal pcre, don't detect],
+[ac_cv_internal_pcre="yes"]
+,[])
+
+if test x$ac_cv_internal_pcre = xyes; then
+  ac_cv_have_pcre=no
+  PCRE_LIBS=""
+else
+  # Check for pcre posix library
+  saved_libs="$LIBS"
+  LIBS=""
+  AC_SEARCH_LIBS(pcre_compile, pcreposix, [AC_MSG_CHECKING([for PCRE posix library])
+       AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <pcreposix.h>]], [[int i;]])],[ac_cv_have_pcre="yes"],[])
+       AC_MSG_RESULT($ac_cv_have_pcre)], ac_cv_have_pcre="no")
+  PCRE_LIBS="$LIBS"
+  LIBS="$saved_libs"
+fi
+AC_SUBST(PCRE_LIBS)
+
+AM_CONDITIONAL(WITH_PCRE, test "$ac_cv_have_pcre" = "yes")
+
+if test x$ac_cv_have_pcre != xyes; then
+  AC_CONFIG_SUBDIRS(pcre)
+  ac_cv_have_pcre="yes"
+fi
+
+if test x$ac_cv_have_pcre = xyes; then
+  AC_DEFINE(HAVE_PCRE, [], [defined if posix PCRE is available])
+fi
+
+dnl Some implementations make the second argument of iconv non-const for no
+dnl sane reason
+AC_MSG_CHECKING([whether iconv uses const])
+OLDCFLAGS="$CFLAGS"
+# This is a gcc-ism but autoconf provides no other way of doing this.
+CFLAGS="$CFLAGS -Werror"
+AC_COMPILE_IFELSE(AC_LANG_SOURCE(
+[#include <iconv.h> 
+int main()
+{ iconv_t i; char *a="a"; size_t s; iconv(i,(const char**)&a,&s,&a,&s); return 0; }
+]),
+[AC_DEFINE(iconv_arg2_t,[const char **],[Second argument of iconv()])
+ AC_MSG_RESULT(yes)],
+[AC_DEFINE(iconv_arg2_t,[char **])
+ AC_MSG_RESULT(no)])
+CFLAGS="$OLDCFLAGS"
+
+AC_CHECK_FUNCS(\
+	fchdir \
+	fchmod \
+	fsync \
+	ftime \
+	ftruncate \
+	getgroups \
+	getpagesize \
+	getpass \
+	getpassphrase \
+	gettimeofday \
+	initgroups \
+	mknod \
+	mkstemp \
+	mktemp \
+	putenv \
+	readlink \
+	sigaction \
+	sigblock \
+	sigprocmask \
+	sigsetmask \
+	sigvec \
+	snprintf \
+	tempnam \
+	timezone \
+	tzset \
+	vprintf \
+	wait3 \
+	strdup \
+	getaddrinfo \
+	inet_aton \
+	memchr \
+	strchr \
+	getopt \
+   	iconv_open \
+	libiconv_open \
+	locale_charset \
+	nl_langinfo \
+	setlocale \
+	res_query
+)
+# we only need one of the following
+AC_CHECK_FUNCS([\
+	nanosleep \
+	usleep \
+	select \
+], [break])
+
+AC_CHECK_FUNCS(fseeko,[AC_DEFINE(CVS_FSEEK,fseeko,[Define to OS specific seek routine])],[AC_DEFINE(CVS_FSEEK,fseek)])
+AC_CHECK_FUNCS(ftello,[AC_DEFINE(CVS_FTELL,ftello,[Define to OS specific tell routine])],[AC_DEFINE(CVS_FTELL,ftell)])
+
+dnl Mac OSX (at least) has a broken getopt(), so we don't use that
+AC_MSG_CHECKING([for broken getopt()])
+AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#include <unistd.h>
+
+int main(int argc, char *argv[])
+{
+  optind = 0;
+  getopt(argc, argv, "");
+  return optind;
+}
+]])],[
+ AC_MSG_RESULT(yes)
+ AC_LIBOBJ(getopt_long)],[
+ AC_MSG_RESULT(no)
+],[])
+
+dnl
+dnl Force lib/regex.c to use malloc instead of messing around with alloca
+dnl and define the old re_comp routines that we use.
+dnl
+AC_DEFINE(REGEX_MALLOC,[],[Define to force lib/regex.c to use malloc instead of alloca.])
+dnl
+dnl AC_FUNC_FORK([]) is rather baroque.  It seems to be rather more picky
+dnl than, say, the Single Unix Specification (version 2), which simplifies
+dnl a lot of cases by saying that the child process can't set any variables
+dnl (thus avoiding problems with register allocation) or call any functions
+dnl (thus avoiding problems with whether file descriptors are shared).
+dnl It would be nice if we could just write to the Single Unix Specification.
+dnl I think the only way to do redirection this way is by doing it in the
+dnl parent, and then undoing it afterwards (analogous to windows-NT/run.c).
+dnl That would appear to have a race condition if the user hits ^C (or
+dnl some other signal) at the wrong time, as main_cleanup will try to use
+dnl stdout/stderr.  So maybe we are stuck with AC_FUNC_FORK([]).
+dnl
+AC_FUNC_FORK([])
+AC_FUNC_CLOSEDIR_VOID
+
+dnl
+dnl Check for shadow password support.
+dnl
+dnl We used to try to determine whether shadow passwords were actually in
+dnl use or not, but the code has been changed to work right reguardless,
+dnl so we can go back to a simple check.
+AC_SEARCH_LIBS(getspnam, sec gen, AC_DEFINE(HAVE_GETSPNAM,[],[Define if getspnam is supported]))
+
+AC_FUNC_UTIME_NULL
+AC_SYS_LONG_FILE_NAMES
+
+AC_FUNC_FNMATCH
+if test "$ac_cv_func_fnmatch_works" = no; then
+  AC_LIBOBJ(fnmatch)
+fi
+
+# Try to find connect and gethostbyname.
+AC_CHECK_LIB(nsl, main,
+  AC_SEARCH_LIBS(connect, xnet socket inet, AC_DEFINE(HAVE_CONNECT,[],[Define if connect is supported]),, -lnsl),
+  AC_SEARCH_LIBS(connect, xnet socket inet, AC_DEFINE(HAVE_CONNECT,[],[Define if connect is supported])))
+AC_SEARCH_LIBS(gethostbyname, netinet nsl)
+
+AC_CHECK_FUNC(gethostname, ,[AC_LIBOBJ([hostname])])
+
+AC_SEARCH_LIBS(crypt, crypt, AC_DEFINE(HAVE_CRYPT,[],[Define if crypt is supported]))
+
+AC_ARG_WITH(internal-zlib,
+[  --with-internal-zlib    Use internal zlib, don't detect],
+[ac_cv_internal_zlib="yes"]
+,[])
+
+if test x$ac_cv_internal_zlib = xyes; then
+  ac_cv_have_zlib="no"
+  ZLIB_LIBS=""
+else
+  saved_libs="$LIBS"
+  LIBS=""
+  AC_SEARCH_LIBS(zlibVersion, z, [AC_MSG_CHECKING([for zlib > 1.2.0])
+   AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <zlib.h>]], [[z_stream z; deflateBound(&z,99);]])],[ac_cv_have_zlib="yes"],[ac_cv_have_zlib="no"
+               LIBS="$saved_libs"])
+    AC_MSG_RESULT($ac_cv_have_zlib)], ac_cv_have_zlib="no")
+  ZLIB_LIBS="$LIBS"
+  LIBS="$saved_libs"
+fi
+AC_SUBST(ZLIB_LIBS)
+AM_CONDITIONAL(WITH_ZLIB, test "$ac_cv_have_zlib" = "yes")
+
+AC_ARG_WITH(internal-expat,
+[  --with-internal-expat   Use internal expat, don't detect],
+[ac_cv_internal_expat="yes"]
+,[])
+
+if test x$ac_cv_internal_expat = xyes; then
+  ac_cv_have_expat=no
+  EXPAT_LIBS=""
+else
+  saved_libs="$LIBS"
+  LIBS=""
+  AC_SEARCH_LIBS(XML_ExpatVersion, expat, [AC_MSG_CHECKING([for expat])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <expat.h>]], [[XML_ExpatVersion();]])],[ac_cv_have_expat="yes"],[ac_cv_have_expat="no"
+    LIBS="$saved_libs"])
+    AC_MSG_RESULT($ac_cv_have_expat)], 
+    ac_cv_have_expat="no")
+  EXPAT_LIBS="$LIBS"
+fi
+AM_CONDITIONAL(WITH_EXPAT, test "$ac_cv_have_expat" = "yes")
+AC_SUBST(EXPAT_LIBS)
+LIBS="$saved_libs"
+
+if test x$ac_cv_have_expat != xyes; then
+  AC_CONFIG_SUBDIRS(expat)
+fi
+
+AM_CONDITIONAL(WITH_MDNS, test "$enable_mdns" = "yes")
+if test "$enable_mdns" = "yes"; then
+  AC_DEFINE(HAVE_MDNS, [], Defined if MDNS is available)
+fi
+
+AC_MSG_CHECKING(support for sqlite)
+AC_ARG_ENABLE(sqlite,
+[  --enable-sqlite         include SQLite support if available (default)
+  --disable-sqlite        don't include SQLite support],
+[],
+[enable_sqlite="yes"])
+AC_MSG_RESULT($enable_sqlite)
+
+saved_libs="$LIBS"
+LIBS=""
+if test "$enable_sqlite" = "yes" ; then
+  AC_SEARCH_LIBS(sqlite3_open, sqlite3, [AC_MSG_CHECKING([for sqlite])
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#ifdef HAVE_SQLITE3_H
+#include <sqlite3.h>
+#endif]], [[sqlite3_open(0,0);]])],[ac_cv_have_sqlite="yes"],[ac_cv_have_sqlite="no"
+      LIBS="$saved_libs"])
+      AC_MSG_RESULT($ac_cv_have_sqlite)], 
+      ac_cv_have_sqlite="no")
+else
+   ac_cv_have_sqlite="no"
+fi
+AM_CONDITIONAL(WITH_SQLITE, test "$ac_cv_have_sqlite" = "yes")
+if test "$ac_cv_have_sqlite" = "yes"; then
+  AC_DEFINE(HAVE_SQLITE, [], Defined if SQLite is available)
+fi
+SQLITE_LIBS="$LIBS"
+AC_SUBST(SQLITE_LIBS)
+LIBS="$saved_libs"
+
+AC_MSG_CHECKING(support for mysql 3.23)
+AC_ARG_ENABLE(mysql,
+[  --enable-mysql          include mysql 3.23 support if available (default)
+  --disable-mysql         don't include mysql support],
+[],
+[enable_mysql="yes"])
+AC_MSG_RESULT($enable_mysql)
+
+# Redhat has a broken mysql_config that puts quotes around everything...
+# since gcc doesn't understand the quotes it means nothing works.
+
+if test "$enable_mysql" = "yes"; then
+  # Check for mysql via mysql_config
+  AC_PATH_PROG(MYSQL_CONFIG, mysql_config)
+  if test -x "$MYSQL_CONFIG"; then
+    CPPFLAGS="$CPPFLAGS `$MYSQL_CONFIG --cflags | tr -d \'`"
+    MSQ_LDFLAGS="`$MYSQL_CONFIG --libs | tr -d \'`"
+  fi
+fi
+
+saved_libs="$LIBS"
+LIBS="$MSQ_LDFLAGS"
+if test "$enable_mysql" = "yes"; then
+  AC_SEARCH_LIBS(mysql_init, mysqlclient, [AC_MSG_CHECKING([for mysql])
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+#ifdef HAVE_MYSQL_H
+#include <mysql.h>
+#endif
+
+#if (defined(MYSQL_VERSION_ID))  &&  (MYSQL_VERSION_ID >= 40000) 
+generate_an_error!!!
+#endif
+]], [[mysql_init(0);]])],[ac_cv_have_mysql="yes"],[ac_cv_have_mysql="no"
+      LIBS="$saved_libs"])
+      AC_MSG_RESULT($ac_cv_have_mysql)], 
+      ac_cv_have_mysql="no")
+else
+   ac_cv_have_mysql="no"
+fi
+
+AM_CONDITIONAL(WITH_MYSQL, test "$ac_cv_have_mysql" = "yes")
+if test "$ac_cv_have_mysql" = "yes"; then
+  AC_DEFINE(HAVE_MYSQL, [] ,Defined if Mysql 3.23 is available)
+fi
+MYSQL_LIBS="$LIBS"
+AC_SUBST(MYSQL_LIBS)
+LIBS="$saved_libs"
+
+AC_MSG_CHECKING(support for ODBC)
+AC_ARG_ENABLE(odbc,
+[  --enable-odbc           include ODBC support if available (default)
+  --disable-odbc          don't include ODBC support],
+[],
+[enable_odbc="yes"])
+AC_MSG_RESULT($enable_odbc)
+
+saved_libs="$LIBS"
+LIBS=""
+if test "$enable_odbc" = "yes"; then
+  AC_SEARCH_LIBS(SQLConnect, odbc iodbc, [AC_MSG_CHECKING([for ODBC])
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <sql.h>]], [[SQLConnect(0,0,0,0,0,0,0);]])],[ac_cv_have_odbc="yes"],[ac_cv_have_odbc="no"
+      LIBS="$saved_libs"])
+      AC_MSG_RESULT($ac_cv_have_odbc)], 
+      ac_cv_have_odbc="no")
+else
+   ac_cv_have_odbc="no"
+fi
+AM_CONDITIONAL(WITH_ODBC, test "$ac_cv_have_odbc" = "yes")
+if test "$ac_cv_have_odbc" = "yes"; then
+  AC_DEFINE(HAVE_ODBC, [], Defined if ODBC is available)
+fi
+ODBC_LIBS="$LIBS"
+AC_SUBST(ODBC_LIBS)
+LIBS="$saved_libs"
+
+AC_MSG_CHECKING(support for Postgres)
+AC_ARG_ENABLE(postgres,
+[  --enable-postgres       include postgres support if available (default)
+  --disable-postgres      don't include postgres support],
+[],
+[enable_postgres="yes"])
+AC_MSG_RESULT($enable_postgres)
+
+if test "$enable_postgres" = "yes"; then
+  # Check for postgres via pg_config
+  AC_PATH_PROG(PG_CONFIG, pg_config)
+  if test -x "$PG_CONFIG"; then
+    CPPFLAGS="$CPPFLAGS -I`$PG_CONFIG --includedir`"
+    PG_LDFLAGS="-L`$PG_CONFIG --libdir`"
+  fi
+fi
+
+saved_libs="$LIBS"
+LIBS="$PG_LDFLAGS"
+if test "$enable_postgres" = "yes"; then
+  AC_SEARCH_LIBS(PQconnectdb, pq, [AC_MSG_CHECKING([for Postgres])
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <libpq-fe.h>]], [[PQconnectdb(0);]])],[ac_cv_have_postgres="yes"],[ac_cv_have_postgres="no"
+      LIBS="$saved_libs"])
+      AC_MSG_RESULT($ac_cv_have_postgres)], 
+      ac_cv_have_postgres="no")
+else
+   ac_cv_have_postgres="no"
+fi      
+AM_CONDITIONAL(WITH_POSTGRES, test "$ac_cv_have_postgres" = "yes")
+if test "$ac_cv_have_postgres" = "yes"; then
+  AC_DEFINE(HAVE_POSTGRES, [], Defined if Postgres is available)
+fi
+POSTGRES_LIBS="$LIBS"
+AC_SUBST(POSTGRES_LIBS)
+LIBS="$saved_libs"
+
+# Check for additional headers
+AC_CHECK_HEADERS(sqlite3.h mysql.h libpq-fe.h sql.h sqlext.h)
+
+
+AC_MSG_CHECKING([support for Mac HFS])
+AC_ARG_ENABLE(hfs,
+[  --enable-hfs            include mac HFS support if available (default))
+  --disable-hfs           don't include mac HFS support])
+case $host_os in
+  darwin*)
+		if test "x$enable_hfs" != "xno"; then
+		  acx_mac_hfs_support="yes"
+		else
+		  acx_mac_hfs_support="no"
+		fi
+		;;
+  *)
+		acx_mac_hfs_support="no";
+		;;
+esac
+
+if test "x$acx_mac_hfs_support" = "xyes"; then
+    LIBS="$LIBS -framework CoreServices -framework ApplicationServices"
+    AC_DEFINE(MAC_HFS_STUFF,[],[Support for Mac HFS filesystem])
+fi
+
+AM_CONDITIONAL(WITH_MAC_HFS_SUPPORT, test "x$acx_mac_hfs_support" = "xyes" )
+AC_MSG_RESULT($acx_mac_hfs_support)
+
+saved_libs="$LIBS"
+LIBS=""
+ACX_WITH_GSSAPI
+GSSAPI_LIBS="$LIBS"
+AC_SUBST(GSSAPI_LIBS)
+LIBS="$saved_libs"
+
+saved_libs="$LIBS"
+LIBS=""
+AC_SEARCH_LIBS(ERR_get_error,crypto libeay32)
+AC_SEARCH_LIBS(SSL_CTX_new, ssl ssleay32, [AC_MSG_CHECKING([for openssl])
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <openssl/ssl.h>]], [[int i;]])],[ac_cv_have_ssl="yes"],[])
+     AC_MSG_RESULT($ac_cv_have_ssl)], ac_cv_have_ssl="no")
+SSL_LIBS="$LIBS"
+AC_SUBST(SSL_LIBS)
+LIBS="$saved_libs"
+
+AC_CHECK_HEADER(security/pam_appl.h)
+AC_CHECK_HEADER(pam/pam_appl.h)
+saved_libs="$LIBS"
+LIBS=""
+AC_SEARCH_LIBS(pam_open_session, pam,
+  [if test x$ac_cv_security_pam_appl_h=xyes -o x$ac_cv_pam_pam_appl_h=xyes; then
+   ac_cv_have_pam="yes"
+  fi],  
+  [ac_cv_have_pam="no"])
+PAM_LIBS="$LIBS"
+AC_SUBST(PAM_LIBS)
+LIBS="$saved_libs"
+AC_MSG_CHECKING([for PAM availability])
+AC_MSG_RESULT($ac_cv_have_pam)
+
+AC_ARG_WITH(config_dir, 
+[  --with-config-dir=DIRECTORY
+                           Directory for config files (default SYSCONFDIR/cvsnt)],
+cvs_config_dir=$withval,
+cvs_config_dir="${sysconfdir}/cvsnt")
+AC_SUBST(cvs_config_dir)
+
+AC_ARG_WITH(protocol_dir, 
+[  --with-protocol-dir=DIRECTORY
+                           Directory for protocol libraries (default LIBDIR/cvsnt)],
+cvs_library_dir=$withval,
+cvs_library_dir="${libdir}/cvsnt")
+AC_SUBST(cvs_library_dir)
+
+AC_MSG_CHECKING(support for PAM)
+AC_ARG_ENABLE(pam,
+[  --enable-pam            include PAM support if available (default))
+  --disable-pam           don't include PAM support],
+[if test "$enable_pam" = "yes"; then
+  if test "$ac_cv_have_pam" = "yes"; then
+    AC_DEFINE(HAVE_PAM,,[Support for PAM authentication])
+  else
+    enable_pam="no"
+  fi
+fi],
+[if test "$ac_cv_have_pam" != "no"; then
+  AC_DEFINE(HAVE_PAM,,[Support for PAM authentication])
+    enable_pam="yes"
+  else
+    enable_pam="no"
+fi])
+AC_MSG_RESULT($enable_pam)
+AM_CONDITIONAL(WITH_PAM, test "$enable_pam" = "yes")
+
+AC_MSG_CHECKING(support for server)
+AC_ARG_ENABLE(server,
+[  --enable-server         include code for running as a server (default)
+  --disable-server        don't include server code],
+[if test "$enable_server" = yes; then
+  AC_DEFINE(SERVER_SUPPORT,[],[Support CVS remote server])
+fi],
+[if test "$ac_cv_search_connect" != no; then
+  AC_DEFINE(SERVER_SUPPORT,[],[Support CVS remote server])
+  enable_server="yes"
+fi])
+AC_MSG_RESULT($enable_server)
+AM_CONDITIONAL(INSTALL_SERVER, test "$enable_server" = "yes")
+
+AC_MSG_CHECKING(support for lockserver)
+AC_ARG_ENABLE(lockserver,
+[  --enable-lockserver     compile lockserver daemon (default)
+  --disable-lockserver    don't compile lockserver],
+[if test "$enable_lockserver" = yes; then
+  AC_DEFINE(LOCKSERVER_SUPPORT,[],[Support CVS lock server])
+fi],
+[if test "$ac_cv_search_connect" != no; then
+  AC_DEFINE(LOCKSERVER_SUPPORT,[],[Support CVS lock server])
+  enable_lockserver="yes"
+fi])
+AC_MSG_RESULT($enable_lockserver)
+AM_CONDITIONAL(WITH_LOCKSERVER, test "$enable_lockserver" = "yes")
+
+AC_MSG_CHECKING(support for pserver protocol)
+AC_ARG_ENABLE(pserver,
+[  --enable-pserver        Enable :pserver: protocol (default)
+  --disable-pserver       Disable :pserver: protocol],
+  acx_pserver=$enableval,
+  acx_pserver="yes")
+
+AM_CONDITIONAL(PSERVER_PROTOCOL_SUPPORT, test "$acx_pserver" = "yes")
+if test x$acx_pserver = xyes; then
+  AC_DEFINE(PSERVER_PROTOCOL_SUPPORT, [], [Support for :pserver:])
+fi
+AC_MSG_RESULT($acx_pserver)
+
+AC_MSG_CHECKING(support for ext protocol)
+AC_ARG_ENABLE(ext,
+[  --enable-ext            Enable :ext: protocol (default)
+  --disable-ext           Disable :ext: protocol],
+  acx_ext=$enableval,
+  acx_ext="yes")
+AM_CONDITIONAL(EXT_PROTOCOL_SUPPORT, test "$acx_ext" = "yes")
+if test x$acx_ext = xyes; then
+  AC_DEFINE(EXT_PROTOCOL_SUPPORT, [], [Support for :ext:])
+fi
+AC_MSG_RESULT($acx_ext)
+
+AC_MSG_CHECKING(support for fork protocol)
+AC_ARG_ENABLE(fork,
+[  --enable-fork           Enable :fork: protocol 
+  --disable-fork          Disable :fork: protocol (default)],
+  acx_fork=$enableval,
+  acx_fork="no")
+AM_CONDITIONAL(FORK_PROTOCOL_SUPPORT, test "$acx_fork" = "yes")
+if test x$acx_fork = xyes; then
+  AC_DEFINE(FORK_PROTOCOL_SUPPORT, [], [Support for :fork:])
+fi
+AC_MSG_RESULT($acx_fork)
+
+AC_MSG_CHECKING(support for rsh server protocol)
+AC_ARG_ENABLE(rsh,
+[  --enable-rsh            Enable rsh :server: protocol (default)
+  --disable-rsh           Disable rsh :server: protocol],
+  acx_rsh=$enableval,
+  acx_rsh="yes")
+AM_CONDITIONAL(SERVER_PROTOCOL_SUPPORT, test "$acx_rsh" = "yes")
+if test x$acx_rsh = xyes; then
+  AC_DEFINE(SERVER_PROTOCOL_SUPPORT, [], [Support for :server:])
+fi
+AC_MSG_RESULT($acx_rsh)
+
+AC_MSG_CHECKING(support for gserver protocol)
+AC_ARG_ENABLE(gserver,
+[  --enable-gserver        Enable :gserver: protocol (default)
+  --disable-gserve        Disable :gserver: protocol],
+  acx_gserver=$enableval,
+[if test "x$acx_gssapi_cv_gssapi" = "xno"; then
+    acx_gserver="no"
+ else
+    acx_gserver="yes"
+fi])
+AM_CONDITIONAL(GSERVER_PROTOCOL_SUPPORT, test "$acx_gserver" = "yes")
+if test x$acx_gserver = xyes; then
+  AC_DEFINE(GSERVER_PROTOCOL_SUPPORT, [], [Support for :gserver:])
+fi
+AC_MSG_RESULT($acx_gserver)
+
+
+AC_MSG_CHECKING(support for sserver protocol)
+AC_ARG_ENABLE(sserver,
+[  --enable-sserver        Enable :sserver: protocol (default)
+  --disable-sserver       Disable :sserver: protocol],
+  acx_sserver=$enableval,
+[if test "$ac_cv_have_ssl" = yes; then
+    acx_sserver="yes"
+ else
+    acx_sserver="no"
+fi])
+AM_CONDITIONAL(SSERVER_PROTOCOL_SUPPORT, test $acx_sserver = "yes")
+if test x$acx_sserver = xyes; then
+  AC_DEFINE(SSERVER_PROTOCOL_SUPPORT, [], [Support for :sserver:])
+fi
+AC_MSG_RESULT($acx_sserver)
+
+AC_MSG_CHECKING(support for sspi protocol)
+AC_ARG_ENABLE(sspi,
+[  --enable-sspi           Enable :sspi: protocol (default)
+  --disable-sspi          Disable :sspi: protocol],
+  acx_sspi=$enableval,
+  acx_sspi="yes")
+AM_CONDITIONAL(SSPI_PROTOCOL_SUPPORT, test $acx_sspi = "yes")
+if test x$acx_sspi = xyes; then
+  AC_DEFINE(SSPI_PROTOCOL_SUPPORT, [], [Support for :sspi:])
+  AC_CONFIG_SUBDIRS(protocols/ntlm)
+fi
+AC_MSG_RESULT($acx_sspi)
+
+AC_MSG_CHECKING(support for enum protocol)
+AC_ARG_ENABLE(sspi,
+[  --enable-enum           Enable :enum: protocol (default)
+  --disable-enum          Disable :enum: protocol],
+  acx_enum=$enableval,
+  acx_enum="yes")
+AM_CONDITIONAL(ENUM_PROTOCOL_SUPPORT, test $acx_enum = "yes")
+if test x$acx_enum = xyes; then
+  AC_DEFINE(ENUM_PROTOCOL_SUPPORT, [], [Support for remote enumerationi protocol])
+fi
+AC_MSG_RESULT($acx_enum)
+
+AC_MSG_CHECKING(whether to compile RCS tools)
+AC_ARG_ENABLE(rcs,
+[  --enable-rcs            Enable RCS compatibility tools
+  --disable-rcs           Disable RCS compatibility tools (default)],
+  acx_rcs=$enableval, acx_rcs="no")
+AM_CONDITIONAL(WITH_RCSTOOLS, test "$acx_rcs" = "yes")
+AC_MSG_RESULT($acx_rcs)
+
+test -f src/options.h && (
+  AC_MSG_WARN(saving ./src/options.h in ./src/options.h-SAVED)
+  AC_MSG_WARN(You may wish to check that local options have not been lost.)
+  AC_MSG_WARN(Do not re-run ./configure or ./config.status until you have....)
+  cp ./src/options.h ./src/options.h-SAVED
+)
+
+AC_CONFIG_FILES([Makefile \
+	  diff/Makefile \
+	  lib/Makefile \
+	  cvsgui/Makefile \
+	  cvsdelta/Makefile \
+	  man/Makefile \
+	  src/Makefile \
+	  protocols/Makefile \
+	  triggers/Makefile \
+	  lockservice/Makefile \
+	  zlib/Makefile \
+	  rcs/Makefile \
+	  cvsapi/Makefile \
+	  cvsapi/db/Makefile \
+	  cvsapi/mdns/Makefile \
+	  cvstools/Makefile \
+	  xdiff/Makefile \
+	  mdnsclient/Makefile \
+	  redhat/cvsnt.spec \
+	  osx/Makefile])
+AC_OUTPUT

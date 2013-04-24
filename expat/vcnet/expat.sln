@@ -1,0 +1,39 @@
+Microsoft Visual Studio Solution File, Format Version 8.00
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "expat", "expat.vcproj", "{7E59BCEB-4FD9-42DF-951E-C196F709BAB8}"
+	ProjectSection(ProjectDependencies) = postProject
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "xmlwf", "xmlwf.vcproj", "{7C4062CF-5CAF-4387-B2D2-943C42D7B8AC}"
+	ProjectSection(ProjectDependencies) = postProject
+		{7E59BCEB-4FD9-42DF-951E-C196F709BAB8} = {7E59BCEB-4FD9-42DF-951E-C196F709BAB8}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "xmtest", "..\..\trash\xmtest\xmtest.vcproj", "{24DF0E36-8919-4DC1-A425-32AA2B6C5AC3}"
+	ProjectSection(ProjectDependencies) = postProject
+		{7E59BCEB-4FD9-42DF-951E-C196F709BAB8} = {7E59BCEB-4FD9-42DF-951E-C196F709BAB8}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfiguration) = preSolution
+		Debug = Debug
+		Release = Release
+	EndGlobalSection
+	GlobalSection(ProjectConfiguration) = postSolution
+		{7E59BCEB-4FD9-42DF-951E-C196F709BAB8}.Debug.ActiveCfg = Debug|Win32
+		{7E59BCEB-4FD9-42DF-951E-C196F709BAB8}.Debug.Build.0 = Debug|Win32
+		{7E59BCEB-4FD9-42DF-951E-C196F709BAB8}.Release.ActiveCfg = Release|Win32
+		{7E59BCEB-4FD9-42DF-951E-C196F709BAB8}.Release.Build.0 = Release|Win32
+		{7C4062CF-5CAF-4387-B2D2-943C42D7B8AC}.Debug.ActiveCfg = Debug|Win32
+		{7C4062CF-5CAF-4387-B2D2-943C42D7B8AC}.Debug.Build.0 = Debug|Win32
+		{7C4062CF-5CAF-4387-B2D2-943C42D7B8AC}.Release.ActiveCfg = Release|Win32
+		{7C4062CF-5CAF-4387-B2D2-943C42D7B8AC}.Release.Build.0 = Release|Win32
+		{24DF0E36-8919-4DC1-A425-32AA2B6C5AC3}.Debug.ActiveCfg = Debug|Win32
+		{24DF0E36-8919-4DC1-A425-32AA2B6C5AC3}.Debug.Build.0 = Debug|Win32
+		{24DF0E36-8919-4DC1-A425-32AA2B6C5AC3}.Release.ActiveCfg = Release|Win32
+		{24DF0E36-8919-4DC1-A425-32AA2B6C5AC3}.Release.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+	EndGlobalSection
+	GlobalSection(ExtensibilityAddIns) = postSolution
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,77 @@
+#!/usr/bin/perl
+
+%title= (
+  "cvsnt" => "CVSNT",
+  "cvs-suite" => "CVS Suite",
+);
+
+%architecture= (
+  "B.11.23" => "HP-UX_B.11.23",
+  "B.11.11" => "HP-UX_B.11.11",
+  "B.11.00" => "HP-UX_B.11.00",
+);
+
+%os_release= (
+  "B.11.23" => "?.11.2?",
+  "B.11.11" => "?.11.1?",
+  "B.11.00" => "?.11.0?",
+);
+
+%machine_type= (
+  "ia64" => "ia64*",
+  "hppa2.0w" => "9000/*",
+);
+
+$t=$ARGV[0];
+$v=$ARGV[1];
+$bit=$ARGV[2];
+
+open(UN,"uname -a|") or die "Unable to run uname";
+$_ = <UN>;
+close(UN);
+($os, $nam, $a, $something, $m) = split(/ /);
+
+if($bit eq "32") {
+  $cpu64="";
+} else {
+  $cpu64="_$bit";
+}
+
+if($m ne "ia64") {
+  $m="hppa";
+}
+
+$target="$t-$v-$m-hpux$bit.depot";
+print $target,"\n";
+
+open (PSF,">$t.psf") or die "Unable to write PSF file ($!)\n";
+
+print PSF <<EOF;
+product
+        tag $t
+        vendor_tag "March_Hare_Software_Ltd"
+        title "$title{$t}"
+        description "CVSNT Version Control System"
+        revision $v
+
+        architecture $architecture{$a}$cpu64
+        machine_type $machine_type{$m}
+        os_name HP-UX
+        os_release $os_release{$a}
+        directory /
+
+        fileset
+                tag all
+                revision $r
+                directory tmp=/
+                file_permissions -u 222 -g bin -o bin
+                file *
+        end
+end
+EOF
+
+close(PSF); 
+
+system("/usr/sbin/swpackage -vv -s $t.psf -x target_type=tape @ $target");
+system("compress $target");
+system("rm $t.psf");

@@ -1,0 +1,156 @@
+<Wix xmlns='http://schemas.microsoft.com/wix/2003/01/wi'>
+<Fragment Id="server">
+
+    <CustomAction Id="RunGenkey" Impersonate="yes" FileKey="genkey.exe" ExeCommand="&quot;[CVSNT_INSTALLDIR]cvsnt-default.pem&quot;" Execute="immediate" />
+
+     <DirectoryRef Id="CvsntSysFolder" src="$(var.CVSNT_BASE)\" >
+       <Component Id="ServiceSysFiles" Guid="40E257F1-9832-401b-8E0B-4E0D8D9CCB0F" DiskId="1">
+	 <Condition>not VersionNT64</Condition>
+         <File Id="setuid.dll" Name="setuid.dll" KeyPath="yes" />
+         <Registry Id="Setuid" Action="append" Root="HKLM" Key="SYSTEM\CurrentControlSet\Control\Lsa" Name="Authentication Packages" Type="multiString" Value="setuid" />
+       </Component>
+     </DirectoryRef>
+     <DirectoryRef Id="CvsntSys64Folder" src="$(var.CVSNT_BASE)\" >
+       <Component Id="ServiceSysFiles64" Guid="6C298846-B7D3-4540-93BE-0B665987C083" DiskId="1" Win64="yes">
+	 <Condition>VersionNT64</Condition>
+         <File Id="setuid64.dll" Name="setuid.dll" KeyPath="yes" src="$(var.CVSNT64_BASE)\" />
+         <Registry Id="Setuid64" Action="append" Root="HKLM" Key="SYSTEM\CurrentControlSet\Control\Lsa" Name="Authentication Packages" Type="multiString" Value="setuid" />
+       </Component>
+     </DirectoryRef>
+      <DirectoryRef Id="MainSystemFiles" src="$(var.CVSNT_BASE)\SysFiles\">
+         <Component Id="DbConnectors" Guid="6081AA57-947E-438b-A52E-36C03C64E64E" DiskId="1">
+            <File Id="libmysql.dll" Name="LIBMYS~1.DLL" LongName="libmysql.dll" />
+            <File Id="sqlite.dll" Name="SQLITE.DLL" LongName="sqlite.dll" />
+          </Component>
+        </DirectoryRef>
+        <DirectoryRef Id="CvsntStuff" src="$(var.CVSNT_BASE)\">
+          <Directory Id="CvsntSqlStuff" Name="sql">
+             <Component Id="SqlScripts" Guid="75A66575-E689-4157-B88E-D72850D8B809" DiskId="1">
+		  <File Id="create_tables_mssql.sql" Name="CREATE~1.SQL" LongName="create_tables_mssql.sql" />
+		  <File Id="create_tables_mysql.sql" Name="CREATE~2.SQL" LongName="create_tables_mysql.sql" />
+		  <File Id="create_tables_sqlite.sql" Name="CREATE~3.SQL" LongName="create_tables_sqlite.sql" />
+		  <File Id="create_tables_db2.sql" Name="CREATE~4.SQL" LongName="create_tables_db2.sql" />
+	     </Component>
+	   </Directory>
+	   <Directory Id="CvsntTriggerStuff" Name="triggers" src="$(var.CVSNT_BASE)\triggers\">
+	      <Component Id="DefaultTrigger" Guid="BB650A8A-1D5D-48d4-8443-AA0D1D68D318" DiskId="1">
+		<File Id="default_trigger.dll" Name="info.dll" />
+	      </Component>
+	      <Component Id="ScriptTrigger" Guid="4C06AFF8-5B9F-42aa-B64C-914962807A58" DiskId="1">
+		<File Id="script_trigger.dll" Name="script.dll">
+                  <TypeLib Id="DDF02ADA-D57C-48C7-B099-75ED3ABD845C" Language="0" />
+		</File>
+	      </Component>
+	      <Component Id="EmailTrigger" Guid="B5BFD092-BF98-457c-883A-A9519C4B1E7B" DiskId="1">
+		<File Id="email_trigger.dll" Name="email.dll" />
+	      </Component>
+	      <Component Id="AuditTrigger" Guid="2F636629-B76C-47eb-9634-0AA3A97216CC" DiskId="1">
+		<File Id="audit_trigger.dll" Name="audit.dll" />
+	      </Component>
+	      <Component Id="CheckoutTrigger" Guid="E40FB381-7219-44c2-98D0-BF9C78D51DEF" DiskId="1">
+		<File Id="checkout_trigger.dll" Name="checkout.dll" />
+	      </Component>
+	    </Directory>
+	      <Component Id="ServiceFilesCpl" Guid="BB38B847-2956-4f27-ACB0-2E8177616BC6" DiskId="1">
+		<File Id="cvsnt.cpl" Name="cvsnt.cpl" KeyPath="yes" />
+		<File Id="simcpl.cpl" Name="simcpl.cpl">
+	            <Shortcut Id="cvsnt.cpl" Advertise="no" Directory="CvsntStartMenuFolder" Name="CVSNTC~1" LongName="CVSNT Control Panel" Icon="cvsnt.exe" IconIndex="0" />
+		</File>
+                <Registry Id="cvsnt.cpl" Action="write" Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\Cpls" Name="CVSNT" Type="string" Value="[!simcpl.cpl]" />
+		<IniFile Id="cvsnt.cpl" Action="addLine" Directory="WindowsFolder" Name="Control.ini" Section="MMCPL" Key="CVSNT" Value="[!simcpl.cpl]" />
+	      </Component>
+              <Component Id="ServiceFilesCvs" Guid="AAE84A25-BC9C-48C6-BA70-9D8A2C9B3801" DiskId="1">
+                <File Id="cvsservice.exe" Name="CVSSER~1.EXE" LongName="cvsservice.exe" KeyPath="yes" />
+                <ServiceControl Id="cvs" Name="cvs" Remove="install" Stop="install" Wait="yes" />
+                <ServiceInstall Id="cvsservice.exe" Name="cvsnt" DisplayName="CVSNT Dispatch service $(var.CVSNT_VERSION)" Type="ownProcess" Interactive="yes" Start="auto" ErrorControl="normal" Description="This service handles connections from clients and dispatches CVSNT server processes to handle them" />
+                <ServiceControl Id="cvsnt" Name="cvsnt" Start="install" Stop="both" Remove="uninstall" Wait="no" />
+	      </Component>
+              <Component Id="ServiceFilesCvsLock" Guid="A99AEB5E-0434-42f6-A0EB-B7986B59C921" DiskId="1">
+              <!-- Orca validation error... cannot fix due to limitations of ServiceInstall -->
+		<File Id="sscvslock.exe" Name="cvslock.exe" KeyPath="yes" />
+                <ServiceInstall Id="cvslock.exe" Name="cvslock" DisplayName="CVSNT Locking Service $(var.CVSNT_VERSION)" Type="ownProcess" Start="auto" ErrorControl="normal" Description="This service handles locking for the CVSNT servers that use it" />
+                <ServiceControl Id="cvslock" Name="cvslock" Start="install" Stop="both" Remove="uninstall" Wait="no" />
+              </Component>
+	   <Directory Id="CvsntXdiffStuff" Name="xdiff" src="$(var.CVSNT_BASE)\xdiff\">
+	      <Component Id="ext_xdiff" Guid="D89436EF-1912-4bf8-B52D-30EF52A12773" DiskId="1">
+		<File Id="ext_xdiff.dll" Name="extdiff.dll" />
+	      </Component>
+	    </Directory>
+              <Component Id="RCSFiles" Guid="DD66FFBB-19D6-48EB-8860-6F1254EE5489" DiskId="1">
+                <File Id="rlog.exe" Name="rlog.exe" />
+                <File Id="rcsdiff.exe" Name="rcsdiff.exe" />
+                <File Id="co.exe" Name="co.exe" />
+              </Component>
+	   <Directory Id="CvsntProtoStuff" Name="PROTOC~1" LongName="protocols" src="$(var.CVSNT_BASE)\protocols\">
+              <Component Id="Enum" Guid="B8538524-CF3A-4abb-B0EC-92D99E841B25" DiskId="1">
+                <File Id="enum_protocol.dll" Name="enum.dll" />
+              </Component>
+	    </Directory>
+	      <Component Id="SServer_Registry" Guid="1b58b18d-c07f-4807-b0ad-4cc888731b7c" DiskId="1">
+                <Condition>SSERVERKEYS=0 And &amp;ServerComponents=3 and $SServer_Registry=3</Condition>
+                <Registry Id="CertificateFile" Root="HKLM" Key="SOFTWARE\Cvs\PServer" Name="CertificateFile" Type="string" Value="[CVSNT_INSTALLDIR]cvsnt-default.pem" />
+                <Registry Id="PrivateKeyFile" Root="HKLM" Key="SOFTWARE\Cvs\PServer" Name="PrivateKeyFile" Type="string" Value="[CVSNT_INSTALLDIR]cvsnt-default.pem" />
+	      </Component>
+      </DirectoryRef>
+
+    <FeatureRef Id="Protocols">
+        <Feature Id="Enum" Title="Enum" Description="CVSNT Remote enumeration protocol" AllowAdvertise="no" Level="3">
+          <ComponentRef Id="Enum" />
+        </Feature>
+    </FeatureRef>
+    <FeatureRef Id="Cvsnt">
+      <Feature Id="ServerComponents" Title="CVSNT Server" Description="CVSNT Server components" AllowAdvertise="no" Level="3">
+        <Condition Level="0">(Not Privileged) Or (SERVER=0 Or (SERVER=2 And Version9X))</Condition>
+        <Condition Level="4">SERVER=3</Condition>
+        <ComponentRef Id="ServiceFilesCvs" />
+	<ComponentRef Id="CommandLineLock" />
+        <ComponentRef Id="ServiceFilesCvsLock" />
+        <ComponentRef Id="ServiceFilesCpl" />
+        <ComponentRef Id="ServiceSysFiles" />
+        <ComponentRef Id="ServiceSysFiles64" />
+	<ComponentRef Id="DefaultTrigger" />
+	<ComponentRef Id="SServer_Registry" />
+        <Feature Id="Triggers" Title="Extension libraries" Description="Server extension libraries" AllowAdvertise="no" Level="3">
+          <Feature Id="ScriptTrigger" Title="ActiveScript support" Description="ActiveScript scripting support" AllowAdvertise="no" Level="3">
+            <ComponentRef Id="ScriptTrigger" />
+          </Feature>
+          <Feature Id="EmailTrigger" Title="Email notification" Description="Send formatted email on commit/tag/notify" AllowAdvertise="no" Level="3">
+            <ComponentRef Id="EmailTrigger" />
+          </Feature>
+          <Feature Id="AuditTrigger" Title="Audit logging" Description="Audit repository events to a database" AllowAdvertise="no" Level="3">
+            <ComponentRef Id="AuditTrigger" />
+   	    <ComponentRef Id="DbConnectors" />
+	    <ComponentRef Id="SqlScripts" />
+          </Feature>
+          <Feature Id="checkoutTrigger" Title="Automatic checkout" Description="Audit repository events to a database" AllowAdvertise="no" Level="3">
+            <ComponentRef Id="CheckoutTrigger" />
+          </Feature>
+        </Feature>
+
+        <Feature Id="Xdiff" Title="Xdiff handlers" Description="Handlers for cvs xdiff command" AllowAdvertise="no" Level="3">
+          <Condition Level="0">(Not Privileged) Or (SERVER=0 Or (SERVER=2 And Version9X))</Condition>
+          <Condition Level="4">SERVER=3</Condition>
+	  <Feature Id="Ext_xdiff" Title="ext" Description="xdiff using external commands" AllowAdvertise="no" Level="3">
+	    <ComponentRef Id="ext_xdiff" />
+	  </Feature>
+        </Feature>
+      </Feature>
+      <Feature Id="RCSWrappers" Title="RCS Wrappers" Description="Wrappers to allow some applications to treat CVSNT repositories as RCS files" AllowAdvertise="no" Level="4">
+        <Condition Level="0">SERVER=0 Or (SERVER=2 And Version9X)</Condition>
+        <Condition Level="4">SERVER=3</Condition>
+        <ComponentRef Id="RCSFiles" />
+      </Feature>
+    </FeatureRef>
+    
+    <Icon Id="cvsnt.exe" src="$(var.CVSNT_BASE)\cvsnt.cpl" />
+    
+    <Property Id="SSERVERKEYS" Value="0">
+      <RegistrySearch Id="SSKeysExist" Root="HKLM" Key="SOFTWARE\CVS\PServer" Name="PrivateKeyFile" Type="raw" />
+    </Property>
+
+    <InstallExecuteSequence>
+	<Custom Action="RunGenkey" After="RunPostinst">&amp;ServerComponents=3 and $SServer_Registry=3</Custom>
+    </InstallExecuteSequence>
+
+  </Fragment>
+</Wix>

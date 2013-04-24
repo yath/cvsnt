@@ -1,0 +1,14 @@
+#!/bin/bash
+scp sisko:cvs/release .
+VERSION=`cat release`
+sed "s/@VERSION@/$VERSION/" <cvsnt/redhat/cvsnt.spec.in >cvsnt.spec
+sudo cp cvsnt.spec /usr/src/redhat/SPECS
+sudo scp tmh@sisko:cvs/cvsnt-$VERSION.tar.gz /usr/src/redhat/SOURCES
+sudo rpmbuild -bb /usr/src/redhat/SPECS/cvsnt.spec
+mkdir rpm
+rm rpm/*
+cp /usr/src/redhat/RPMS/i386/cvsnt-$VERSION-1.i386.rpm rpm
+cp /usr/src/redhat/RPMS/i386/cvsnt-database-*-$VERSION-1.i386.rpm rpm
+cp /usr/src/redhat/RPMS/i386/cvsnt-protocol-*-$VERSION-1.i386.rpm rpm
+( cd rpm; tar czf ../cvsnt-$VERSION-rh9-rpm.tar.gz * )
+scp cvsnt-$VERSION-rh9-rpm.tar.gz sisko:cvs

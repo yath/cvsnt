@@ -1,0 +1,21 @@
+#!/bin/bash
+
+export PREFIX=/usr/local
+export CONFIG=/etc/cvsnt
+export CVSNT=${PWD}/cvsnt
+export DESTDIR=${PWD}/tmp
+export MYSQLDIR=${PWD}/../um_mysql64
+rm -rf $DESTDIR
+mkdir $DESTDIR
+export LD_LIBRARY_PATH=${DESTDIR}${PREFIX}/lib/sparcv9:/usr/local/lib/sparcv9:/usr/local/ssl/lib/sparcv9
+cd $CVSNT
+make distclean
+./configure --prefix=$PREFIX --with-config-dir=$CONFIG --with-ssl=/usr/local/ssl --libdir=$PREFIX/lib/sparcv9 --bindir=$PREFIX/bin/sparcv9 CFLAGS="-m64 -O2" CXXFLAGS="-m64 -O2" CPPFLAGS="-I/usr/local/include -I$MYSQLDIR/include/mysql" LDFLAGS="-L/usr/local/sparcv9/lib -L$PREFIX/lib/sparcv9 -R$PREFIX/lib/sparcv9 -L$MYSQLDIR/lib/sparcv9" 
+make DESTDIR=${DESTDIR}
+make install DESTDIR=${DESTDIR}
+
+cd ${DESTDIR}
+BUILD=`${DESTDIR}${PREFIX}/bin/sparcv9/cvsnt version -q`
+cp ../postinstall .
+../make_package 64 ${BUILD} cvsnt
+cd ..
