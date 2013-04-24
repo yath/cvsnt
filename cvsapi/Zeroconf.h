@@ -47,7 +47,7 @@ public:
 		bool bogus;
 	};
 
-	CVSAPI_EXPORT CZeroconf(CMdnsHelperBase::mdnsType type, const char *library_dir);
+	CVSAPI_EXPORT CZeroconf(const char *type, const char *library_dir);
 	CVSAPI_EXPORT virtual ~CZeroconf();
 
 	CVSAPI_EXPORT bool BrowseForService(const char *service, unsigned flags);
@@ -59,7 +59,7 @@ protected:
 	unsigned m_flags;
 	cvs::string m_service;
 	servers_t::const_iterator m_it;
-	CMdnsHelperBase::mdnsType m_mdns_type;
+	const char *m_mdns_type;
 	const char *m_library_dir;
 
 	struct name_lookup_struct_t

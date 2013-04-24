@@ -35,13 +35,13 @@ struct diffStruct_t
 	int size;
 };
 
-static int compareTree(CXmlNode *tree1, CXmlNode *tree2,std::vector<std::pair<CXmlNode*,bool> >& changed);
-static const char *getPath(const CXmlNode *node, const char *prefix);
-static bool nodeEqual(const CXmlNode* node1, const CXmlNode* node2);
-static bool walk_tree(CXmlNode *left, CXmlNode *right, int oldline, int& oldmin, int& oldmax, int& newmin, int& newmax);
-static bool transform_line_number(CXmlNode *left, CXmlNode *right, size_t& line);
-static bool transform_context(CXmlNode *left, CXmlNode *right, const char *line, std::vector<diffStruct_t>& diffArray, diffStruct_t& change);
-static bool transform_diff(CXmlNode *left, CXmlNode *right, const char *diff_in, std::vector<diffStruct_t>& diffArray);
+static int compareTree(CXmlNodePtr tree1, CXmlNodePtr tree2,std::vector<std::pair<CXmlNodePtr ,bool> >& changed);
+static const char *getPath(const CXmlNodePtr node, const char *prefix);
+static bool nodeEqual(const CXmlNodePtr  node1, const CXmlNodePtr  node2);
+static bool walk_tree(CXmlNodePtr left, CXmlNodePtr right, int oldline, int& oldmin, int& oldmax, int& newmin, int& newmax);
+static bool transform_line_number(CXmlNodePtr left, CXmlNodePtr right, size_t& line);
+static bool transform_context(CXmlNodePtr left, CXmlNodePtr right, const char *line, std::vector<diffStruct_t>& diffArray, diffStruct_t& change);
+static bool transform_diff(CXmlNodePtr left, CXmlNodePtr right, const char *diff_in, std::vector<diffStruct_t>& diffArray);
 
 static int xdiff_print(const char *fmt, ...)
 {
@@ -55,13 +55,13 @@ static int xdiff_print(const char *fmt, ...)
 	return str.length();
 }
 
-int xdiff_function(const char *name, const char *file1, const char *file2, const char *label1, const char *label2, int argc, const char *const*argv, int (*output_fn)(const char *,size_t))
+static int xdiff_function(const char *name, const char *file1, const char *file2, const char *label1, const char *label2, int argc, const char *const*argv, int (*output_fn)(const char *,size_t))
 {
-	std::vector<std::pair<CXmlNode*,bool> > changed;
+	std::vector<std::pair<CXmlNodePtr,bool> > changed;
 	std::vector<cvs::string> ignore_tag;
 	g_outputFn = output_fn;
 	bool standard_diff = false;
-	CXmlTree tree;
+	CXmlTree tree1,tree2,tree3;
 
 	CTokenLine tok(argc,argv);
 	size_t argnum=0;
@@ -87,28 +87,19 @@ int xdiff_function(const char *name, const char *file1, const char *file2, const
 		}
 	}
 
-	FILE *fp1 = fopen(file1,"r");
-	if(!fp1)
+	if(!tree1.ReadXmlFile(file1))
 	{
-		xdiff_print("Couldn't open file '%s' (error %d)\n",file1,errno);
+		xdiff_print("Couldn't read file '%s' as valid XML",file1);
 		return 1;
 	}
-	FILE *fp2 = fopen(file2,"r");
-	if(!fp2)
+
+	if(!tree2.ReadXmlFile(file2))
 	{
-		xdiff_print("Couldn't open file '%s' (error %d)\n",file2,errno);
-		fclose(fp1);
+		xdiff_print("Couldn't read file '%s' as valid XML",file2);
 		return 1;
 	}
-	cvs::smartptr<CXmlNode> file1Root = tree.ReadXmlFile(fp1,ignore_tag);
-	cvs::smartptr<CXmlNode> file2Root = tree.ReadXmlFile(fp2,ignore_tag);
-	fclose(fp1);
-	fclose(fp2);
-	if(!file1Root || !file2Root)
-	{
-		xdiff_print("Couldn't read file '%s' as valid XML",name);
-		return 1;
-	}
+	CXmlNodePtr file1Root = tree1.GetRoot();
+	CXmlNodePtr file2Root = tree2.GetRoot();
 
 	if(standard_diff)
 	{
@@ -121,12 +112,8 @@ int xdiff_function(const char *name, const char *file1, const char *file2, const
 		cvs::string tempfile2 = CFileAccess::tempfilename("xdiff");
 		cvs::string difftemp1 = CFileAccess::tempfilename("xdiff");
 //#endif
-		FILE *f=fopen(tempfile1.c_str(),"w");
-		file1Root->WriteXmlFile(f);
-		fclose(f);
-		f=fopen(tempfile2.c_str(),"w");
-		file2Root->WriteXmlFile(f);
-		fclose(f);
+		tree1.WriteXmlFile(tempfile1.c_str());
+		tree2.WriteXmlFile(tempfile2.c_str());
 		CTokenLine diffargs;
 		diffargs.addArg("xmldiff");
 		diffargs.addArg("-bBNw");
@@ -136,8 +123,7 @@ int xdiff_function(const char *name, const char *file1, const char *file2, const
 //#ifndef _DEBUG
 		CFileAccess::remove(tempfile1.c_str());
 //#endif
-		fp2=fopen(tempfile2.c_str(),"r");
-		if(!fp2)
+		if(!tree3.ReadXmlFile(tempfile2.c_str()))
 		{
 			xdiff_print("Internal error - couldn't read partial result file");
 //#ifndef _DEBUG
@@ -146,9 +132,7 @@ int xdiff_function(const char *name, const char *file1, const char *file2, const
 //#endif
 			return 1;
 		}
-		file1Root = NULL;
-		cvs::smartptr<CXmlNode> temp2Root = tree.ReadXmlFile(fp2,ignore_tag);
-		fclose(fp2);
+		CXmlNodePtr temp2Root = tree3.GetRoot();
 
 		std::vector<diffStruct_t> diffArray;
 		transform_diff(temp2Root,file2Root,difftemp1.c_str(),diffArray);
@@ -171,7 +155,7 @@ int xdiff_function(const char *name, const char *file1, const char *file2, const
 		for(size_t i=0; i<changed.size(); i++)
 		{
 			if(i+1<changed.size() && changed[i].second!=changed[i+1].second && nodeEqual(changed[i].first,changed[i+1].first))
-				changed.erase(&changed[i+1]);
+				changed.erase(changed.begin()+i+1);
 			else
 				xdiff_print("%s",getPath(changed[i].first,changed[i].second?"- ":"+ "));
 		}
@@ -179,117 +163,116 @@ int xdiff_function(const char *name, const char *file1, const char *file2, const
 	}
 }
 
-static int compareTree(CXmlNode *tree1, CXmlNode *tree2,std::vector<std::pair<CXmlNode*,bool> >& changed)
+static int compareTree(CXmlNodePtr tree1, CXmlNodePtr tree2,std::vector<std::pair<CXmlNodePtr ,bool> >& changed)
 {
-	CXmlNode::ChildArray_t::iterator i = tree1->begin();
-	CXmlNode::ChildArray_t::iterator j = tree2->begin();
+	CXmlNodePtr i = tree1->Clone();
+	CXmlNodePtr j = tree2->Clone();
 
-	while(i!=tree1->end() && j!=tree2->end())
+	bool bi = i->GetChild();
+	bool bj = j->GetChild();
+
+	while(bi&&bj)
 	{
-		CXmlNode* c1 = *i;
-		CXmlNode* c2 = *j;
-		int diff = strcmp(c1->GetName(),c2->GetName());
+		int diff = strcmp(i->GetName(),j->GetName());
 		if(diff<0)
 		{
-			changed.push_back(std::pair<CXmlNode*,bool>(c1,true));
-			++i;
+			changed.push_back(std::pair<CXmlNodePtr,bool>(i->Clone(),true));
+			bi=i->GetSibling();
 		}
 		else if(diff>0)
 		{
-			changed.push_back(std::pair<CXmlNode*,bool>(c2,false));
-			++j;
+			changed.push_back(std::pair<CXmlNodePtr,bool>(j->Clone(),false));
+			bj=j->GetSibling();
 		}
 		else
 		{
-			diff = strcmp(c1->GetValue(),c2->GetValue());
+			diff = strcmp(i->GetValue(),j->GetValue());
 			if(diff<0)
 			{
-				changed.push_back(std::pair<CXmlNode*,bool>(c1,true));
-				++i;
+				changed.push_back(std::pair<CXmlNodePtr,bool>(i->Clone(),true));
+				bi=i->GetSibling();
 			}
 			else if(diff>0)
 			{
-				changed.push_back(std::pair<CXmlNode*,bool>(c2,false));
-				++j;
+				changed.push_back(std::pair<CXmlNodePtr,bool>(j->Clone(),false));
+				bj=j->GetSibling();
 			}
 			else
 			{
-				compareTree(c1,c2,changed);
-				++i;
-				++j;
+				compareTree(i,j,changed);
+				bi=i->GetSibling();
+				bj=j->GetSibling();
 			}
 		}
 	}		
-	while(i!=tree1->end())
+	while(bi)
 	{
-		CXmlNode* c1 = *i;
-		changed.push_back(std::pair<CXmlNode*,bool>(c1,true));
-		++i;
+		changed.push_back(std::pair<CXmlNodePtr,bool>(i->Clone(),true));
+		bi=i->GetSibling();
 	}
-	while(j!=tree2->end())
+	while(bj)
 	{
-		CXmlNode* c2 = *j;
-		changed.push_back(std::pair<CXmlNode*,bool>(c2,false));
-		++j;
+		changed.push_back(std::pair<CXmlNodePtr ,bool>(j->Clone(),false));
+		bj=j->GetSibling();
 	}
 	return 0;
 }
 
-static const char *getPath(const CXmlNode *node, const char *prefix)
+static const char *getPath(const CXmlNodePtr node, const char *prefix)
 {
-	std::stack<const CXmlNode*> nodes;
+	std::stack<const CXmlNodePtr > nodes;
 	static cvs::string path;
 	int lev;
 	char tmp[64];
+	CXmlNodePtr n = node->Clone();
 
 	do
 	{
-		nodes.push(node);
-		node = node->getParent();
-	} while(node);
+		nodes.push(n);
+	} while(n->GetParent());
 
 	path="";
 
 	lev=0;
 	while(nodes.size())
 	{
-		node = nodes.top();
-		snprintf(tmp,10,"%5d",node->getStartLine());
+		n = nodes.top();
+		snprintf(tmp,10,"%5d",n->GetLine());
 		path+=tmp;
 		path+=": ";
 		path+=prefix;
 		path.append(lev,' ');
 		path.append("<");
-		path+= node->GetName();
+		path+= n->GetName();
 		path.append(">");
 		nodes.pop();
 		if(nodes.size())
 			path+= "\n";
 		lev++;
 	}
-	path+=node->GetValue();
+	path+=n->GetValue();
 	--lev;
 	path.append("</");
-	path+=node->GetName();
+	path+=n->GetName();
 	path.append(">");
 	path+="\n";
-	while((node=node->getParent())!=NULL)
+	while(n->GetParent())
 	{
 		--lev;
-		snprintf(tmp,10,"%5d",node->getEndLine());
+		snprintf(tmp,10,"%5d",n->GetLine());
 		path+=tmp;
 		path+=": ";
 		path+=prefix;
 		path.append(lev,' ');
 		path.append("</");
-		path+=node->GetName();
+		path+=n->GetName();
 		path.append(">");
 		path+="\n";
 	}
 	return path.c_str();
 }
 
-static bool nodeEqual(const CXmlNode* node1, const CXmlNode* node2)
+static bool nodeEqual(const CXmlNodePtr node1, const CXmlNodePtr node2)
 {
 	if((!node1 && node2) || (node2 && !node1))
 		return false;
@@ -300,43 +283,47 @@ static bool nodeEqual(const CXmlNode* node1, const CXmlNode* node2)
 		return false;
 	if(strcmp(node1->GetValue(),node2->GetValue()))
 		return false;
-	return nodeEqual(node1->getParent(),node2->getParent());
+	CXmlNodePtr n1 = node1->Clone();
+	CXmlNodePtr n2 = node2->Clone();
+	n1->GetParent();
+	n2->GetParent();
+	return nodeEqual(n1,n2);
 }
 
 /* Walk two semantically identical trees and find map source line numbers */
-static bool walk_tree(CXmlNode *left, CXmlNode *right, int oldline, int& oldmin, int& oldmax, int& newmin, int& newmax)
+static bool walk_tree(CXmlNodePtr left, CXmlNodePtr right, int oldline, int& oldmin, int& oldmax, int& newmin, int& newmax)
 {
-	CXmlNode::ChildArray_t::iterator i = left->begin();
-	CXmlNode::ChildArray_t::iterator j = right->begin();
+	CXmlNodePtr i = left->Clone();
+	CXmlNodePtr j = right->Clone();
+	bool bi = i->GetChild();
+	bool bj = j->GetChild();
 
-	while(i!=left->end() && j!=right->end())
+	while(bi && bj)
 	{
-		CXmlNode* c1 = *i;
-		CXmlNode* c2 = *j;
-		if(strcmp(c1->GetName(),c2->GetName()) || c1->size()!=c2->size())
+		if(strcmp(i->GetName(),i->GetName()))
 		{
 			xdiff_print("Internal error - trees not identical");
 		}
-		if(strcmp(c1->GetValue(),c2->GetValue()))
+		if(strcmp(i->GetValue(),j->GetValue()))
 		{
 //			printf("value different:\n");
 //			printf("%s\n-------%s\n",c1->GetValue(),c2->GetValue());
 		}
-		if(c1->getStartLine()>=oldmin && c1->getEndLine()<=oldmax && c1->getStartLine()<=oldline && c1->getEndLine()>=oldline)
+		if(i->GetLine()>=oldmin && i->GetLine()<=oldmax && i->GetLine()<=oldline && i->GetLine()>=oldline)
 		{
-			oldmin=c1->getStartLine();
-			oldmax=c1->getEndLine();
-			newmin=c2->getStartLine();
-			newmax=c2->getEndLine();
+			oldmin=i->GetLine();
+			oldmax=i->GetLine();
+			newmin=j->GetLine();
+			newmax=j->GetLine();
 		}	
-		walk_tree(c1,c2,oldline,oldmin,oldmax,newmin,newmax);
-		++i;
-		++j;
+		walk_tree(i,j,oldline,oldmin,oldmax,newmin,newmax);
+		bi = i->GetSibling();
+		bj = j->GetSibling();
 	}		
 	return 0;
 }
 
-static bool transform_line_number(CXmlNode *left, CXmlNode *right, size_t& line)
+static bool transform_line_number(CXmlNodePtr left, CXmlNodePtr right, size_t& line)
 {
 	int oldmin,oldmax,newmin,newmax;
 
@@ -348,7 +335,7 @@ static bool transform_line_number(CXmlNode *left, CXmlNode *right, size_t& line)
 	return true;
 }
 
-static bool transform_context(CXmlNode *left, CXmlNode *right, const char *line, std::vector<diffStruct_t>& diffArray, diffStruct_t& change)
+static bool transform_context(CXmlNodePtr left, CXmlNodePtr right, const char *line, std::vector<diffStruct_t>& diffArray, diffStruct_t& change)
 {
 	const char *p;
 	/* Line is <start>[,<end>]<type><start>[,end] */
@@ -403,7 +390,7 @@ static bool transform_context(CXmlNode *left, CXmlNode *right, const char *line,
 	return true;
 }
 
-static bool transform_diff(CXmlNode *left, CXmlNode *right, const char *diff_in, std::vector<diffStruct_t>& diffArray)
+static bool transform_diff(CXmlNodePtr left, CXmlNodePtr right, const char *diff_in, std::vector<diffStruct_t>& diffArray)
 {
 	CFileAccess in;
 	CFileAccess out;

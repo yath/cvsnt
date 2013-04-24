@@ -55,7 +55,7 @@ OSStatus StrToUnicode(const char *str, UniChar *ustr, SInt32 *uniLen,
 					  TextEncoding *outEncoder);
 #endif
    
-void mac_convert_file(char *infile,  int encode, char *outfile, int binary);
+void mac_convert_file(const char *infile,  int encode, char *outfile, int binary);
 
 #ifdef __cplusplus
 }

@@ -116,7 +116,7 @@ int cvsstatus (int argc, char **argv)
     err = start_recursion (status_fileproc, (FILESDONEPROC) NULL,
 			   (PREDIRENTPROC) NULL, status_dirproc, (DIRLEAVEPROC) NULL, NULL,
 			   argc, argv, local,
-			   W_LOCAL, 0, 1, (char *) NULL, NULL, 1, verify_read);
+			   W_LOCAL, 0, 1, (char *) NULL, NULL, 1, verify_read, NULL);
 
     return (err);
 }

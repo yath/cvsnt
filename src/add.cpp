@@ -517,6 +517,7 @@ int add (int argc, char **argv)
 
 		    if (vers->nonbranch)
 		    {
+			TRACE(3,"add - vers->nonbranch so cannot add file on non-branch tag");
 			error (0, 0,
 				"cannot add file on non-branch tag %s",
 				vers->tag);
@@ -559,6 +560,7 @@ same name already exists in the repository.");
 		{
 		    if (vers->nonbranch)
 		    {
+			TRACE(3,"add - RCS_isdead(), vers->nonbranch so cannot add file on non-branch tag");
 			error (0, 0,
 			       "cannot add file on non-branch tag %s",
 			       vers->tag);
@@ -582,7 +584,7 @@ same name already exists in the repository.");
 						fn_root(finfo.fullname), vers->vn_rcs);
 				}
 				Register (entries, finfo.file, "0", vers->ts_user, vers->options,
-						vers->tag, NULL, NULL, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str());
+						vers->tag, NULL, NULL, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str(), NULL);
 				++added_files;
 			}
 			else
@@ -657,7 +659,7 @@ cannot resurrect %s; RCS file removed by second party", fn_root(finfo.fullname))
 		    (void) sprintf (tmp, "Resurrected %s", fn_root(finfo.file));
 		    Register (entries, finfo.file, vers->vn_user, tmp,
 			      vers->options,
-			      vers->tag, vers->date, vers->ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str());
+			      vers->tag, vers->date, vers->ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str(), NULL);
 		    xfree (tmp);
 
 		    /* XXX - bugs here; this really resurrect the head */
@@ -689,7 +691,7 @@ cannot resurrect %s; RCS file removed by second party", fn_root(finfo.fullname))
 		    (void) sprintf (tmp, "Added %s", fn_root(finfo.file));
 		    Register (entries, finfo.file, vers->vn_user, tmp,
 			      vers->options,
-			      vers->tag, vers->date, vers->ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str());
+			      vers->tag, vers->date, vers->ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str(), NULL);
 		    xfree (tmp);
 		}
 		else
@@ -727,6 +729,7 @@ cannot resurrect %s; RCS file removed by second party", fn_root(finfo.fullname))
 	xfree (repository);
 	xfree (mapped_repository);
 	Entries_Close (entries);
+	TRACE(3,"add - close directory ?");
 	close_directory();
 
 	if (restore_cwd (&cwd, NULL))
@@ -767,14 +770,14 @@ static int add_directory (struct file_info *finfo)
     List *entries = finfo->entries;
     const char *dir = finfo->file;
 	int err = 0;
-	XmlHandle_t node;
+	CXmlNodePtr  node;
 
     char *rcsdir = NULL;
     struct saved_cwd cwd;
     char *message = NULL;
     const char *tag, *date;
     int nonbranch;
-    XmlHandle_t attrs;
+    CXmlNodePtr  attrs;
 
     if (strchr (dir, '/') != NULL)
     {
@@ -886,14 +889,14 @@ static int add_directory (struct file_info *finfo)
 
 		/* Now set the default file attributes to the ones we inherited
 		from the parent directory.  */
-		node = fileattr_create(NULL,"directory/default");
-		if(!node)
-			error(0,0,"Couldn't create fileattr node");
-		else if(attrs)
+		node = fileattr_getroot();
+		if(!node->GetChild("directory")) node->NewNode("directory");
+		if(!node->GetChild("default")) node->NewNode("default");
+		if(attrs)
 		{
 			fileattr_paste(node, attrs);
 			fileattr_prune(node);
-			fileattr_free_subtree(&attrs);
+			fileattr_free_subtree(attrs);
 		}
 		fileattr_write ();
 		fileattr_free ();
@@ -982,7 +985,7 @@ static int build_entry (const char *repository, const char *user, const char *op
      */
     line = (char*)xmalloc (strlen (user) + 20);
     (void) sprintf (line, "Initial %s", user);
-    Register (entries, user, "0", line, options, tag, (char *) 0, (char *) 0, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str());
+    Register (entries, user, "0", line, options, tag, (char *) 0, (char *) 0, NULL, NULL, (time_t)-1, NULL, NULL, bugid.c_str(), NULL);
     xfree (line);
     return (0);
 }

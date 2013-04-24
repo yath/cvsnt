@@ -50,6 +50,7 @@ public:
 	int (*destroy)(const struct plugin_interface *ui);
 	void *(*get_interface)(const struct plugin_interface *plugin, unsigned interface_type, void *data);
 	int (*configure)(const struct plugin_interface *ui, void *data); // For Win32, parent HWND
+	void *(*get_command_interface)(const struct plugin_interface *plugin, unsigned interface_type, void *data);
 
 	void *__cvsnt_reserved;
 };
@@ -61,13 +62,13 @@ typedef plugin_interface* (*get_plugin_interface_t)();
 /* This needs an extra level of indirection.  gcc bug..? */
 #define __x11433a(__mod,__func) __mod##_LTX_##__func
 #define __x11433(__mod,__func) __x11433a(__mod,__func)
-#define get_trigger_interface __x11433(MODULE,get_plugin_interface)
+#define get_plugin_interface __x11433(MODULE,get_plugin_interface)
 #endif
 #endif
 
 CVS_EXPORT plugin_interface *get_plugin_interface();
 
-#define PLUGIN_INTERFACE_VERSION 0x500
+#define PLUGIN_INTERFACE_VERSION 0x510
 
 #undef CVS_EXPORT
 

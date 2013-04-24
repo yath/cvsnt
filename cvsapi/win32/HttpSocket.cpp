@@ -18,14 +18,15 @@
 */
 
 /* Win32 specific */
+#include <config.h>
+#include "../lib/api_system.h"
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <tchar.h>
 #define SECURITY_WIN32
 #include <security.h>
 
-#include <config.h>
-#include "../lib/api_system.h"
 #include "../cvs_string.h"
 #include "../HttpSocket.h"
 #include "../SSPIHandler.h"
@@ -345,6 +346,26 @@ bool CHttpSocket::_request(const char *command, const char *location, const char
 		{
 			if(CSocketIO::recv((char*)m_content.data(),(int)len)<0)
 				return false;
+		}
+	}
+	else if(m_responseHeaderList.find("Transfer-Encoding")!=m_responseHeaderList.end() && 
+		m_responseHeaderList["Transfer-Encoding"][0]=="chunked")
+	{
+		m_content.clear();
+		while(CSocketIO::getline(line))
+		{
+			if(!line.length())
+				continue;
+
+			size_t len;
+			sscanf(line.c_str(),"%x",&len);
+
+			if(!len)
+				break;
+			size_t pos = m_content.size();
+			m_content.resize(pos+len);
+			CSocketIO::recv((char*)m_content.data()+pos,(int)len);
+			CSocketIO::getline(line); // CRLF
 		}
 	}
 	else

@@ -24,6 +24,9 @@
 #include "../lib/api_system.h"
 
 #ifdef HAVE_MDNS
+#if defined __HP_aCC
+#include <sys/types.h>
+#endif
 #include <netinet/in.h>
 #include <arpa/nameser.h>
 #include <arpa/inet.h>
@@ -34,6 +37,76 @@
 
 #include "../ServerIO.h"
 #include "../cvs_string.h"
+
+#if defined __HP_aCC
+
+ssize_t res_query(
+ char *dname,
+ int c,
+ int type,
+ u_char *answer,
+ int anslen
+);
+
+ssize_t res_search(
+ char *dname,
+ int c,
+ int type,
+ u_char *answer,
+ int anslen
+);
+
+ssize_t res_mkquery(
+ int op,
+ const char *dname,
+ int c,
+ int type,
+ const char *data,
+ int datalen,
+ const char *newrr,
+ char *buf,
+ int buflen
+);
+
+ssize_t res_send(
+ const char *msg,
+ ssize_t msglen,
+ char *answer,
+ int anslen
+);
+
+int res_init();
+
+ssize_t dn_comp(
+ u_char *comp_dn,
+ ssize_t ssize_length,
+ u_char **dnptrs,
+ u_char *exp_dn,
+ int  i_length
+);
+
+ssize_t dn_expand(
+ const u_char *msg,
+ const u_char *eomorig,
+ const u_char *comp_dn,
+ u_char *exp_dn,
+ int  i_length
+);
+
+
+int set_resfield(
+ int i_field,
+ void *ptr_value
+);
+
+int get_resfield(
+ int i_field,
+ void *ptr_value,
+ size_t i_value
+);
+
+void herror(char *s);
+#endif
 
 #include "../DnsApi.h"
 
@@ -55,7 +128,7 @@ bool CDnsApi::Lookup(const char *name, int rrType)
 #else
 	m_pdnsBase = new u_char[16384];
 	HEADER *h = (HEADER*)m_pdnsBase;
-	int ret = res_query(name, C_IN, rrType, m_pdnsBase, 16384);
+	int ret = res_query((char *)name, C_IN, rrType, m_pdnsBase, 16384);
 	if(ret>0)
 	{
 		/* qdcount should always be 1 for an answer */
@@ -158,7 +231,7 @@ const char *CDnsApi::GetRRName()
 {
 	if(!m_pdnsCurrent)
 		return NULL;
-	return m_dnsName;
+	return (const char *)m_dnsName;
 }
 
 const char *CDnsApi::GetRRPtr()
@@ -175,7 +248,7 @@ const char *CDnsApi::GetRRPtr()
 
 	if(dn_expand(m_pdnsCurrent, m_pdnsEnd, m_prdata, m_dnsTmp, sizeof(m_dnsTmp))<1)
 		return NULL;
-	return m_dnsTmp;
+	return (const char *)m_dnsTmp;
 #endif
 }
 
@@ -193,7 +266,7 @@ const char *CDnsApi::GetRRTxt()
 
 	if(dn_expand(m_pdnsCurrent, m_pdnsEnd, m_prdata, m_dnsTmp, sizeof(m_dnsTmp))<1)
 		return NULL;
-	return m_dnsTmp;
+	return (const char *)m_dnsTmp;
 #endif
 }
 
@@ -217,7 +290,7 @@ CDnsApi::SrvRR *CDnsApi::GetRRSrv()
 	if(n<1)
 		return NULL;
 	p+=n;
-	tmpSrv.server = m_dnsTmp;
+	tmpSrv.server = (const char *)m_dnsTmp;
 	return &tmpSrv;
 #endif
 }

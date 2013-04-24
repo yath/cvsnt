@@ -36,6 +36,9 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#ifdef HAVE_LIMITS_H
+#include <limits.h>
+#endif
 
 #define MODULE info
 
@@ -58,6 +61,8 @@
 #define CVSROOT_VERIFYMSG   "CVSROOT/verifymsg"
 #define CVSROOT_KEYWORDS	"CVSROOT/keywords"
 
+namespace {
+
 struct options
 {
 	char command;
@@ -71,7 +76,7 @@ int parse_rcsinfo(const char *file, const char *directory, cvs::string& rcsline)
 int parse_keywords(const char *file, const char *directory, const char *keyword, options *generic_options, options *spec_options, cvs::string& keywordline, bool have_locker);
 int parse_info_line(std::vector<cvs::string>&cache, const char *line, options *generic_options, options *spec_options, const char *source_file, size_t& source_line);
 int __parse_info_line(const char *line, options *generic_options, options *spec_options, const char *source_file, size_t& source_line, const char **here_text, cvs::string* io, cvs::string& out, bool no_escape);
-cvs::string& auto_escape(const char *_str, char quote);
+const char *auto_escape(const char *_str, char quote);
 
 typedef std::map<const char *,const char *> uservar_t;
 
@@ -469,6 +474,7 @@ options premodule_options[] =
 struct postcommand_information
 {
 	const char *directory; // %p - directory name
+	const char *return_code; // %x - exit value
 };
 
 postcommand_information postcmd_info;
@@ -476,6 +482,7 @@ postcommand_information postcmd_info;
 options postcommand_options[] =
 {
 	{ 'p', &postcmd_info.directory },
+	{ 'x', &postcmd_info.return_code },
 	{ 0 }
 };
 
@@ -598,6 +605,7 @@ int init(const struct trigger_interface_t* cb, const char *command, const char *
 	gen_info.username=username;
 	gen_info.virtual_repository=virtual_repository;
 	gen_info.physical_repository=physical_repository;
+	CServerIo::trace(3,"info_trigger: init, physical_repository=%s",physical_repository);
 	gen_info.sessionid=sessionid;
 	gen_info.editor=editor;
 	gen_info.client_version=client_version;
@@ -769,9 +777,12 @@ int precommand(const struct trigger_interface_t* cb, int argc, const char **argv
 	return parse_info(CVSROOT_PRECOMMAND,"%r %c","%<a",NULL,generic_options,precommand_options);
 }
 
-int postcommand(const struct trigger_interface_t* cb, const char *directory)
+int postcommand(const struct trigger_interface_t* cb, const char *directory, int return_code)
 {
+	char rc[32];
+	snprintf(rc,sizeof(rc),"%d",return_code);
 	postcmd_info.directory = directory;
+	postcmd_info.return_code = rc;
 	return parse_info(CVSROOT_POSTCOMMAND,"%r/%p %c","",directory,generic_options,postcommand_options);
 }
 
@@ -794,6 +805,7 @@ int get_template(const struct trigger_interface_t *cb, const char *directory, co
 	if(!template_ptr)
 		return 0;
 	
+	CServerIo::trace(3,"get_template(%s)",directory);
 	static cvs::string temp;
 	cvs::string file;
 	temp="";
@@ -802,8 +814,10 @@ int get_template(const struct trigger_interface_t *cb, const char *directory, co
 	if(file.size() && fa.open(file.c_str(),"rb"))
 	{
 		size_t len = (size_t)fa.length();
+		CServerIo::trace(3,"Found a %d byte file",len);
 		temp.resize(len);
 		len = fa.read((void*)temp.data(),len);
+		CServerIo::trace(3,"Read %d bytes",len);
 		temp.resize(len);
 		fa.close();
 	}
@@ -835,7 +849,7 @@ int parse_keyword(const struct trigger_interface_t *cb, const char *keyword,cons
 
 	static cvs::string temp;
 	temp="";
-	int ret = parse_keywords(CVSROOT_KEYWORDS,file,keyword,generic_options,keyword_options,temp,(locker&&*locker)?true:false);
+	int ret = parse_keywords(CVSROOT_KEYWORDS,directory,keyword,generic_options,keyword_options,temp,(locker&&*locker)?true:false);
 
 	if(!ret && temp.size())
 		*value=temp.c_str();
@@ -858,62 +872,6 @@ int rcsdiff(const struct trigger_interface_t *cb, const char *file, const char *
 	return 0;
 }
 
-static int init(const struct plugin_interface *plugin);
-static int destroy(const struct plugin_interface *plugin);
-static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param);
-
-static trigger_interface callbacks =
-{
-	{
-		PLUGIN_INTERFACE_VERSION,
-		"Generic commit support file handler",CVSNT_PRODUCTVERSION_STRING,NULL,
-		init,
-		destroy,
-		get_interface,
-		NULL
-	},
-	init,
-	close,
-	pretag,
-	verifymsg,
-	loginfo,
-	history,
-	notify,
-	precommit,
-	postcommit,
-	precommand,
-	postcommand,
-	premodule,
-	postmodule,
-	get_template,
-	parse_keyword,
-	prercsdiff,
-	rcsdiff
-};
-
-static int init(const struct plugin_interface *plugin)
-{
-	return 0;
-}
-
-static int destroy(const struct plugin_interface *plugin)
-{
-	return 0;
-}
-
-static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param)
-{
-	if(interface_type!=pitTrigger)
-		return NULL;
-
-	return (void*)&callbacks;
-}
-
-plugin_interface *get_plugin_interface()
-{
-	return &callbacks.plugin;
-}
-
 /*
  *
  * Generic parser.
@@ -934,9 +892,9 @@ int parse_info(const char *file, const char *default_cmd_parms, const char *defa
 {
 	int ret = 0;
 	size_t current_line = 0, default_current_line;
-	cvs::string str,default_line,here_text;
+	cvs::string physical_file,default_line,here_text;
 	cvs::wildcard_filename mod(directory?directory:"");
-	cvs::sprintf(str,512,"%s/%s",gen_info.physical_repository,file);
+	cvs::sprintf(physical_file,512,"%s/%s",gen_info.physical_repository,file);
 	bool found = false;
 	const char *p;
 
@@ -945,16 +903,21 @@ int parse_info(const char *file, const char *default_cmd_parms, const char *defa
 
 	bool& cache_valid = meta_cache_valid[file];
 	std::vector<cvs::string>& cache = meta_cache[file];
+	char cwd[PATH_MAX];
+	getcwd(cwd,sizeof(cwd));
 
-	CServerIo::trace(3,"default_trigger: parse_info(%s,%s,%s,%s)",file,default_cmd_parms,default_io_parms,directory?directory:"<null>");
+	CServerIo::trace(3,"default_trigger: parse_info(%s,%s,%s,%s) cwd(%s)",file,default_cmd_parms,default_io_parms,directory?directory:"<null>",cwd);
 	if(!cache_valid)
 	{
 		cvs::string line;
 		CFileAccess acc;
 
-		if(!acc.open(str.c_str(),"rb")) /* We have to open as binary, otherwise Win32 breaks... ftell() starts going negative!! */
+		getcwd(cwd,sizeof(cwd));
+		CServerIo::trace(3,"default_trigger: open(%s) cwd(%s)",physical_file.c_str(),cwd);
+		if(!acc.open(physical_file.c_str(),"rb")) /* We have to open as binary, otherwise Win32 breaks... ftell() starts going negative!! */
 		{
-			CServerIo::trace(3,"default_trigger: no file");
+			getcwd(cwd,sizeof(cwd));
+			CServerIo::trace(3,"default_trigger: no file cwd=%s",cwd);
 			cache_valid = true;
 			return 0;
 		}
@@ -1712,7 +1675,7 @@ int __parse_info_line(const char *line, options *generic_options, options *spec_
 	return state;
 }
 
-cvs::string& auto_escape(const char *_str, char quote)
+const char *auto_escape(const char *_str, char quote)
 {
     static const char meta[] = "`\"'\\ ";
 	static cvs::string str;
@@ -1720,7 +1683,7 @@ cvs::string& auto_escape(const char *_str, char quote)
 	str=_str;
 
 	if(!strpbrk(str.c_str(),meta))
-		return str;
+		return str.c_str();
 	else
 	{
 		str.reserve(str.size()+16);
@@ -1758,7 +1721,64 @@ cvs::string& auto_escape(const char *_str, char quote)
 			} while(1);
 		}
 	}
-	return str;
+	return str.c_str();
 }
 
+} // anonymous namespace
+
+static int init(const struct plugin_interface *plugin);
+static int destroy(const struct plugin_interface *plugin);
+static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param);
+
+static trigger_interface callbacks =
+{
+	{
+		PLUGIN_INTERFACE_VERSION,
+		"Generic commit support file handler",CVSNT_PRODUCTVERSION_STRING,NULL,
+		init,
+		destroy,
+		get_interface,
+		NULL
+	},
+	init,
+	close,
+	pretag,
+	verifymsg,
+	loginfo,
+	history,
+	notify,
+	precommit,
+	postcommit,
+	precommand,
+	postcommand,
+	premodule,
+	postmodule,
+	get_template,
+	parse_keyword,
+	prercsdiff,
+	rcsdiff
+};
+
+static int init(const struct plugin_interface *plugin)
+{
+	return 0;
+}
+
+static int destroy(const struct plugin_interface *plugin)
+{
+	return 0;
+}
+
+static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param)
+{
+	if(interface_type!=pitTrigger)
+		return NULL;
+
+	return (void*)&callbacks;
+}
+
+plugin_interface *get_plugin_interface()
+{
+	return &callbacks.plugin;
+}
 

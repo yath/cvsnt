@@ -42,7 +42,11 @@ int Create_Admin (const char *dir, const char *update_dir, const char *repositor
     else
 		strcpy (tmp, CVSADM);
     if (isfile (tmp))
+	{
+		if(proxy_active)
+			return 0; // This is more a workaround than a fix...
 		error (1, 0, "there is a version in %s already", update_dir);
+	}
 
     if (CVS_MKDIR (tmp, 0777) < 0)
     {
@@ -73,8 +77,7 @@ int Create_Admin (const char *dir, const char *update_dir, const char *repositor
 #endif
 
     /* record the current cvs root for later use */
-
-    Create_Root (dir, current_parsed_root->original);
+	Create_Root (dir, current_parsed_root->original);
     if (dir != NULL)
 	(void) sprintf (tmp, "%s/%s", dir, CVSADM_REP);
     else
@@ -88,7 +91,7 @@ int Create_Admin (const char *dir, const char *update_dir, const char *repositor
 	    error (1, errno, "cannot open %s/%s", update_dir, CVSADM_REP);
     }
     reposcopy = xstrdup (repository);
-    Sanitize_Repository_Name (reposcopy);
+    Sanitize_Repository_Name (&reposcopy);
 
     /* The top level of the repository is a special case -- we need to
        write it with an extra dot at the end.  This trailing `.' stuff

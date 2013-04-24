@@ -21,8 +21,6 @@
 #include "cvsnt.h"
 #include "AdvancedPage.h"
 
-#include "..\windows-NT\posixdir\cvsflt\cvsflt.h"
-
 #include <lm.h>
 #include <ntsecapi.h>
 #include <dsgetdc.h>
@@ -55,7 +53,6 @@ void CAdvancedPage::DoDataExchange(CDataExchange* pDX)
 	//{{AFX_DATA_MAP(CAdvancedPage)
 	DDX_Control(pDX, IDC_NOREVERSEDNS, m_btNoReverseDns);
 	DDX_Control(pDX, IDC_ALLOWTRACE, m_btAllowTrace);
-	DDX_Control(pDX, IDC_CASESENSITIVE, m_btCaseSensitive);
 	DDX_Control(pDX, IDC_LOCKSERVERLOCAL, m_btLockServerLocal);
 	DDX_Control(pDX, IDC_UNICODESERVER, m_btUnicodeServer);
 	DDX_Control(pDX, IDC_READONLY, m_btReadOnly);
@@ -63,6 +60,7 @@ void CAdvancedPage::DoDataExchange(CDataExchange* pDX)
 	//}}AFX_DATA_MAP
 	DDX_Control(pDX, IDC_ZEROCONF, m_cbZeroconf);
 	DDX_Control(pDX, IDC_ATOMICCHECKOUTS, m_cbAtomicCheckouts);
+	DDX_Control(pDX, IDC_GLOBALSCRIPT, m_cbGlobalScript);
 	DDX_Control(pDX, IDC_REPLICATION, m_btReplication);
 	DDX_Control(pDX, IDC_REPLICATIONPORT, m_edReplicationPort);
 	DDX_Control(pDX, IDC_REPLICATIONPORT_TEXT, m_stReplicationPort);
@@ -73,7 +71,6 @@ BEGIN_MESSAGE_MAP(CAdvancedPage, CTooltipPropertyPage)
 	//{{AFX_MSG_MAP(CAdvancedPage)
 	ON_BN_CLICKED(IDC_NOREVERSEDNS, OnBnClickedNoreversedns)
 	ON_BN_CLICKED(IDC_ALLOWTRACE, OnBnClickedAllowtrace)
-	ON_BN_CLICKED(IDC_CASESENSITIVE, OnBnClickedCasesensitive)
 	ON_BN_CLICKED(IDC_LOCKSERVERLOCAL, OnBnClickedLockserverlocal)
 	ON_BN_CLICKED(IDC_UNICODESERVER, OnBnClickedUnicodeserver)
 	ON_BN_CLICKED(IDC_READONLY, OnBnClickedReadonly)
@@ -81,6 +78,7 @@ BEGIN_MESSAGE_MAP(CAdvancedPage, CTooltipPropertyPage)
 	//}}AFX_MSG_MAP
 	ON_CBN_SELENDOK(IDC_ZEROCONF, OnCbnSelendokZeroconf)
 	ON_BN_CLICKED(IDC_ATOMICCHECKOUTS, OnBnClickedAtomiccheckouts)
+	ON_BN_CLICKED(IDC_GLOBALSCRIPT, OnBnClickedGlobalscript)
 	ON_CBN_SELCHANGE(IDC_ZEROCONF, OnCbnSelchangeZeroconf)
 	ON_BN_CLICKED(IDC_REPLICATION, OnBnClickedReplication)
 	ON_EN_CHANGE(IDC_REPLICATIONPORT, OnEnChangeReplicationport)
@@ -96,24 +94,15 @@ BOOL CAdvancedPage::OnInitDialog()
 
 	CTooltipPropertyPage::OnInitDialog();
 
-	if(CvsOpenFilter())
-	{
-		m_btCaseSensitive.SetCheck((t=QueryDword(_T("CaseSensitive")))>=0?t:0);
-		CvsCloseFilter();
-	}
-	else
-	{
-		m_btCaseSensitive.SetCheck(0);
-		m_btCaseSensitive.EnableWindow(FALSE);
-	}
-
 	m_btNoReverseDns.SetCheck((t=QueryDword(_T("NoReverseDns")))>=0?t:0);
 	m_btLockServerLocal.SetCheck((t=QueryDword(_T("LockServerLocal")))>=0?t:1);
 	m_btAllowTrace.SetCheck((t=QueryDword(_T("AllowTrace")))>=0?t:0);
-	m_btUnicodeServer.SetCheck((t=QueryDword(_T("UnicodeServer")))>=0?t:0);
+  	// should the default be UTF8 if no other is specified?
+	m_btUnicodeServer.SetCheck(1);
 	m_btReadOnly.SetCheck((t=QueryDword(_T("ReadOnlyServer")))>=0?t:0);
 	m_btRemoteInit.SetCheck((t=QueryDword(_T("RemoteInit")))>=0?t:0);
 	m_cbAtomicCheckouts.SetCheck((t=QueryDword(_T("AtomicCheckouts")))>=0?t:0);
+	m_cbGlobalScript.SetCheck((t=QueryDword(_T("GlobalScriptTrigger")))>=0?t:0);
 
 	TCHAR p[32];
 	t=QueryDword(_T("UnisonPort"));
@@ -165,17 +154,17 @@ BOOL CAdvancedPage::OnInitDialog()
 			m_cbZeroconf.SetCurSel(1);
 	}
 
+	m_btUnicodeServer.EnableWindow(FALSE);
 	if(!g_bPrivileged)
 	{
 		m_btNoReverseDns.EnableWindow(FALSE);
 		m_btAllowTrace.EnableWindow(FALSE);
-		m_btCaseSensitive.EnableWindow(FALSE);
 		m_btLockServerLocal.EnableWindow(FALSE);
-		m_btUnicodeServer.EnableWindow(FALSE);
 		m_btReadOnly.EnableWindow(FALSE);
 		m_btRemoteInit.EnableWindow(FALSE);
 		m_cbZeroconf.EnableWindow(FALSE);
 		m_cbAtomicCheckouts.EnableWindow(FALSE);
+		m_cbGlobalScript.EnableWindow(FALSE);
 		m_btReplication.EnableWindow(FALSE);
 		m_edReplicationPort.EnableWindow(FALSE);
 		m_stReplicationPort.EnableWindow(FALSE);
@@ -203,16 +192,6 @@ BOOL CAdvancedPage::OnApply()
 	if(RegSetValueEx(g_hServerKey,_T("AllowTrace"),NULL,REG_DWORD,(BYTE*)&dwVal,sizeof(DWORD)))
 		AfxMessageBox(_T("RegSetValueEx failed"),MB_ICONSTOP);
 
-	dwVal=m_btCaseSensitive.GetCheck()?1:0;
-
-	if(RegSetValueEx(g_hServerKey,_T("CaseSensitive"),NULL,REG_DWORD,(BYTE*)&dwVal,sizeof(DWORD)))
-		AfxMessageBox(_T("RegSetValueEx failed"),MB_ICONSTOP);
-
-	dwVal=m_btUnicodeServer.GetCheck()?1:0;
-
-	if(RegSetValueEx(g_hServerKey,_T("UnicodeServer"),NULL,REG_DWORD,(BYTE*)&dwVal,sizeof(DWORD)))
-		AfxMessageBox(_T("RegSetValueEx failed"),MB_ICONSTOP);
-
 	dwVal=m_btReadOnly.GetCheck()?1:0;
 
 	if(RegSetValueEx(g_hServerKey,_T("ReadOnlyServer"),NULL,REG_DWORD,(BYTE*)&dwVal,sizeof(DWORD)))
@@ -226,6 +205,11 @@ BOOL CAdvancedPage::OnApply()
 	dwVal=m_cbAtomicCheckouts.GetCheck()?1:0;
 
 	if(RegSetValueEx(g_hServerKey,_T("AtomicCheckouts"),NULL,REG_DWORD,(BYTE*)&dwVal,sizeof(DWORD)))
+		AfxMessageBox(_T("RegSetValueEx failed"),MB_ICONSTOP);
+
+	dwVal=m_cbGlobalScript.GetCheck()?1:0;
+
+	if(RegSetValueEx(g_hServerKey,_T("GlobalScriptTrigger"),NULL,REG_DWORD,(BYTE*)&dwVal,sizeof(DWORD)))
 		AfxMessageBox(_T("RegSetValueEx failed"),MB_ICONSTOP);
 
 	dwVal=m_cbZeroconf.GetCurSel();
@@ -289,11 +273,6 @@ void CAdvancedPage::OnBnClickedAllowtrace()
 	SetModified();
 }
 
-void CAdvancedPage::OnBnClickedCasesensitive()
-{
-	SetModified();
-}
-
 void CAdvancedPage::OnBnClickedLockserverlocal()
 {
 	SetModified();
@@ -321,6 +300,11 @@ void CAdvancedPage::OnCbnSelendokZeroconf()
 }
 
 void CAdvancedPage::OnBnClickedAtomiccheckouts()
+{
+	SetModified();
+}
+
+void CAdvancedPage::OnBnClickedGlobalscript()
 {
 	SetModified();
 }

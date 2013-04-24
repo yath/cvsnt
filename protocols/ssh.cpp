@@ -15,6 +15,12 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -220,7 +226,7 @@ int ssh_connect(const struct protocol_interface *protocol, int verify_only)
 	if(current_server()->current_root->optional_2)
 		key=(char*)current_server()->current_root->optional_2;
 
-	if(plink_connect(username, password, key, server, atoi(current_server()->current_root->port), version?atoi(version):0, command_line, current_server()->current_root->proxy, current_server()->current_root->proxyport, current_server()->current_root->proxyuser, current_server()->current_root->proxypassword))
+	if(plink_connect(username, password, key, cvs::idn(server), atoi(current_server()->current_root->port), version?atoi(version):0, command_line, current_server()->current_root->proxy, current_server()->current_root->proxyport, current_server()->current_root->proxyuser, current_server()->current_root->proxypassword))
 	{
 		server_error(0,"Couldn't connect to remote server - plink error");
 		return CVSPROTO_FAIL;

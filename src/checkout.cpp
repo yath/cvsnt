@@ -341,7 +341,7 @@ int checkout (int argc, char **argv)
 		send_file_names(argc,argv,SEND_EXPAND_WILD);
 		client_module_expansion.clear();
 		send_to_server("expand-modules\n",0);
-		err = get_server_responses();
+		err = get_server_responses_noproxy();
 		if(err)
 			return err;
 
@@ -460,6 +460,7 @@ int checkout (int argc, char **argv)
 			options = NULL;
 			return 0;
 		}
+		TRACE(3,"checkout - about to open_module");
 		db = open_module ();
 
 
@@ -490,7 +491,57 @@ int checkout (int argc, char **argv)
 
 		set_global_update_options(merge_from_branchpoint,conflict_3way,case_sensitive,force_checkout_time);
 
+		TRACE(3,"checkout - about to do_module %d times",argc);
+		int userevone=1;
+
 		for (i = 0; i < argc; i++)
+		if((!current_parsed_root->isremote || server_active)&&(userevone))
+		{
+		    char *repositorytoopen;
+			TRACE(3,"checkout - trying to determine if \"%s\" could be a renamed file",PATCH_NULL(argv[i]));
+		    repositorytoopen = (char*)xmalloc (strlen (current_parsed_root->directory)
+					  + strlen (argv[i])
+					  + 10);
+		    (void) sprintf (repositorytoopen, "%s/%s", current_parsed_root->directory, argv[i]);
+		    Sanitize_Repository_Name (&repositorytoopen);
+		    if (!isdir (repositorytoopen))
+		    {
+			int openres1, openres2;
+			char *dirtoopen;
+			char *dirtoopenpos;
+			int dirnonbranch=0; /* no idea how to get a valid value for this */
+			char *lastdirpos = strrchr(repositorytoopen,'/');
+			if (lastdirpos!=NULL)
+				*lastdirpos='\0';
+			dirtoopen = (char*)xmalloc (strlen (repositorytoopen) + 10);
+			strcpy(dirtoopen,repositorytoopen);
+			strcpy(repositorytoopen, current_parsed_root->directory);
+			Sanitize_Repository_Name (&repositorytoopen);
+			dirtoopenpos=dirtoopen+strlen(repositorytoopen);
+			if (strncmp(dirtoopen,repositorytoopen,strlen(repositorytoopen))==0)
+				memmove(dirtoopen,dirtoopenpos,strlen(dirtoopenpos)+1);
+			(void) sprintf (repositorytoopen, "%s%s", current_parsed_root->directory, dirtoopen);
+			Sanitize_Repository_Name (&repositorytoopen);
+			openres1=open_directory(repositorytoopen,".",tag,date,dirnonbranch,NULL,current_parsed_root->isremote);
+			openres2=open_directory(repositorytoopen,".",tag,date,dirnonbranch,"_H_",current_parsed_root->isremote);
+			err += do_module (db, argv[i], m_type, "Updating", checkout_proc,
+				where, shorten, local, run_module_prog, !pipeout,
+				NULL);
+			TRACE(3,"rename kludge - close directory twice (%d,%d)?",openres1,openres2);
+			if (openres1==0)
+				close_directory();
+			if (openres2==0)
+				close_directory();
+			xfree(dirtoopen); dirtoopen=NULL;
+			}
+			else
+			err += do_module (db, argv[i], m_type, "Updating", checkout_proc,
+				where, shorten, local, run_module_prog, !pipeout,
+				NULL);
+
+			xfree(repositorytoopen);
+		}
+		else
 		err += do_module (db, argv[i], m_type, "Updating", checkout_proc,
 				where, shorten, local, run_module_prog, !pipeout,
 				NULL);
@@ -498,6 +549,7 @@ int checkout (int argc, char **argv)
 	}
 	xfree (options);
 	xfree(where);
+	TRACE(3,"checkout - return %d errors",err);
     return (err);
 }
 
@@ -628,6 +680,7 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 	const char *mapped_repository;
 	const char *err_msg;
 
+	TRACE(3,"checkout_proc() - OK, so we're doing the checkout! ");
     /*
      * OK, so we're doing the checkout! Our args are as follows: 
      *  argc,argv contain either dir or dir followed by a list of files 
@@ -646,9 +699,13 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 			  + (mfile == NULL ? 0 : strlen (mfile))
 			  + 10);
     (void) sprintf (repository, "%s/%s", current_parsed_root->directory, argv[0]);
-    Sanitize_Repository_Name (repository);
+    Sanitize_Repository_Name (&repository);
 	mapped_repository = map_repository(repository);
 
+	if (tag)
+		TRACE(3,"checkout proc - verify the user can read the module/dir %s and tag %s",mapped_repository,tag);
+	else
+		TRACE(3,"checkout proc - verify the user can read the module/dir %s",mapped_repository);
     if (! verify_read(mapped_repository,NULL,tag,&err_msg,NULL))
     {
 		if(tag)
@@ -659,6 +716,10 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 			error(0,0,"%s",err_msg);
        return (1);
     }
+	if(tag)
+		TRACE(3,"checkout proc - verified the user can read the module/dir %s and tag %s",mapped_repository,tag);
+	else
+		TRACE(3,"checkout proc - verified the user can read the module/dir %s",mapped_repository);
 
     /* save the original value of preload_update_dir */
     if (preload_update_dir != NULL)
@@ -740,6 +801,8 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 
     if (mfile != NULL)
     {
+	TRACE(3,"checkout - the user has asked for a single file or directory from within a module.");
+
 	/* The mfile variable can have one or more path elements.  If
 	   it has multiple elements, we want to tack those onto both
 	   repository and where.  The last element may refer to either
@@ -765,7 +828,7 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 
 	/* Does mfile have multiple path elements? */
 
-	cp = strrchr (mfile, '/');
+	cp = (char*)strrchr (mfile, '/');
 	if (cp != NULL)
 	{
 	    *cp = '\0';
@@ -783,6 +846,7 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 	(void) sprintf (path, "%s/%s", repository, mfile);
 	if (isdir (path))
 	{
+		TRACE(3,"checkout - It's a directory, so tack it on to repository and where, as we did above.");
 	    /* It's a directory, so tack it on to repository and
                where, as we did above. */
 
@@ -793,12 +857,16 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 	}
 	else
 	{
+		TRACE(3,"checkout - It's a file, which means we have to screw around with argv.");
+		TRACE(3,"  argv[0]- \"%s\"",argv[0]);
+		TRACE(3,"  argv[1]- \"%s\"",PATCH_NULL((char*)mfile));
 	    /* It's a file, which means we have to screw around with
                argv. */
 	    myargv[0] = argv[0];
 	    myargv[1] = (char*)mfile;
 	    argc = 2;
 	    argv = myargv;
+		TRACE(3,"  argc   - %d",argc);
 	}
 	xfree (path);
     }
@@ -814,6 +882,14 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 	else
 		preload_update_dir = xstrdup (where);
 
+	TRACE(3,"* At this point, where is the directory we want to build, repository is");
+	TRACE(3,"* the repository for the lowest level of the path.");
+	TRACE(3,"* ");
+	TRACE(3,"* We need to tell build_dirs not only the path we want it to");
+	TRACE(3,"* build, but also the repositories we want it to populate the");
+	TRACE(3,"* path with.  To accomplish this, we walk the path backwards, one");
+	TRACE(3,"* pathname component at a time, constucting a linked list of");
+	TRACE(3,"* struct dir_to_build.");
     /*
      * At this point, where is the directory we want to build, repository is
      * the repository for the lowest level of the path.
@@ -966,6 +1042,7 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 	    }
 	}
 
+	TRACE(4,"checkout_proc: clean up");
 	/* clean up */
 	xfree (reposcopy);
 
@@ -988,6 +1065,7 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 	    {
 		/* It may be argued that we shouldn't set any sticky
 		   bits for the top-level repository.  FIXME?  */
+		TRACE(4,"checkout_proc: build_one_dir()");
 		build_one_dir (current_parsed_root->directory, ".", argc <= 1);
 
 #ifdef SERVER_SUPPORT
@@ -1021,13 +1099,16 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 			which |= W_FAKE;
 	}
 
+	TRACE(3,"checkout_proc: set up the repository (or make sure the old one matches) ");
 	/* set up the repository (or make sure the old one matches) */
 	if (!(which&W_FAKE) && !isfile (CVSADM))
 	{
 	    FILE *fp;
 
+		TRACE(3,"checkout_proc: !(which&W_FAKE) && !isfile (CVSADM)");
 	    if (!noexec && argc > 1)
 	    {
+		TRACE(3,"checkout_proc: !noexec && argc > 1");
 		/* I'm not sure whether this check is redundant.  */
 		if (!isdir (mapped_repository))
 		    error (1, 0, "there is no repository %s", repository);
@@ -1087,6 +1168,7 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
      */
     if (pipeout)
     {
+	TRACE(3,"checkout_proc: pipeout processing");
 	if ( CVS_CHDIR (mapped_repository) < 0)
 	{
 	    error (0, errno, "cannot chdir to %s", repository);
@@ -1179,7 +1261,7 @@ static int checkout_proc(int argc, char **argv, const char *where_orig,
 		Register (entries, finfo.file,
 			  vers->vn_rcs ? vers->vn_rcs : "0",
 			  line, vers->options, vers->tag,
-			  vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid);
+			  vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid, NULL);
 		xfree (line);
 	    }
 	    freevers_ts (&vers);

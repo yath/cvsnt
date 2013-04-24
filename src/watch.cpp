@@ -32,22 +32,51 @@ static struct addremove_args the_args;
 
 void watch_modify_watchers (const char *file, const char *who, struct addremove_args *what)
 {
-	XmlHandle_t filehandle;
+	CXmlNodePtr  filehandle;
 	
 	TRACE(3,"watch_modify_watchers(%s,%s)",PATCH_NULL(file),PATCH_NULL(who));
+	filehandle = fileattr_getroot();
+	filehandle->xpathVariable("name",file?file:"");
+	filehandle->xpathVariable("user",who?who:"");
 	if(file)
-		filehandle = fileattr_find(NULL,"file[@name=F'%s']/watcher[@name=U'%s']",file,who);
+		if(!filehandle->Lookup("file[cvs:filename(@name,$name)]")) filehandle=NULL;
 	else
-		filehandle = fileattr_find(NULL,"directory/default/watcher[@name=U'%s']",who);
+		if(!filehandle->Lookup("directory/default")) filehandle=NULL;
 
-	if(!filehandle && !what->adding)
+	if(filehandle && !filehandle->XPathResultNext()) filehandle = NULL;
+	
+	if(filehandle && (!filehandle->Lookup("watcher[cvs:username(@name,$user)]") || !filehandle->XPathResultNext()))
+	  filehandle=NULL;
+
+	if(filehandle && !what->adding)
 		return;
 	if(!filehandle)
 	{
 		if(file)
-			filehandle= fileattr_create(NULL,"file[@name=F'%s']/watcher[@name=U'%s']",file,who);
+		{
+			filehandle = fileattr_getroot();
+			filehandle->xpathVariable("name",file);
+			if(!filehandle->Lookup("file[cvs:filename(@name,$name)]") || !filehandle->XPathResultNext())
+			{
+				filehandle=fileattr_getroot();
+				filehandle->NewNode("file");
+				filehandle->NewAttribute("name",file);
+			}
+		}
 		else
-			filehandle= fileattr_create(NULL,"directory/default/watcher[@name=U'%s']",who);
+		{
+			filehandle = fileattr_getroot();
+			if(!filehandle->Lookup("directory/default") || !filehandle->XPathResultNext())
+			{
+				filehandle=fileattr_getroot();
+				filehandle->NewNode("directory");
+				filehandle->NewNode("default");
+			}
+		}
+
+		// We already know that these don't exist, from the search above
+		filehandle->NewNode("watcher");
+		filehandle->NewAttribute("name",who);
 	}
 	if(!filehandle)
 		error(0,0,"Couldn't create node in modify_watchers");
@@ -71,17 +100,17 @@ void watch_modify_watchers (const char *file, const char *who, struct addremove_
 	else
 	{
 		if(what->edit)
-			fileattr_create(filehandle,"edit");
+			filehandle->NewNode("edit",NULL,false);
 		if(what->commit)
-			fileattr_create(filehandle,"commit");
+			filehandle->NewNode("commit",NULL,false);
 		if(what->unedit)
-			fileattr_create(filehandle,"unedit");
+			filehandle->NewNode("unedit",NULL,false);
 		if(what->add_tedit)
-			fileattr_create(filehandle,"temp_edit");
+			filehandle->NewNode("temp_edit",NULL,false);
 		if(what->add_tcommit)
-			fileattr_create(filehandle,"temp_commit");
+			filehandle->NewNode("temp_commit",NULL,false);
 		if(what->add_tunedit)
-			fileattr_create(filehandle,"temp_unedit");
+			filehandle->NewNode("temp_unedit",NULL,false);
 	}
 }
 
@@ -203,7 +232,7 @@ static int watch_addremove(int argc, char **argv)
     err = start_recursion (addremove_fileproc, addremove_filesdoneproc,
 			   (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 			   argc, argv, local, W_LOCAL, 0, 0, (char *)NULL, NULL,
-			   1, verify_write);
+			   1, verify_write, NULL);
 
     Lock_Cleanup ();
     return err;
@@ -265,10 +294,13 @@ static const char *const watchers_usage[] =
 
 static int watchers_fileproc (void *callerdat, struct file_info *finfo)
 {
-	XmlHandle_t handle;
+	CXmlNodePtr  handle;
 	const char *name;
 
-	handle = fileattr_find(NULL,"file[@name=F'%s']/watcher",finfo->file);
+	handle = fileattr_getroot();
+	handle->xpathVariable("name",finfo->file);
+	if(!handle->Lookup("file[cvs:filename(@name,$name)]/watcher") || !handle->XPathResultNext())
+	  handle = NULL;
 
 	if(!handle)
 		return 0;
@@ -293,7 +325,8 @@ static int watchers_fileproc (void *callerdat, struct file_info *finfo)
 		if(fileattr_find(handle,"temp_commit"))
 			cvs_output("\ttcommit",0);
 	    cvs_output ("\n", 1);
-		handle = fileattr_next(handle);
+		if(!handle->XPathResultNext())
+		   handle = NULL;
 	}
 
     return 0;
@@ -341,5 +374,5 @@ int watchers (int argc, char **argv)
     return start_recursion (watchers_fileproc, (FILESDONEPROC) NULL,
 			    (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 			    argc, argv, local, W_LOCAL, 0, 1, (char *)NULL, NULL,
-			    1, verify_write);
+			    1, verify_read, NULL);
 }

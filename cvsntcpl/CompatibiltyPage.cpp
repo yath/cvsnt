@@ -110,7 +110,8 @@ BOOL CCompatibiltyPage::OnInitDialog()
 		CompatibilityData[0].HideStatus=1;
 		CompatibilityData[0].IgnoreWrappers=0;
 		RegDeleteValue(g_hServerKey,_T("FakeUnixCvs"));
-		GetParent()->PostMessage(PSM_CHANGED, (WPARAM)m_hWnd); /* SetModified happens too early */
+		if(g_bPrivileged)
+			GetParent()->PostMessage(PSM_CHANGED, (WPARAM)m_hWnd); /* SetModified happens too early */
 	}
 	else
 	{

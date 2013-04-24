@@ -461,7 +461,7 @@ int CCodepage::TranscodeBuffer(const char *from, const char *to, const void *inb
 		strcpy((char *)outbuf,(const char *)inbuf);
 		return -1;
 	}
-	CServerIo::trace(4,"Transcode %s",inbuf);
+//	CServerIo::trace(4,"Transcode %s",inbuf);
 	do
 	{
 
@@ -483,7 +483,7 @@ int CCodepage::TranscodeBuffer(const char *from, const char *to, const void *inb
 	olen = outlen - out_remaining;
 	if(!len)
 		olen--; /* Compensate for NULL */
-	if(olen)
-		CServerIo::trace(4,"Transcode returned %-*.*s",olen,olen,outbuf);
+//	if(olen)
+//		CServerIo::trace(4,"Transcode returned %-*.*s",olen,olen,outbuf);
 	return chars_deleted;
 }

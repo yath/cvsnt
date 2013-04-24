@@ -1,17 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<Wix xmlns='http://schemas.microsoft.com/wix/2003/01/wi'>
-<Fragment Id="wait4cvs">
-      <DirectoryRef Id="CVSNT_INSTALLDIR" src="$(var.CVSNT_BASE)\">
-         <Directory Id="Wait4CvsStuff" Name=".">
-	   <Component Id="wait4cvs" Guid="4b72935c-06e6-4c57-9947-1f02600d2149" DiskId="5">
-	      <File Id="wait4cvs.exe" Name="wait4cvs.exe" src="d:/march-hare/wait4cvs/wait4cvs.exe" />
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Fragment Id="wait4cvs">
+        <DirectoryRef Id="TOOLS_INSTALLDIR" FileSource="$(var.MARCH_HARE)\..\..\wait4cvs\">
+            <Component Id="wait4cvs" Guid="4b72935c-06e6-4c57-9947-1f02600d2149" DiskId="5">
+                <File Id="wait4cvs.exe" Name="wait4cvs.exe" />
             </Component>
-         </Directory>
-      </DirectoryRef>
+        </DirectoryRef>
 
-    <FeatureRef Id="ServerComponents">
-      <ComponentRef Id="wait4cvs" />
-    </FeatureRef>
-  </Fragment>
+        <FeatureRef Id="ServerComponents">
+            <ComponentRef Id="wait4cvs" />
+        </FeatureRef>
+    </Fragment>
 </Wix>

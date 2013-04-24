@@ -15,4 +15,3 @@
 #define PROJECTFILENAME "cvsagent.exe"
 #include "..\..\windows-NT\VersionInfoCommon.rc2"
 
-1 RT_MANIFEST "res\cvsagent.manifest"

@@ -40,7 +40,6 @@ END
 
 3 TEXTINCLUDE 
 BEGIN
-    "#include ""../cvsservice/servicemsg.rc""\r\n"
     "\0"
 END
 
@@ -92,7 +91,6 @@ END
 //
 // Generated from the TEXTINCLUDE 3 resource.
 //
-#include "../cvsservice/servicemsg.rc"
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED

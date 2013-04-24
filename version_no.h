@@ -29,11 +29,13 @@
 // cvsnt version
 #define CVSNT_PRODUCT_MAJOR 2
 #define CVSNT_PRODUCT_MINOR 5
-#define CVSNT_PRODUCT_PATCHLEVEL 03
+#define CVSNT_PRODUCT_PATCHLEVEL 05
+#define CVSNT_PRODUCT_PATCHLEVELS 5
 #include "build.h"
-#define CVSNT_PRODUCT_NAME " (Scorpio)"
+#define CVSNT_PRODUCT_NAME " (Gan)"
 
-//#define CVSNT_SPECIAL_BUILD "Release Candidate 5"
+// usually something like "RC 9"
+//#define CVSNT_SPECIAL_BUILD "RC 2"
 
 #ifdef RC_INVOKED
 //#define CVSNT_SPECIAL_BUILD "Prerelease"

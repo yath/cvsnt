@@ -25,12 +25,12 @@
 #include "cvs_hqx.h"
 
 
-void mac_decode_file (char *infile, char *outfile, int binary)
+void mac_decode_file (const char *infile, char *outfile, int binary)
 {
 	mac_convert_file(infile, 0, outfile, binary);
 }
 
-void mac_encode_file (char *infile, char *outfile, int binary)
+void mac_encode_file (const char *infile, char *outfile, int binary)
 {
 	mac_convert_file(infile, 1, outfile, binary);
 }

@@ -97,7 +97,7 @@ struct buffer_data
 /* The type of a function passed as a memory error handler.  */
 typedef void (*BUFMEMERRPROC)(struct buffer *);
 
-extern struct buffer *buf_initialize (int (*) (void *, char *, int,
+struct buffer *buf_initialize (int (*) (void *, char *, int,
 						     int, int *),
 					    int (*) (void *, const char *,
 						     int, int *),
@@ -106,45 +106,47 @@ extern struct buffer *buf_initialize (int (*) (void *, char *, int,
 					    int (*) (void *),
 					    void (*) (struct buffer *),
 					    void *);
-extern void buf_free(struct buffer *);
-extern struct buffer *buf_nonio_initialize(void (*) (struct buffer *));
-extern struct buffer *stdio_buffer_initialize(FILE *, int, void (*) (struct buffer *));
-extern struct buffer *compress_buffer_initialize(struct buffer *, int, int, void (*) (struct buffer *));
-extern struct buffer *packetizing_buffer_initialize(struct buffer *, int (*) (void *, const char *, char *, int),
+void buf_free(struct buffer *);
+struct buffer *buf_nonio_initialize(void (*) (struct buffer *));
+struct buffer *stdio_buffer_initialize(FILE *, int, void (*) (struct buffer *));
+struct buffer *compress_buffer_initialize(struct buffer *, int, int, void (*) (struct buffer *));
+struct buffer *packetizing_buffer_initialize(struct buffer *, int (*) (void *, const char *, char *, int),
 	 int (*) (void *, const char *, char *, int, int *), void *,
 	 void (*) (struct buffer *));
-extern struct buffer *nonpacketizing_buffer_initialize(struct buffer *, int (*) (void *, const char *, char *, int),
+struct buffer *nonpacketizing_buffer_initialize(struct buffer *, int (*) (void *, const char *, char *, int),
 	 int (*) (void *, const char *, char *, int, int *), void *,
 	 void (*) (struct buffer *));
-extern void packetizing_buffer_set_wrap(struct buffer *buf, struct buffer *wrap);
+void packetizing_buffer_set_wrap(struct buffer *buf, struct buffer *wrap);
 
-extern int buf_empty_p(struct buffer *);
-extern void buf_output(struct buffer *, const char *, int);
-extern void buf_output0(struct buffer *, const char *);
-extern void buf_append_char(struct buffer *, int);
-extern int buf_send_output(struct buffer *);
-extern int buf_flush(struct buffer *, int);
-extern int set_nonblock(struct buffer *);
-extern int set_block(struct buffer *);
-extern int buf_send_counted(struct buffer *);
-extern int buf_send_special_count(struct buffer *, int);
-extern void buf_append_data(struct buffer *,
+int buf_empty_p(struct buffer *);
+void buf_output(struct buffer *, const char *, int);
+void buf_output0(struct buffer *, const char *);
+void buf_append_char(struct buffer *, int);
+int buf_send_output(struct buffer *);
+int buf_flush(struct buffer *, int);
+int set_nonblock(struct buffer *);
+int set_block(struct buffer *);
+int buf_send_counted(struct buffer *);
+int buf_send_special_count(struct buffer *, int);
+void buf_append_data(struct buffer *,
 				   struct buffer_data *,
 				   struct buffer_data *);
-extern void buf_append_buffer(struct buffer *, struct buffer *);
-extern int buf_read_file(FILE *, long, struct buffer_data **,
+void buf_append_buffer(struct buffer *, struct buffer *);
+int buf_read_file(FILE *, long, struct buffer_data **,
 				struct buffer_data **);
-extern int buf_read_file_to_eof(FILE *, struct buffer_data **,
+int buf_read_file_to_eof(FILE *, struct buffer_data **,
 				       struct buffer_data **);
-extern int buf_input_data(struct buffer *, int *);
-extern int buf_read_line(struct buffer *, char **, int *);
-extern int buf_read_data(struct buffer *, int, char **, int *);
-extern void buf_copy_lines(struct buffer *, struct buffer *, int);
-extern int buf_copy_counted(struct buffer *, struct buffer *, int *);
-extern int buf_chain_length(struct buffer_data *);
-extern int buf_length(struct buffer *);
-extern int buf_shutdown(struct buffer *);
+int buf_input_data(struct buffer *, int *);
+int buf_read_line(struct buffer *, char **, int *);
+int buf_read_data(struct buffer *, int, char **, int *);
+void buf_copy_lines(struct buffer *, struct buffer *, int);
+int buf_copy_counted(struct buffer *, struct buffer *, int *);
+int buf_chain_length(struct buffer_data *);
+int buf_length(struct buffer *);
+int buf_shutdown(struct buffer *);
+
+void buf_md5(struct buffer *buf, CMD5Calc* md5);
 
 #ifdef SERVER_FLOWCONTROL
-extern int buf_count_mem(struct buffer *);
+int buf_count_mem(struct buffer *);
 #endif /* SERVER_FLOWCONTROL */

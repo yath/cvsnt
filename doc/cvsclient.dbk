@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN" "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">
 <book lang="en">
-  <title>The CVS Client/Server Protocol</title>
+    <bookinfo>
+    <title>Concurrent Versions System (cvsnt) __VERSION__</title>
+    <releaseinfo>cvsnt __VERSION__</releaseinfo>
+    <abstract>
+      <para>This info manual describes the CVS Client/server Protocol</para>
+    </abstract>
+  </bookinfo>
+
+<title>The CVS Client/Server Protocol</title>
 
   <chapter id="Top">
     <title>CVS Client/Server</title>

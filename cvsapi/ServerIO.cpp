@@ -29,7 +29,7 @@ int CServerIo::m_loglevel = 0;
 #include <windows.h>
 static void AddEventSource(LPCTSTR szService, LPCTSTR szModule);
 static void ReportError(BOOL bError, LPCTSTR szError);
-#include "win32/servicemsg.h"
+#include "ServiceMsg.h"
 #else
 #include <syslog.h>
 #endif

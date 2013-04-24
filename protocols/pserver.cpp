@@ -15,6 +15,12 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -203,13 +209,13 @@ int pserver_auth_protocol_connect(const struct protocol_interface *protocol, con
 
     /* Get the three important pieces of information in order. */
     /* See above comment about error handling.  */
-    server_getline (protocol, &pserver_protocol_interface.auth_repository, MAX_PATH);
-    server_getline (protocol, &pserver_protocol_interface.auth_username, MAX_PATH);
-    server_getline (protocol, &pserver_protocol_interface.auth_password, MAX_PATH);
+    server_getline (protocol, &pserver_protocol_interface.auth_repository, PATH_MAX);
+    server_getline (protocol, &pserver_protocol_interface.auth_username, PATH_MAX);
+    server_getline (protocol, &pserver_protocol_interface.auth_password, PATH_MAX);
 
     /* ... and make sure the protocol ends on the right foot. */
     /* See above comment about error handling.  */
-    server_getline(protocol, &tmp, MAX_PATH);
+    server_getline(protocol, &tmp, PATH_MAX);
     if (strcmp (tmp,
 		pserver_protocol_interface.verify_only ?
 		"END VERIFICATION REQUEST" : "END AUTH REQUEST")
@@ -219,7 +225,13 @@ int pserver_auth_protocol_connect(const struct protocol_interface *protocol, con
 		free(tmp);
     }
 
-	strcpy(pserver_protocol_interface.auth_password, scramble.Unscramble(pserver_protocol_interface.auth_password));
+	const char *unscrambled_password = scramble.Unscramble(pserver_protocol_interface.auth_password);
+	if(!unscrambled_password || !*unscrambled_password)
+	{
+		CServerIo::trace(1,"PROTOCOL VIOLATION: Invalid scrambled password sent by client.  Assuming blank for compatibility.  Report bug to client vendor.");
+		unscrambled_password="";
+	}
+	strcpy(pserver_protocol_interface.auth_password, unscrambled_password);
 
 	free(tmp);
 	return CVSPROTO_SUCCESS;

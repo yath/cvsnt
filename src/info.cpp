@@ -149,31 +149,22 @@ int info(int argc, char **argv)
 	}
 	if(browse)
 	{
-		int nResp;
-		CMdnsHelperBase::mdnsType eResp = CMdnsHelperBase::mdnsDefault;
+		const char *pResp = NULL;
+		char szResp[64];
 
-  		if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderType",nResp))
+		if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderName",szResp,sizeof(szResp)))
 		{
-			switch(nResp)
+			pResp = szResp;
+			if(!strcmp(pResp,"none"))
 			{
-			case 0:
-				printf("mdns is disabled on this host.\n");
+				printf("mdns is disabled on this host\n");
 				return 0;
-			case 1:
-				eResp = CMdnsHelperBase::mdnsMini;
-				break;
-			case 2:
-				eResp = CMdnsHelperBase::mdnsApple;
-				break;
-			case 3:
-				eResp = CMdnsHelperBase::mdnsHowl;
-				break;
-			default:
-				eResp = CMdnsHelperBase::mdnsMini;
-				break;
 			}
+			if(!strcmp(pResp,"default"))
+				pResp = NULL;
 		}
-		CZeroconf zc(eResp, CGlobalSettings::GetLibraryDirectory(CGlobalSettings::GLDMdns));
+
+		CZeroconf zc(pResp, CGlobalSettings::GetLibraryDirectory(CGlobalSettings::GLDMdns));
 		const CZeroconf::server_struct_t *serv;
 
 		if(!zc.BrowseForService(SERVICE,CZeroconf::zcAddress))
@@ -291,7 +282,7 @@ int info(int argc, char **argv)
 		while((proto=lib.EnumerateProtocols(&context))!=NULL)
 		{
 			protocol=lib.LoadProtocol(proto);
-			if(protocol && ((use_server && protocol->auth_protocol_connect) || (!use_server && protocol->connect)))
+			if(protocol && ((use_server && protocol->auth_protocol_connect) || (!use_server && protocol->connect)) && !(protocol->required_elements&flagSystem))
 			{
 				if(use_server && protocol->plugin.key)
 				{

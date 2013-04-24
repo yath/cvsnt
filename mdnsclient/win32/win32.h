@@ -21,7 +21,6 @@
 
 /* Some Win32 specific defines */
 #define snprintf _snprintf
-#define vsnprintf _vsnprintf
 #define strcasecmp stricmp
 #define strncasecmp strnicmp
 

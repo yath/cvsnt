@@ -77,7 +77,7 @@ const char *CTokenLine::toString(size_t off)
 	    static const char meta[] = "`\"' ";
 		const char *str=m_args[n].c_str();
 
-		if(!strpbrk(str,meta))
+		if(*str && !strpbrk(str,meta))
 			m_line+=str;
 		else
 		{

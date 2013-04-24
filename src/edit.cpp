@@ -51,14 +51,22 @@ static int unedit_fileproc (void *callerdat, struct file_info *finfo);
 
 static int onoff_fileproc(void *callerdat, struct file_info *finfo)
 {
-	XmlHandle_t handle = fileattr_create(NULL,"file[@name=F'%s']",finfo->file);
+	CXmlNodePtr handle = fileattr_getroot();
+	handle->xpathVariable("name",finfo->file);
+	if(!handle->Lookup("file[cvs:filename(@name,$name)]") || !handle->XPathResultNext())
+	{
+		handle = fileattr_getroot();
+		handle->NewNode("file");
+		handle->NewAttribute("name",finfo->file);
+	}
 
 	if(turning_on)
-		fileattr_create(handle,"watched");
+	{
+		if(!handle->GetChild("watched")) handle->NewNode("watched");
+	}
 	else
 	{
-		fileattr_delete(handle,"watched");
-		fileattr_prune(handle);
+		if(handle->GetChild("watched")) handle->Delete();
 	}
     return 0;
 }
@@ -67,12 +75,23 @@ static int onoff_filesdoneproc (void *callerdat, int err, char *repository, char
 {
     if (setting_default)
 	{
-		XmlHandle_t handle = fileattr_create(NULL,"directory/default");
+		CXmlNodePtr handle = fileattr_find(NULL,"/directory/default");
+
+		if(!handle)
+		{
+			handle = fileattr_getroot();
+			handle->NewNode("directory");
+			handle->NewNode("default");
+		}
 
 		if(turning_on)
-			fileattr_create(handle,"watched");
+		{
+			if(!handle->GetChild("watched")) handle->NewNode("watched");
+		}
 		else
-			fileattr_delete(handle,"watched");
+		{
+			if(handle->GetChild("watched")) handle->Delete();
+		}
 	}
     return err;
 }
@@ -121,7 +140,7 @@ static int watch_onoff (int argc, char **argv)
     err = start_recursion (onoff_fileproc, onoff_filesdoneproc,
 			   (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 			   argc, argv, local, W_LOCAL, 0, 0, (char *)NULL, NULL,
-			   0, verify_write);
+			   0, verify_write, NULL);
 
     Lock_Cleanup ();
     return err;
@@ -294,7 +313,7 @@ static int send_notifications (int argc, char **argv, int local)
 		err += start_recursion (dummy_fileproc, (FILESDONEPROC) NULL,
 					(PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 					argc, argv, local, W_LOCAL, 0, 0, (char *)NULL, NULL,
-					0, NULL);
+					0, NULL, NULL);
 
 		send_to_server ("noop\n", 0);
 		if (strcmp (command_name, "release") == 0)
@@ -310,7 +329,7 @@ static int send_notifications (int argc, char **argv, int local)
 	err += start_recursion (ncheck_fileproc, (FILESDONEPROC) NULL,
 				(PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 				argc, argv, local, W_LOCAL, 0, 0, (char *)NULL, NULL,
-				0, NULL);
+				0, NULL, NULL);
 	Lock_Cleanup ();
     }
     return err;
@@ -318,15 +337,15 @@ static int send_notifications (int argc, char **argv, int local)
 
 static int editors_output (struct file_info *finfo)
 {
-	XmlHandle_t handle;
+	CXmlNodePtr  handle;
 	const char *username, *hostname, *pathname, *time, *tag, *vtag, *bug;
 	Vers_TS *vers;
 	int out = 0;
 
-	handle = fileattr_find(NULL,"file[@name=F'%s']/editor",finfo->file);
-
-	if(!handle)
-		return 0;
+	handle = fileattr_getroot();
+	handle->xpathVariable("name",finfo->file);
+	if(!handle->Lookup("file[cvs:filename(@name,$name)]/editor") || !handle->XPathResultNext())
+	   handle = NULL;
 
 	vers = Version_TS(finfo,NULL,NULL,NULL,0,0,0);
 
@@ -375,7 +394,8 @@ static int editors_output (struct file_info *finfo)
 			cvs_output ("\n", 1);
 		}
 
-		handle = fileattr_next(handle);
+		if(!handle->XPathResultNext())
+		   handle = NULL;
 	}
 
 	freevers_ts(&vers);
@@ -388,7 +408,7 @@ static int editors_output (struct file_info *finfo)
 
 static int check_fileproc (void *callerdat, struct file_info *finfo)
 {
-	XmlHandle_t handle;
+	CXmlNodePtr  handle;
     char *editors = NULL;
     int status;
 	int errors = 0;
@@ -547,20 +567,19 @@ static int check_fileproc (void *callerdat, struct file_info *finfo)
             return 0;
         }
 
-        handle = fileattr_find(NULL,"file[@name=F'%s']/editor",finfo->file);
-        if(!really_quiet && handle != NULL)
-        {
+        handle = fileattr_getroot();
+	handle->xpathVariable("name",finfo->file);
+	if(handle->Lookup("file[cvs:filename(@name,$name)]/editor") && handle->XPathResultNext())
+	{
+          if(!really_quiet)
             editors_output (finfo);
-        }
 
-        if(handle != NULL)
-        {
-			kflag kftmp;
-			RCS_get_kflags(v->options,false,kftmp);
-			if(check_edited>=0 && (check_edited || kftmp.flags&KFLAG_RESERVED_EDIT))
-				editors_found = 2;
-			else
-				editors_found = 1;
+	  kflag kftmp;
+	  RCS_get_kflags(v->options,false,kftmp);
+	  if(check_edited>=0 && (check_edited || kftmp.flags&KFLAG_RESERVED_EDIT))
+		editors_found = 2;
+	  else
+		editors_found = 1;
         }
     }
 
@@ -589,7 +608,7 @@ static int check_edits (int argc, char **argv, int local)
 	err += start_recursion (check_fileproc, (FILESDONEPROC) NULL,
                             (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
                             argc, argv, local, W_LOCAL, 0, 0, (char *)NULL, NULL,
-                            0, NULL/*verify_write*/);
+                            0, verify_read, NULL);
 
     if (current_parsed_root->isremote)
     {
@@ -701,7 +720,7 @@ static int edit_fileproc (void *callerdat, struct file_info *finfo)
 	{
 		Register(finfo->entries, file, vers->vn_user, vers->ts_rcs,
 			vers->options, vers->tag, vers->date,
-			vers->ts_conflict, vers->entdata->merge_from_tag_1, vers->entdata->merge_from_tag_2, vers->tt_rcs, vers->vn_user,whole_file||vers->tag?vers->tag:"HEAD",bugid.c_str());
+			vers->ts_conflict, vers->entdata->merge_from_tag_1, vers->entdata->merge_from_tag_2, vers->tt_rcs, vers->vn_user,whole_file||vers->tag?vers->tag:"HEAD",bugid.c_str(), NULL);
 	}
 	freevers_ts(&vers);
 
@@ -848,7 +867,7 @@ int edit (int argc, char **argv)
 		err = start_recursion (edit_fileproc, (FILESDONEPROC) NULL,
 				(PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 				argc, argv, local, W_LOCAL, 0, 0, (char *)NULL, NULL,
-				0, NULL/*verify_write*/);
+				0, verify_write, NULL);
 		err += send_notifications (argc, argv, local);
     }
 
@@ -961,14 +980,14 @@ static int unedit_fileproc (void *callerdat, struct file_info *finfo)
 		{
 			Register (finfo->entries, entdata->user, (entdata->edit_revision&&*entdata->edit_revision)?entdata->edit_revision:entdata->version, entdata->timestamp,
 				entdata->options, (entdata->edit_tag&&*entdata->edit_tag)?(strcmp(entdata->edit_tag,"HEAD")?entdata->edit_tag:NULL):entdata->tag, entdata->date,
-				entdata->conflict, NULL, NULL, entdata->rcs_timestamp, revert_only?entdata->edit_revision:NULL, revert_only?entdata->edit_tag:NULL, revert_only?entdata->edit_revision:NULL);
+				entdata->conflict, NULL, NULL, entdata->rcs_timestamp, revert_only?entdata->edit_revision:NULL, revert_only?entdata->edit_tag:NULL, revert_only?entdata->edit_revision:NULL, entdata->md5);
 		}
 		else
 		{
 			/* No unedit was done...  remove the (bogus) edit information only */
 			Register (finfo->entries, entdata->user, entdata->version, entdata->timestamp,
 				entdata->options, entdata->tag, entdata->date,
-				entdata->conflict, NULL, NULL, entdata->rcs_timestamp, NULL, NULL, NULL);
+				entdata->conflict, NULL, NULL, entdata->rcs_timestamp, NULL, NULL, NULL, entdata->md5);
 		}
 	}
 
@@ -1027,8 +1046,8 @@ int unedit (int argc, char **argv)
 			revert_only = 1;
 			break;
 		case 'b':
-			if(!RCS_check_bugid(optarg))
-				error(1,0,"Invalid characters in bug identifier.  Please avoid ,\"'");
+			if(!RCS_check_bugid(optarg,true))
+				error(1,0,"Invalid characters in bug identifier.  Please avoid \"'");
 			if(bugid.size())
 				bugid+=",";
 			bugid +=optarg;
@@ -1053,7 +1072,7 @@ int unedit (int argc, char **argv)
     err = start_recursion (unedit_fileproc, (FILESDONEPROC) NULL,
 			   (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 			   argc, argv, local, W_LOCAL, 0, 0, (char *)NULL, NULL,
-			   0, NULL/*verify_write*/);
+			   0, verify_write, NULL);
 
     err += send_notifications (argc, argv, local);
 	xfree(notify_user);
@@ -1084,28 +1103,41 @@ void mark_up_to_date (const char *file)
 
 static void editor_set (char type, const char *filename, const char *editor, const char *time, const char *hostname, const char *pathname, const char *tag, const char *flags, const char *bugid, const char *message, const char *repository)
 {
-	XmlHandle_t handle,ehandle;
+	CXmlNodePtr  handle,ehandle;
 
 	TRACE(2,"editor_set(%c,%s,%s,%s,%s,%s)",type,PATCH_NULL(filename),PATCH_NULL(editor),PATCH_NULL(time),PATCH_NULL(hostname),PATCH_NULL(pathname));
 	if(type=='C' || type=='U')
 	{
-		handle = fileattr_find(NULL,"file[@name=F'%s']",filename);
-		if(handle)
+		handle = fileattr_getroot();
+		handle->xpathVariable("name", filename);
+		if(handle->Lookup("file[cvs:filename(@name,$name)]") && handle->XPathResultNext())
 		{
-			while((ehandle=fileattr_find(handle,"editor[@name=U'%s']",editor))!=NULL)
-				fileattr_delete_child(handle,ehandle);
+			ehandle = handle->Clone();
+			ehandle->xpathVariable("name",editor);
+			if(ehandle->Lookup("editor[cvs:username(@name,$name)]"))
+			while(ehandle->XPathResultNext())
+			    fileattr_delete_child(handle,ehandle);
 			fileattr_prune(handle);
 		}
 		history_write('u',pathname,tag,filename,repository,bugid,message);
 	}
 	else
 	{
-		handle = fileattr_create(NULL,"file[@name=F'%s']/editor[@name=U'%s']",filename,editor);
-		if(!handle)
+		handle = fileattr_getroot();
+		handle->xpathVariable("name", filename);
+		handle->xpathVariable("user",editor);
+		if(!handle->Lookup("file[cvs:filename(@name,$name)]") || !handle->XPathResultNext())
 		{
-			TRACE(3,"fileattr_create failed");
-			return; 
+			handle = fileattr_getroot();
+			handle->NewNode("file");
+			handle->NewAttribute("name",filename);
 		}
+		if(!handle->Lookup("editor[cvs:username(@name,$user)]") || !handle->XPathResultNext())
+		{
+			handle->NewNode("editor");
+			handle->NewAttribute("name",editor);
+		}
+
 		if(tag && *tag)
 			fileattr_setvalue(handle,"tag",tag);
 		fileattr_setvalue(handle,"time",time);
@@ -1162,9 +1194,10 @@ int check_can_edit(const char *repository, const char *filename, const char *who
 	if(!verify_write(repository,filename,tag,NULL,NULL))
 		return 1;
 
-	XmlHandle_t handle = fileattr_find(NULL,"file[@name=F'%s']/editor",filename);
-	if(!handle)
-		return 0;
+	CXmlNodePtr handle = fileattr_getroot();
+	handle->xpathVariable("name",filename);
+	if(!handle->Lookup("file[cvs:filename(@name,$name)]/editor") || !handle->XPathResultNext())
+	    handle=NULL;
 
 	while(handle)
 	{
@@ -1184,7 +1217,8 @@ int check_can_edit(const char *repository, const char *filename, const char *who
 				return 1; /* Someone else has an exclusive lock on this branch */
 		}
 
-		handle = fileattr_next(handle);
+		if(!handle->XPathResultNext())
+		  handle=NULL;
 	}
 	return 0;
 }
@@ -1194,7 +1228,7 @@ int notify_do (int type, const char *filename, const char *who, const char *date
 			   const char *repository, const char *tag, const char *flags, 
 			   const char *bugid, const char *message)
 {
-	XmlHandle_t filehandle;
+	CXmlNodePtr  filehandle;
 	struct addremove_args args = {0};
 
 	TRACE(3,"notify_do (%c, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -1222,7 +1256,10 @@ int notify_do (int type, const char *filename, const char *who, const char *date
 	    return 0;
     }
 
-	filehandle = fileattr_find(NULL,"file[@name=F'%s']/watcher",filename);
+	filehandle = fileattr_getroot();
+	filehandle->xpathVariable("name",filename);
+	if(!filehandle->Lookup("file[cvs:filename(@name,$name)]/watcher") || !filehandle->XPathResultNext())
+	  filehandle = NULL;
 
 	while(filehandle)
 	{
@@ -1285,7 +1322,7 @@ int notify_do (int type, const char *filename, const char *who, const char *date
 								future; in any case, we ignore them right
 								now, and if there are none we make sure to
 								chop off the final newline, if any. */
-					cp = strpbrk (args.notifyee, ":\n");
+					cp = (char*)strpbrk (args.notifyee, ":\n");
 
 					if (cp != NULL)
 						*cp = '\0';
@@ -1318,7 +1355,8 @@ int notify_do (int type, const char *filename, const char *who, const char *date
 			xfree (args.notifyee);
 		}
 
-		filehandle = fileattr_next(filehandle);
+		if(!filehandle->XPathResultNext())
+		  filehandle = NULL;
 	}
 
 	if(global_watcher)
@@ -1504,5 +1542,5 @@ int editors (int argc, char **argv)
     return start_recursion (editors_fileproc, (FILESDONEPROC) NULL,
 			    (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 			    argc, argv, local, W_LOCAL, 0, 1, (char *)NULL, NULL,
-			    0, verify_read);
+			    0, verify_read, NULL);
 }

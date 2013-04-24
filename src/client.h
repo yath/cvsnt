@@ -15,10 +15,8 @@ extern int cvsencrypt;
 /* Whether the connection should be authenticated.  */
 extern int cvsauthenticate;
 
-/* Transmit checksum when sending files. */
-extern int send_checksum;
-
-struct buffer *cvs_encrypt_wrap_buffer_initialize(struct buffer *buf, int input, int encrypt, void (*memory) (struct buffer *));
+struct buffer *cvs_encrypt_wrap_buffer_initialize (const struct protocol_interface *protoocol, struct buffer *buf,
+     int input, int encrypt, void (*memory)(struct buffer *));
 
 /*
  * Flag variable for seeing whether the server has been started yet.
@@ -46,6 +44,7 @@ void option_with_arg(const char *option, const char *arg);
 extern int get_responses_and_close();
 
 extern int get_server_responses();
+extern int get_server_responses_noproxy();
 
 /* close after finished */
 extern int cleanup_and_close_server();
@@ -133,6 +132,7 @@ struct response
      * '\0' terminated.
      */
     void (*func)(char *args, int len);
+    void (*proxy)(char *cmd);
 
 	enum response_type type;
 	enum response_status status;

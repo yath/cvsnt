@@ -24,6 +24,7 @@ static void writethread(void *p);
 
 static cvsroot root;
 static int trace;
+static bool g_bStop;
 
 static int extnt_output(const char *str, size_t len)
 {
@@ -45,22 +46,25 @@ static int extnt_trace(int level, const char *str)
 
 void usage()
 {
-	fprintf(stderr,"Usage: extnt.exe hostname [-l username] [-p protocol] [-d directory] [command..]\n");
+	fprintf(stderr,"Usage: extnt.exe hostname [-l username] [-P password] [-p protocol] [-d directory] [command..]\n");
+	fprintf(stderr,"Usage: extnt.exe -x [-p default_protocol]\n");
 	fprintf(stderr,"\t-l username\tUsername to use (default current user).\n");
 	fprintf(stderr,"\t-p protocol\tProtocol to use(default sspi).\n");
 	fprintf(stderr,"\t-d directory\tDirectory part of root string.\n");
+	fprintf(stderr,"\t-x\tRun in proxy mode.\n");
 	fprintf(stderr,"\t-P password\tPassword to use.\n");
 	fprintf(stderr,"\nUnspecified parameters are also read from [<hostname>] section in extnt.ini.\n");
 	exit(-1);
 }
 
 /* Standard :ext: invokes with <hostname> -l <username> cvs server */
-int main(int argc, char *argv[])
+CVSNT_EXPORT int main(int argc, char *argv[])
 {
 	CProtocolLibrary lib;
 	char protocol[1024],hostname[1024],directory[1024],password[1024];
 	char *section, *username = NULL, *repos = NULL, *prot = NULL, *passw = NULL;
 	char buf[8000];
+	bool proxy = false;
 
 	if(argc<2)
 		usage();
@@ -81,20 +85,28 @@ int main(int argc, char *argv[])
 		switch(argv[0][1])
 		{
 		case 'l':
+			if(proxy) usage();
 			username=argv[1]; a++;
 			break;
 		case 'd':
+			if(proxy) usage();
 			repos=argv[1]; a++;
 			break;
 		case 'p':
 			prot=argv[1]; a++;
 			break;
 		case 'P':
+			if(proxy) usage();
 			passw=argv[1]; a++;
 			break;
 		case 't':
 			trace++;
 			CServerIo::loglevel(trace);
+			break;
+		case 'x':
+			if(passw || repos || passw)
+				usage();
+			proxy=true;
 			break;
 		default:
 			usage();
@@ -103,15 +115,23 @@ int main(int argc, char *argv[])
 		argc-=a;
 	}
 
+	if(proxy && argc)
+		usage();
+
+	if(proxy && prot && !strcmp(prot,"pserver"))
+	{
+		fprintf(stderr, "Unable to proxy pserver to itself\n");
+		return -1;
+	}
+	if(!prot) prot="sspi";
+
 	// Any remaining arguments (usually 'cvs server') are ignored
 
 	CServerIo::init(extnt_output,extnt_output,extnt_error,extnt_trace);
 
-    WSADATA data;
-
-    if (WSAStartup (MAKEWORD (1, 1), &data))
+	if (!CSocketIO::init())
     {
-		fprintf (stderr, "cvs: unable to initialize winsock\n");
+		fprintf (stderr, "cvs: unable to initialize sockets driver\n");
 		return -1;
     }
 
@@ -121,6 +141,129 @@ int main(int argc, char *argv[])
 	setvbuf(stdout,NULL,_IONBF,0);
 
 	lib.SetupServerInterface(&root,0);
+
+	if(proxy)
+	{
+		const struct protocol_interface *proto_in = lib.LoadProtocol("pserver");
+		if(!proto_in)
+		{
+			printf("Couldn't load %s protocol\n","pserver");
+			return -1;
+		}
+		const struct protocol_interface *proto_out = lib.LoadProtocol(prot);
+		if(!proto_out)
+		{
+			printf("Couldn't load %s protocol\n",prot?prot:"sspi");
+			return -1;
+		}
+		if(!proto_out->connect)
+		{
+			printf("%s is not a valid choice for proxy protocol\n",prot);
+			return -1;
+		}
+		CSocketIO listen_sock;
+
+		if(!listen_sock.create(NULL,"2401",true))
+		{
+			printf("Failed to create listening socket: %s\n",listen_sock.error());
+			return -1;
+		}
+		if(!listen_sock.bind())
+		{
+			printf("Failed to bind listening socket: %s\n",listen_sock.error());
+			return -1;
+		}
+
+		CSocketIO* sock_list[1] = { &listen_sock };
+
+		while(!g_bStop && CSocketIO::select(5000,1,sock_list))
+		{
+			for(size_t n=0; n<listen_sock.accepted_sockets().size(); n++)
+			{
+//				For testing do everything in the one thread
+//				We can only create threads after successful connection anyway, and even
+//				then if the protocols can be made threadsafe - they currently aren't.
+
+				cvs::string line;
+
+				CSocketIO* in_sock = listen_sock.accepted_sockets()[n];
+				SOCKET sock = in_sock->getsocket();
+				// Bit of a hack, since auth_protocol_connect normally takes its input from stdin
+				lib.GetServerInterface()->in_fd = sock;
+				lib.GetServerInterface()->out_fd = sock;
+				((protocol_interface*)proto_in)->server_read_data = proto_in->read_data;
+				((protocol_interface*)proto_in)->server_write_data = proto_in->write_data;
+				listen_sock.getline(line);
+				if(proto_in->auth_protocol_connect(proto_in,line.c_str()))
+				{
+					listen_sock.printf("error 0 Connection to proxy failed\nI HATE YOU\n");				
+					lib.UnloadProtocol(proto_in);
+					lib.UnloadProtocol(proto_out);
+					return -1;
+				}
+
+				char *p=strchr(proto_in->auth_repository+1,'/');
+				if(!p)
+				{					
+					in_sock->printf("error 0 Proxy requires server name in repository root string\nI HATE YOU\n");				
+					return -1;
+				}
+
+				line.assign(proto_in->auth_repository+1,p-(proto_in->auth_repository+1));
+
+				int verify_only = proto_in->verify_only;
+				root.username = proto_in->auth_username;
+				root.password = proto_in->auth_password;
+				root.directory = p;
+				if (strlen(proto_out->name)>20)
+				{
+					listen_sock.printf("name %s is too long for method\nI HATE YOU\n",proto_out->name);
+					return -1;
+				}
+				strcpy(root.method,proto_out->name);
+				root.hostname = line.c_str();
+				
+				lib.UnloadProtocol(proto_in); // finished with this
+
+				switch(proto_out->connect(proto_out,verify_only))
+				{
+					case CVSPROTO_SUCCESS: /* Connect succeeded */
+					case CVSPROTO_SUCCESS_NOPROTOCOL: /* Connect succeeded, don't wait for 'I LOVE YOU' response */
+						{
+							char line[1024];
+							int r=0,w=0;
+							for(;r>=0||w>=0;)
+							{
+								if(r>=0)
+									r=proto_out->read_data(proto_out,line,1024);
+								if(r>0)
+									in_sock->send(line,r);
+								if(w>=0)
+									w=in_sock->recv(line,1024);
+								if(w>0)
+									proto_out->write_data(proto_out,line,w);
+								if(!r && !w)
+									Sleep(100);
+							}
+							break;
+						}
+						break;
+					case CVSPROTO_FAIL: /* Generic failure (errno set) */
+						in_sock->printf("error 0 Connection failed - generic failure\nI HATE YOU\n");
+						return -1;
+					case CVSPROTO_BADPARMS: /* (Usually) wrong parameters from cvsroot string */
+						in_sock->printf("error 0 Connection failed - Bad parameters\nI HATE YOU\n");
+						return -1;
+					case CVSPROTO_AUTHFAIL: /* Authorization or login failed */
+						in_sock->printf("error 0 Connection failed - Authentication failed\nI HATE YOU\n");
+						return -1;
+					case CVSPROTO_NOTIMP: /* Not implemented */
+						in_sock->printf("error 0 Connection failed - Not implemented\nI HATE YOU\n");
+						return -1;
+				}
+			}
+		}
+	}
 
 	_snprintf(buf,sizeof(buf),"%s/extnt.ini",CGlobalSettings::GetConfigDirectory());
 

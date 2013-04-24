@@ -13,5 +13,3 @@
 #define PROJECTDESCRIPTION "cvsnt Control Panel"
 #define PROJECTFILENAME "cvsnt.cpl"
 #include "..\windows-NT\VersionInfoCommon.rc2"
-
-ISOLATIONAWARE_MANIFEST_RESOURCE_ID RT_MANIFEST "res\cvsntcpl.manifest"

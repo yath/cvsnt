@@ -24,6 +24,9 @@
 #include <setjmp.h>
 #include "getopt1.h"
 #include "diffrun.h"
+#include "unicodeapi.h"
+
+#define TRACE callbacks->cvs_trace
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -201,6 +204,13 @@ static int finalwrite;
 /* If nonzero, output a merged file.  */
 static int merge;
 
+/* I/O mode: nonzero only if using binary input/output.  */
+int binary_input;
+int binary_output;
+
+diff_encoding_type encoding3 = {0};
+int no_unlink;
+
 extern char *diff_program_name;
 
 static char *read_diff PARAMS((char const *, char const *, char **));
@@ -248,6 +258,11 @@ static struct option const longopts[] =
   {"overlap-only", 0, 0, 'x'},
   {"easy-only", 0, 0, '3'},
   {"version", 0, 0, 'v'},
+  {"binary-input", 0, 0, 142},
+  {"encoding", 1, 0, 143},
+  {"bom", 0, 0, 144},
+  {"binary-output", 0, 0, 145},
+  {"nounlink", 0, 0, 146},
   {"help", 0, 0, 129},
   {0, 0, 0, 0}
 };
@@ -335,6 +350,28 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
 	    check_output (stdout);
 	  return 0;
 		break;
+	case 142:
+	  /* Use binary I/O when reading and writing data.
+	     On Posix hosts, this has no effect.  */
+	  binary_input = 1;
+	  break;
+	case 145:
+	  /* Use binary I/O when reading and writing data.
+	     On Posix hosts, this has no effect.  */
+	  binary_output = 1;
+	  break;
+    case 146:
+	  TRACE(3, "diff3() - set no_unlink");
+	  no_unlink = 1;
+	  break;
+    case 143:
+	  /* Set file encoding -- for this to work I really need --binary-input --binary-output */
+	  TRACE(3, "diff3() - set encoding3");
+	  encoding3.encoding = strdup(optarg);
+	  break;
+    case 144:
+	  encoding3.bom=1;
+	  break;
 	case 'L':
 	  /* Handle up to three -L options.  */
 	  if (tag_count < 3)
@@ -415,6 +452,8 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
   for (i = 0; i < 3; i++)
     rev_mapping[mapping[i]] = i;
 
+  TRACE(3, "diff3() - stat each file");
+
   for (i = 0; i < 3; i++)
     if (strcmp (file[i], "-") != 0)
       {
@@ -430,6 +469,7 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
 	  }
       }
 
+  TRACE(3, "diff3() - check for write_output");
   if (callbacks && callbacks->write_output)
     {
       if (out != NULL)
@@ -444,7 +484,10 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
 	outfile = stdout;
       else
 	{
-	  outfile = callbacks?callbacks->fopen(out,"w"):fopen(out, "w");
+	  if (binary_output)
+	    outfile = callbacks?callbacks->fopen(out,"wb"):fopen(out, "wb");
+	  else
+	    outfile = callbacks?callbacks->fopen(out,"w"):fopen(out, "w");
 	  if (outfile == NULL)
 	    {
 	      perror_with_name ("could not open output file");
@@ -454,13 +497,16 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
 	}
     }
 
+  TRACE(3, "diff3() - check for setjmp");
   /* Set the jump buffer, so that diff may abort execution without
      terminating the process. */
   status = setjmp (diff3_abort_buf);
   if (status != 0)
       return status;
 
+  TRACE(3, "diff3() - set commonname");
   commonname = file[rev_mapping[FILEC]];
+  TRACE(3, "diff3() - call process_diff - thread1");
   thread1 = process_diff (file[rev_mapping[FILE1]], commonname, &last_block,
 			  &content1);
   /* What is the intention behind determining horizon_lines from first
@@ -475,18 +521,29 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
 	horizon_lines = max (horizon_lines, D_NUMLINES (last_block, i));
       }
   */
+  TRACE(3, "diff3() - call process_diff - thread0");
   thread0 = process_diff (file[rev_mapping[FILE0]], commonname, &last_block,
 			  &content0);
+  TRACE(3, "diff3() - call make_3way_diff");
   diff3 = make_3way_diff (thread0, thread1);
   if (edscript)
+  {
+    TRACE(3, "diff3() - edscript");
     conflicts_found
       = output_diff3_edscript (diff3, mapping, rev_mapping,
 			       tag_strings[0], tag_strings[1], tag_strings[2]);
+  }
   else if (merge)
     {
-      FILE *mfp = callbacks?callbacks->fopen(file[rev_mapping[FILE0]], "r"):fopen(file[rev_mapping[FILE0]], "r");
+      FILE *mfp;
+	  TRACE(3, "diff3() - merge - prepare to fopen(%s)",file[rev_mapping[FILE0]]);
+	  if (binary_input)
+		mfp = callbacks?callbacks->fopen(file[rev_mapping[FILE0]], "rb"):fopen(file[rev_mapping[FILE0]], "rb");
+	  else
+		mfp = callbacks?callbacks->fopen(file[rev_mapping[FILE0]], "r"):fopen(file[rev_mapping[FILE0]], "r");
       if (! mfp)
-	diff3_perror_with_exit (file[rev_mapping[FILE0]]);
+		diff3_perror_with_exit (file[rev_mapping[FILE0]]);
+	  TRACE(3, "diff3() - call output_diff3_merge");
       conflicts_found = output_diff3_merge (mfp, diff3, mapping, rev_mapping,
 			      tag_strings[0], tag_strings[1], tag_strings[2]);
       if (ferror (mfp))
@@ -496,6 +553,7 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
     }
   else
     {
+      TRACE(3, "diff3() - call output_diff3");
       output_diff3 (diff3, mapping, rev_mapping);
       conflicts_found = 0;
     }
@@ -503,6 +561,7 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
   if (conflicts_found == 0 && diff3 == 0)
 	  conflicts_found = 3;
 
+  TRACE(3, "diff3() - free content0, content1, free_diff3_blocks");
   free(content0);
   free(content1);
   free_diff3_blocks(diff3);
@@ -514,6 +573,11 @@ int diff3_run (int argc, char **argv, const char *out, const struct diff_callbac
     if (fclose (outfile) != 0)
 	perror_with_name ("close error on output file");
 
+  TRACE(3, "diff3() - free encoding3");
+  free((void*)encoding3.encoding);
+  encoding3.encoding=NULL;
+
+  TRACE(3, "diff3() - return");
   return conflicts_found;
 }
 
@@ -562,6 +626,8 @@ usage ()
   -T  --initial-tab  Make tabs line up by prepending a tab.\n\n");
       (*callbacks->write_stdout) ("\
   -v  --version  Output version info.\n\
+  --encoding=NUM  Read and write as unicode type.\n\
+  --bom  file(s) have a byte order mark.\n\
   --help  Output this help.\n\n");
       (*callbacks->write_stdout) ("If a FILE is `-', read standard input.\n");
     }
@@ -1092,10 +1158,12 @@ process_diff (filea, fileb, last_block, diff_contents)
   int i;
   struct diff_block *block_list, **block_list_end, *bptr;
 
+  TRACE(3, "process_diff() - call read_diff()");
   diff_limit = read_diff (filea, fileb, diff_contents);
   scan_diff = *diff_contents;
   block_list_end = &block_list;
   bptr = 0; /* Pacify `gcc -W'.  */
+  TRACE(3, "process_diff() - call read_diff() OK");
 
   while (scan_diff < diff_limit)
     {
@@ -1103,7 +1171,8 @@ process_diff (filea, fileb, last_block, diff_contents)
       bptr->lines[0] = bptr->lines[1] = 0;
       bptr->lengths[0] = bptr->lengths[1] = 0;
 
-      dt = process_diff_control (&scan_diff, bptr);
+      TRACE(3, "process_diff() - call process_diff_control()");
+	  dt = process_diff_control (&scan_diff, bptr);
       if (dt == ERROR || *scan_diff != '\n')
 	{
 	  char *serr;
@@ -1219,8 +1288,11 @@ process_diff_control (string, db)
 	  do { holdnum = (c - '0' + holdnum * 10); }	\
 	  while (ISDIGIT (c = *++s)); (num) = holdnum; }
 
+  TRACE(3, "process_diff_control() - call SKIPWHITE()");
   /* Read first set of digits */
   SKIPWHITE (s);
+  if (*s != '\0')
+    TRACE(3, "process_diff_control() - after SKIPWHITE() %d %d",(int)*s, (int)*(s+1) );
   READNUM (s, db->ranges[0][START]);
 
   /* Was that the only digit? */
@@ -1290,16 +1362,34 @@ read_diff (filea, fileb, output_placement)
      add 1 for integer division truncation; add 1 more for a minus sign.  */
 #define INT_STRLEN_BOUND(type) ((sizeof(type)*CHAR_BIT - 1) * 302 / 1000 + 2)
 
-  char const *argv[7];
+  char const *argv[12];
   char horizon_arg[17 + INT_STRLEN_BOUND (int)];
   char const **ap;
   char *diffout;
   char *difffn;
+  char *encodingstr=NULL;
 
+  TRACE(3, "read_diff() - process arguments");
   ap = argv;
   *ap++ = "diff";
   if (always_text)
     *ap++ = "-a";
+  if (binary_output)
+    *ap++ = "--binary-output";
+  if (encoding3.encoding)
+    {
+      TRACE(3, "read_diff() - process encoding3");
+      *ap++ = "--encoding";
+      encodingstr = strdup(encoding3.encoding);
+      TRACE(3, "read_diff() - process encoding3 \"%s\"",encodingstr);
+	  *ap++ = encodingstr;
+    }
+  if (encoding3.bom)
+    {
+      TRACE(3, "read_diff() - process encoding3 bom");
+	  *ap++ = "--bom";
+    }
+  TRACE(3, "read_diff() - process final arguments");
   sprintf (horizon_arg, "--horizon-lines=%d", horizon_lines);
   *ap++ = horizon_arg;
   *ap++ = "--";
@@ -1328,7 +1418,9 @@ read_diff (filea, fileb, output_placement)
       my_callbacks_arg = &my_callbacks;
     }
 
+  TRACE(3, "read_diff() - about to diff_run");
   wstatus = diff_run (ap - argv, (char **) argv, diffout, my_callbacks_arg);
+  TRACE(3, "read_diff() - diff_run complete with wstatus = %d",(int)wstatus);
 
   outfile = outfile_hold;
   callbacks = callbacks_hold;
@@ -1339,11 +1431,13 @@ read_diff (filea, fileb, output_placement)
   if (-1 == (fd = callbacks?callbacks->open(diffout, O_RDONLY, 0):open(diffout, O_RDONLY, 0)))
     diff3_fatal ("could not open temporary diff file");
 
+  TRACE(3, "read_diff() - opened temporary diff file \"%s\"",diffout);
   current_chunk_size = 8 * 1024;
   if (fstat (fd, &pipestat) == 0)
     current_chunk_size = max (current_chunk_size, STAT_BLOCKSIZE (pipestat));
 
   diff_result = malloc (current_chunk_size);
+  TRACE(3, "read_diff() - allocated %d bytes for diff_result",(int)current_chunk_size);
   total = 0;
   do {
     bytes = myread (fd,
@@ -1358,10 +1452,12 @@ read_diff (filea, fileb, output_placement)
 	  current_chunk_size = (size_t) -1;
 	else
 	  diff3_fatal ("files are too large to fit into memory");
+    TRACE(3, "read_diff() - reallocated current_chunk_size *= 2 (%d) bytes for diff_result",(int)(current_chunk_size*2));
 	diff_result = realloc (diff_result, (current_chunk_size *= 2));
       }
   } while (bytes);
 
+  TRACE(3, "read_diff() - completed loop, total=%d",(int)total);
   if (total != 0 && diff_result[total-1] != '\n')
     diff3_fatal ("invalid diff format; incomplete last line");
 
@@ -1369,8 +1465,16 @@ read_diff (filea, fileb, output_placement)
 
   if (close (fd) != 0)
     diff3_perror_with_exit ("pipe close");
-  unlink (diffout);
+  if (!no_unlink)
+    unlink (diffout);
+  else
+    TRACE(3, "read_diff() - do not unlink \"%s\"",diffout);
+  TRACE(3, "read_diff() - about to free difffn");
   free(difffn);
+  TRACE(3, "read_diff() - about to free encodingstr");
+  if (encodingstr)
+	  free(encodingstr);
+  TRACE(3, "read_diff() - diff result not free(d) and returned to caller diff_result+total (diff_result is really output_placement).");
 
   return diff_result + total;
 }
@@ -1733,6 +1837,7 @@ output_diff3_merge (infile, diff, mapping, rev_mapping,
   struct diff3_block *b;
   int linesread = 0;
 
+  TRACE(3, "output_diff3_merge()");
   for (b = diff; b; b = b->next)
     {
       /* Must do mapping correctly.  */
@@ -1920,6 +2025,9 @@ initialize_main (argcp, argvp)
   finalwrite = 0;
   merge = 0;
   diff_program_name = (*argvp)[0];
+  binary_input = binary_output = 0;
+  no_unlink = 0;
+  encoding3.encoding = NULL;
   outfile = NULL;
 }
 

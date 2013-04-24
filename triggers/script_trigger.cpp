@@ -66,6 +66,8 @@ static int win32config(const struct plugin_interface *ui, void *wnd);
 
 #endif
 
+namespace {
+
 static int CallDispatch(const wchar_t *name,variant_t* args, size_t nargs);
 static _variant_t CallDispatchVariant(const wchar_t *name,variant_t* args, size_t nargs);
 static IDispatch* GetItemList(long count, const char **names, const char **values);
@@ -111,6 +113,18 @@ public:
 		else
 			cvs::swprintf(strText,128,L"Script error: %08x",excep.scode);
 		CServerIo::error("%S\n",strText.c_str());
+		LONG lColumn = 0;
+		ULONG uLine = 0;
+		DWORD dwDummyContext = 0;
+		
+		pase->GetSourcePosition(&dwDummyContext, &uLine, &lColumn);
+		CServerIo::error("Line %u, Column %d.\n", uLine, lColumn);
+		
+		BSTR bstrLine=0;
+		pase->GetSourceLineText(&bstrLine);
+		if (NULL != bstrLine)
+			CServerIo::error("%S\n", bstrLine);
+
 		return S_OK; 
 	}
 	STDMETHOD(OnEnterScript)() { return S_OK; }
@@ -149,9 +163,11 @@ int init(const struct trigger_interface_t* cb, const char *command, const char *
 {
 	const wchar_t *szLang;
 	DWORD dwLang = sizeof(szLang)/sizeof(szLang[0]);
+	cvs::string dstr;
 	cvs::string str;
 	char value[256];
 	int val = 0;
+	int globalval = 0;
 
 	if(!CGlobalSettings::GetGlobalValue("cvsnt","Plugins","ScriptTrigger",value,sizeof(value)))
 		val = atoi(value);
@@ -160,8 +176,41 @@ int init(const struct trigger_interface_t* cb, const char *command, const char *
 		CServerIo::trace(3,"Script trigger not enabled.");
 		return -1;
 	}
+	if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","GlobalScriptTrigger",value,sizeof(value)))
+		globalval = atoi(value);
 
-	cvs::sprintf(str,80,"%s/CVSROOT/script",physical_repository);
+        cvs::sprintf(str,80,"%s/CVSROOT/script",physical_repository);
+	cvs::sprintf(dstr,80,"%s/CVSROOT/script",PATCH_NULL(virtual_repository));
+	if((globalval!=0)&&(CFileAccess::exists((str+".name").c_str())))
+	{ 
+	        // potential security risks about - but if the user has enabled ...
+	        CFileAccess ac;
+	        if(!ac.open((str+".name").c_str(),"r"))
+	        {
+		        CServerIo::error("Couldn't open script name file: %s\n",strerror(errno));
+		        return -1;
+	        }
+
+	        size_t length = (size_t)ac.length();
+	        char *buf = new char[length];
+
+	        length = ac.read(buf,length);
+	        ac.close();
+                // First line is file name; clip it there.
+                char *c = strchr (buf, '\n');
+                if (NULL != c)
+                        *c = '\0';
+
+                c = strchr (buf, '\r');
+                if (NULL != c)
+                        *c = '\0';
+                
+	        str = buf;
+	        dstr = buf;
+	        delete[] buf;
+	        CServerIo::trace (2, "Found script name: %s\n",dstr.c_str());
+        }
+
 	if(CFileAccess::exists((str+".vbs").c_str()))
 		{ szLang=L"VBScript"; str+=".vbs"; }
 	else if(CFileAccess::exists((str+".js").c_str()))
@@ -177,6 +226,8 @@ int init(const struct trigger_interface_t* cb, const char *command, const char *
 		g_pEngine=NULL;
 		return 0;
 	}
+
+	CServerIo::trace (2, "Opening script file: %s\n",dstr.c_str());
 
 	// On Win32 there are really only two options.. UTF8 or ANSI
 	if(!strcmp(character_set,"UTF-8"))
@@ -479,14 +530,18 @@ int precommand(const struct trigger_interface_t* cb, int argc, const char **argv
 	return CallDispatch(L"precommand",args,sizeof(args)/sizeof(args[0]));
 }
 
-int postcommand(const struct trigger_interface_t* cb, const char *directory)
+int postcommand(const struct trigger_interface_t* cb, const char *directory, int return_code)
 {
+	char rc[32];
 	if(!g_pEngine)
 		return 0;
 
-	variant_t args[1];
+	variant_t args[2];
+
+	snprintf(rc,32,"%d",return_code);
 
 	args[0]=_ubstr_t(directory).Detach();
+	args[1]=_ubstr_t(rc).Detach();
 
 	return CallDispatch(L"postcommand",args,sizeof(args)/sizeof(args[0]));
 }
@@ -534,8 +589,9 @@ int get_template(const struct trigger_interface_t *cb, const char *directory, co
 		return -1;
     
 	_bstr_t str(ret);
-	*template_ptr = (const char *)malloc(wcslen(str)*3);
-	template_ptr[WideCharToMultiByte(server_codepage,0,str,wcslen(str),(char*)*template_ptr,wcslen(str)*3,NULL,NULL)]='\0';
+	char * const p = (char * const) malloc(wcslen(str)*3);
+	p[WideCharToMultiByte(server_codepage,0,str,wcslen(str),p,wcslen(str)*3,NULL,NULL)]='\0';
+        *template_ptr = p;
 	return 0;
 }
 
@@ -604,8 +660,9 @@ int parse_keyword(const struct trigger_interface_t *cb, const char *keyword,cons
 		return 0;
 
 	_bstr_t str(ret);
-	*value = (const char *)malloc(wcslen(str)*3);
-	value[WideCharToMultiByte(server_codepage,0,str,wcslen(str),(char*)*value,wcslen(str)*3,NULL,NULL)]='\0';
+	char * const p = ( char * const)malloc(wcslen(str)*3);
+	p[WideCharToMultiByte(server_codepage,0,str,wcslen(str),p,wcslen(str)*3,NULL,NULL)]='\0';
+        *value = p;
 	return 0;
 }
 
@@ -635,7 +692,7 @@ int rcsdiff(const struct trigger_interface_t *cb, const char *file, const char *
 	if(!g_pEngine)
 		return 0;
 
-	variant_t args[9];
+	variant_t args[11];
 
 	args[0]=_ubstr_t(file).Detach();
 	args[1]=_ubstr_t(directory).Detach();
@@ -650,65 +707,6 @@ int rcsdiff(const struct trigger_interface_t *cb, const char *file, const char *
 	args[10]=(long)removed;
 
 	return CallDispatch(L"rcsdiff",args,sizeof(args)/sizeof(args[0]));
-}
-
-
-static int init(const struct plugin_interface *plugin);
-static int destroy(const struct plugin_interface *plugin);
-static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param);
-
-static trigger_interface callbacks =
-{
-	{
-		PLUGIN_INTERFACE_VERSION,
-		"ActiveScript Scripting extension",CVSNT_PRODUCTVERSION_STRING,"ScriptTrigger",
-		init,
-		destroy,
-		get_interface,
-	#ifdef _WIN32
-		win32config
-	#else
-		NULL
-	#endif
-	},
-	init,
-	close,
-	pretag,
-	verifymsg,
-	loginfo,
-	history,
-	notify,
-	precommit,
-	postcommit,
-	precommand,
-	postcommand,
-	premodule,
-	postmodule,
-	get_template,
-	parse_keyword
-};
-
-static int init(const struct plugin_interface *plugin)
-{
-	return 0;
-}
-
-static int destroy(const struct plugin_interface *plugin)
-{
-	return 0;
-}
-
-static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param)
-{
-	if(interface_type!=pitTrigger)
-		return NULL;
-
-	return (void*)&callbacks;
-}
-
-plugin_interface *get_plugin_interface()
-{
-	return &callbacks.plugin;
 }
 
 int CallDispatch(const wchar_t *name,variant_t* args, size_t nargs)
@@ -804,6 +802,66 @@ IDispatch* GetItemList(long count, const char **names, const char **values)
 	pColl->QueryInterface(IID_IDispatch,(void**)&pDispatch);
 	pColl->Release();
 	return pDispatch;
+}
+
+} // anonymous namespace
+
+static int init(const struct plugin_interface *plugin);
+static int destroy(const struct plugin_interface *plugin);
+static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param);
+
+static trigger_interface callbacks =
+{
+	{
+		PLUGIN_INTERFACE_VERSION,
+		"ActiveScript Scripting extension",CVSNT_PRODUCTVERSION_STRING,"ScriptTrigger",
+		init,
+		destroy,
+		get_interface,
+	#ifdef _WIN32
+		win32config
+	#else
+		NULL
+	#endif
+	},
+	init,
+	close,
+	pretag,
+	verifymsg,
+	loginfo,
+	history,
+	notify,
+	precommit,
+	postcommit,
+	precommand,
+	postcommand,
+	premodule,
+	postmodule,
+	get_template,
+	parse_keyword
+};
+
+static int init(const struct plugin_interface *plugin)
+{
+	return 0;
+}
+
+static int destroy(const struct plugin_interface *plugin)
+{
+	return 0;
+}
+
+static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param)
+{
+	if(interface_type!=pitTrigger)
+		return NULL;
+
+	return (void*)&callbacks;
+}
+
+plugin_interface *get_plugin_interface()
+{
+	return &callbacks.plugin;
 }
 
 #ifdef _WIN32

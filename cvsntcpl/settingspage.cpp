@@ -254,7 +254,8 @@ BOOL CSettingsPage::OnInitDialog()
 			RegSetValueEx(g_hServerKey,_T("DefaultDomain"),0,REG_SZ,(BYTE*)buf,_tcslen((LPCTSTR)buf));
 		}
 		RegDeleteValue(g_hServerKey,_T("DontUseDomain"));
-		GetParent()->PostMessage(PSM_CHANGED, (WPARAM)m_hWnd); /* SetModified happens too early */
+		if(g_bPrivileged)
+			GetParent()->PostMessage(PSM_CHANGED, (WPARAM)m_hWnd); /* SetModified happens too early */
 	}
 
 	m_cbDefaultDomain.ResetContent();

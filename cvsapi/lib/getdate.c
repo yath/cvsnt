@@ -1,5 +1,6 @@
 /* A Bison parser, made by GNU Bison 1.875a.  */
 /* Some minor changes by Tony Hoyle */
+/* bug fixes by March Hare Software ltd */
 
 /* Skeleton parser for Yacc-like parsing with Bison,
    Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
@@ -1862,7 +1863,7 @@ ToSeconds(Hours, Minutes, Seconds, Meridian)
 	    Hours = 0;
 	return ((Hours + 12) * 60L + Minutes) * 60L + Seconds;
     default:
-	abort ();
+	abort (); return 0;
     }
     /* NOTREACHED */
 }
@@ -1911,12 +1912,13 @@ Convert(Month, Day, Year, Hours, Minutes, Seconds, Meridian, DSTmode)
     for (i = EPOCH; i < Year; i++)
 	Julian += 365 + (i % 4 == 0);
     Julian *= SECSPERDAY;
-    Julian += yyTimezone * 60L;
+    if ((Julian!=0)&&(yyTimezone>0))
+        Julian += yyTimezone * 60L;
     if ((tod = ToSeconds(Hours, Minutes, Seconds, Meridian)) < 0)
 	return -1;
     Julian += tod;
-    if (DSTmode == DSTon
-     || (DSTmode == DSTmaybe && localtime(&Julian)->tm_isdst))
+    if ((Julian!=0)&&((DSTmode == DSTon
+     || (DSTmode == DSTmaybe && localtime(&Julian)->tm_isdst))))
 	Julian -= 60 * 60;
     return Julian;
 }

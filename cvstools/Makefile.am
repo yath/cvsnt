@@ -8,6 +8,8 @@ libcvstools_la_SOURCES = \
 	cvsroot.h \
 	cvstools.h \
 	export.h \
+	EntriesParser.cpp \
+	EntriesParser.h \
 	GlobalSettings.h \
 	plugin_interface.h \
 	protocol_interface.h \

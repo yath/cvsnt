@@ -137,16 +137,16 @@ int lsacl (int argc, char **argv)
 		err = start_recursion (directories_only?NULL:lsacl_fileproc, (FILESDONEPROC) NULL,
 					(PREDIRENTPROC) NULL, lsacl_dirproc, (DIRLEAVEPROC) NULL, NULL,
 					argc, argv, local,
-					W_LOCAL, 0, 1, (char *) NULL, NULL, 1, NULL);
+					W_LOCAL, 0, 1, (char *) NULL, NULL, 1, NULL, NULL);
 	}
 
     return (err);
 
 }
 
-static void acl_details(XmlHandle_t acl,const char *type)
+static void acl_details(CXmlNodePtr  acl,const char *type)
 {
-	XmlHandle_t h=fileattr_find(acl,type);
+	CXmlNodePtr  h=fileattr_find(acl,type);
 	const char *d,*i;
 	if(h)
 	{
@@ -167,7 +167,7 @@ static void acl_details(XmlHandle_t acl,const char *type)
 				if(i && atoi(i))
 					printf(",");
 			}
-			if(i&&atoi(i))
+			if(i&&!atoi(i))
 			{
 				printf("noinherit");
 			}
@@ -177,7 +177,7 @@ static void acl_details(XmlHandle_t acl,const char *type)
 	}
 }
 
-static void show_acl(XmlHandle_t acl)
+static void show_acl(CXmlNodePtr  acl)
 {
 	while(acl)
 	{
@@ -226,7 +226,7 @@ static void show_acl(XmlHandle_t acl)
 static Dtype lsacl_dirproc (void *callerdat, char *dir, char *repos, char *update_dir, List *entries, const char *virtual_repository, Dtype hint)
 {
 	const char *owner;
-	XmlHandle_t acl;
+	CXmlNodePtr  acl;
 
 	if(hint!=R_PROCESS)
 	  return hint;
@@ -246,10 +246,11 @@ static Dtype lsacl_dirproc (void *callerdat, char *dir, char *repos, char *updat
 
 int lsacl_fileproc(void *callerdat, struct file_info *finfo)
 {
-	XmlHandle_t acl;
+	CXmlNodePtr  acl;
 
-	acl = fileattr_find(NULL,"file[@name=F'%s']/acl",finfo->file);
-	if(acl)
+	acl = fileattr_getroot();
+	acl->xpathVariable("name",finfo->file);
+	if(acl->Lookup("file[cvs:filename(@name,$name)]/acl") && acl->XPathResultNext())
 	{
 		printf("File: %s\n",finfo->file);
 		show_acl(acl);
@@ -282,7 +283,7 @@ static int rlsacl_proc(int argc, char **argv, const char *xwhere,
 	    char *path;
 
 	    /* if the portion of the module is a path, put the dir part on repos */
-	    if ((cp = strrchr (mfile, '/')) != NULL)
+	    if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 	    {
 		*cp = '\0';
 		(void) strcat (repository, "/");
@@ -328,7 +329,7 @@ static int rlsacl_proc(int argc, char **argv, const char *xwhere,
     err = start_recursion (lsacl_fileproc, (FILESDONEPROC) NULL, (PREDIRENTPROC) NULL, lsacl_dirproc,
 			   (DIRLEAVEPROC) NULL, NULL,
 			   argc - 1, argv + 1, local_specified, W_REPOS, 0, 1,
-			   where, mapped_repository, 1, NULL);
+			   where, mapped_repository, 1, NULL, NULL);
 
 	xfree (mapped_repository);
     return err;

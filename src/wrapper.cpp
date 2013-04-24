@@ -73,8 +73,10 @@ static const char *wrap_default[] =
 	"*.bz2 -kb",
 	"*.chm -kb",
 	"*.class -kb",
+	"*.cur -kb",
 	"*.dll -kb",
 	"*.doc -kb",
+	"*.mpp -kb",
 	"*.dvi -kb",
 	"*.exe -kb",
 	"*.gif -kb",
@@ -109,6 +111,7 @@ static const char *wrap_default[] =
 	"*.tgz -kb",
 	"*.tif -kb",
 	"*.tiff -kb",
+	"*.ttf -kb",
 	"*.wav -kb",
 	"*.wmv -kb",
 	"*.xls -kb",
@@ -125,9 +128,9 @@ static void wrap_kill_temp ();
 static bool wrap_list_sort(const wrap_list_t::value_type& a,const wrap_list_t::value_type& b)
 {
 	if(a.isDefault && !b.isDefault)
-		return false;
-	if(b.isDefault && !a.isDefault)
 		return true;
+	if(b.isDefault && !a.isDefault)
+		return false;
 	if(a.isTemp && !b.isTemp)
 		return false;
 	if(b.isTemp && !a.isTemp)

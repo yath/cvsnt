@@ -37,6 +37,10 @@
 #include "../lib/api_system.h"
 #include "DiffBase.h"
 
+#ifndef INT_MAX
+#define INT_MAX 2147483647
+#endif
+
 #define FV(k) v((k), 0)
 #define RV(k) v((k), 1)
 

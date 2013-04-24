@@ -28,7 +28,7 @@
 /// information, as well as the common dialogs.
 struct ServerConnectionInfo
 {
-	ServerConnectionInfo() { isfile=user=enumerated=anonymous=invalid=false; level=-1; }
+	ServerConnectionInfo() { isfile=user=enumerated=anonymous=invalid=isevs=false; level=-1; }
 	int level;				///< Notional level within heirarchy.  0=server, 1=modules, 2+=directories.
 	cvs::string server;		///< Server name.
 	cvs::string port;		///< Port.  If blank assume port 2401.
@@ -50,6 +50,7 @@ struct ServerConnectionInfo
 	bool enumerated;		///< true if this structure was found during autodiscovery.
 	bool anonymous;			///< true if anonymous logins are allowed by this server.
 	bool invalid;			///< true if this server could not be contacted so the information may be incorrect.
+	bool isevs;				///< true if the connecting server is evs based, false if cvsnt based
 };
 
 /// Errors generated during connection.
@@ -95,8 +96,10 @@ public:
 	/// \param command Command to use to test connection.  This is usually something like 'ls' or 'ver'.
 	/// \param info Initialised server information.  This will be modified by this function as needed.
 	/// \param callback Callback structure which is called as the function gathers information.
+	/// \param debugFn undocumented
+	/// \param *userData undocumented
 	/// \return true if successful, false otherwise.  The ServerConnectionInfo structure may be modified in both cases.
-	CVSTOOLS_EXPORT bool Connect(const char *command, ServerConnectionInfo *info, CServerConnectionCallback* callback);
+	CVSTOOLS_EXPORT bool Connect(const char *command, ServerConnectionInfo *info, CServerConnectionCallback* callback, int (*debugFn)(int type, const char *,size_t, void *)=NULL, void *userData=NULL);
 
 private:
 	int m_error;

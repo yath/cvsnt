@@ -18,11 +18,14 @@
 	regarding questions you may have about this file.
 */
 
+/* Jens Miltner <jum@mac.com> 2007-01-10: made code endianness-savvy */
+
 #ifdef __MACH__
 
 #include "hqx.h"
 #include "cvs_hqx.h"
 #include <string.h>
+#include <CoreServices/CoreServices.h>
 
 #define CVS_CHANGES
 	/* due to the fact we want to avoid some informations which are going
@@ -72,6 +75,35 @@ static short ihqxtab[256];
 static unsigned short crctab[256];
 
 
+/* Byte swappers */
+#if TARGET_RT_BIG_ENDIAN
+	#define EndianFInfo_BtoN(ioFlFndrInfo) do {} while (false)
+	#define EndianFInfo_NtoB(ioFlFndrInfo) do {} while (false)
+#else // !TARGET_RT_BIG_ENDIAN
+	static void EndianFInfo_NtoB(FInfo* ioFlFndrInfo)
+	{
+		if ( ioFlFndrInfo ) {
+			ioFlFndrInfo->fdType = EndianU32_NtoB(ioFlFndrInfo->fdType);
+			ioFlFndrInfo->fdCreator = EndianU32_NtoB(ioFlFndrInfo->fdCreator);
+			ioFlFndrInfo->fdFlags = EndianU16_NtoB(ioFlFndrInfo->fdFlags);
+			ioFlFndrInfo->fdLocation.v = EndianS16_NtoB(ioFlFndrInfo->fdLocation.v);
+			ioFlFndrInfo->fdLocation.h = EndianS16_NtoB(ioFlFndrInfo->fdLocation.h);
+			ioFlFndrInfo->fdFldr = EndianS16_NtoB(ioFlFndrInfo->fdFldr);
+		}
+	}
+	static void EndianFInfo_BtoN(FInfo* ioFlFndrInfo)
+	{
+		if ( ioFlFndrInfo ) {
+			ioFlFndrInfo->fdType = EndianU32_BtoN(ioFlFndrInfo->fdType);
+			ioFlFndrInfo->fdCreator = EndianU32_BtoN(ioFlFndrInfo->fdCreator);
+			ioFlFndrInfo->fdFlags = EndianU16_BtoN(ioFlFndrInfo->fdFlags);
+			ioFlFndrInfo->fdLocation.v = EndianS16_BtoN(ioFlFndrInfo->fdLocation.v);
+			ioFlFndrInfo->fdLocation.h = EndianS16_BtoN(ioFlFndrInfo->fdLocation.h);
+			ioFlFndrInfo->fdFldr = EndianS16_BtoN(ioFlFndrInfo->fdFldr);
+		}
+	}
+#endif // !TARGET_RT_BIG_ENDIAN
+
 /* CRC CALCULATION */
 
 static void BuildCRCTable(unsigned short magic_number) {
@@ -96,8 +128,8 @@ static unsigned short crc_byte(unsigned short crc, unsigned char byte) {
 	return ( (crctab[(crc >> 8) & 255] ^ ((crc << 8) | byte)) & 0xFFFF );
 }
 
-static unsigned short crc_run(unsigned short crc, void* buf, long len) {
-	unsigned char *ch = buf;
+static unsigned short crc_run(unsigned short crc, const void* buf, long len) {
+	const unsigned char *ch = (const unsigned char *)buf;
 	long i;
 	unsigned short crcv = crc;
 	for (i = 0; i < len; i++)
@@ -225,13 +257,13 @@ static OSErr FlushRLE(HQXEncVarsPtr encv) {
 	return err;
 }
 
-static OSErr RLEWrite(HQXEncVarsPtr encv, void* buffer, long count) {
-	unsigned char *ch;
+static OSErr RLEWrite(HQXEncVarsPtr encv, const void* buffer, long count) {
+	const unsigned char *ch;
 	long i;
 	OSErr err;
-	ch = (unsigned char*) buffer;
+	ch = (const unsigned char*) buffer;
 	err = noErr;
-	for (ch = (unsigned char*) buffer, i = 0; i < count; i++, ch++) {
+	for (ch = (const unsigned char*) buffer, i = 0; i < count; i++, ch++) {
 		if (encv->fRLECount == 0) {
 			encv->fRLECharacter = *ch;
 			encv->fRLECount = 1;
@@ -276,21 +308,23 @@ static OSErr CRCWriteInit(HQXEncVarsPtr encv) {
 	return noErr;
 }
 
-static OSErr CRCWrite(HQXEncVarsPtr encv, void* buffer, long count) {
+static OSErr CRCWrite(HQXEncVarsPtr encv, const void* buffer, long count) {
 	encv->fCRC = crc_run(encv->fCRC, buffer, count);
 	return RLEWrite(encv, buffer, count);
 }
 
 static OSErr CRCWriteEnd(HQXEncVarsPtr encv) {
+	unsigned short  crc;
 	encv->fCRC = crc_byte(encv->fCRC, 0);
 	encv->fCRC = crc_byte(encv->fCRC, 0);
-	return RLEWrite(encv, &encv->fCRC, 2);
+	crc = EndianU16_NtoB(encv->fCRC);
+	return RLEWrite(encv, &crc, 2);
 }
 
 
 OSErr HQXEncode(const char *filename, HQXSink dst, long refcon) {
 	OSErr err;
-	long zero;
+	long zero, ldata;
 	ByteCount bytecount, actcount;
 	HQXEncVarsPtr encv;
 	FSRef inspec;
@@ -341,13 +375,14 @@ OSErr HQXEncode(const char *filename, HQXSink dst, long refcon) {
 
 #ifdef CVS_CHANGES
 	/* the name is no use for cvs */
-	err = CRCWrite(encv, (unsigned char *)"", 1);
+	err = CRCWrite(encv, "", 1);
 #else
 	err = CRCWrite(encv, fsSpec.name, *fsSpec.name + 1);
 #endif
 	if (err != noErr) goto bail;
 
-	err = CRCWrite(encv, &zero, 1);
+	ldata = EndianS32_NtoB(zero);
+	err = CRCWrite(encv, &ldata, 1);
 	if (err != noErr) goto bail;
 #ifdef CVS_CHANGES
 	/* let remove some user specific flags which may differ with the repository file */
@@ -355,11 +390,14 @@ OSErr HQXEncode(const char *filename, HQXSink dst, long refcon) {
 	ioFlFndrInfo.fdLocation = zeroPoint;
 	ioFlFndrInfo.fdFlags &= ~(kNameLocked | kHasBeenInited);
 #endif
+	EndianFInfo_NtoB(&ioFlFndrInfo);
 	err = CRCWrite(encv, &ioFlFndrInfo, 10);
 	if (err != noErr) goto bail;
-	err = CRCWrite(encv, &ioFlLgLen, 4);
+	ldata = EndianS32_NtoB(ioFlLgLen);
+	err = CRCWrite(encv, &ldata, 4);
 	if (err != noErr) goto bail;
-	err = CRCWrite(encv, &ioFlRLgLen, 4);
+	ldata = EndianS32_NtoB(ioFlRLgLen);
+	err = CRCWrite(encv, &ldata, 4);
 	if (err != noErr) goto bail;
 	err = CRCWriteEnd(encv);
 	if (err != noErr) goto bail;
@@ -530,6 +568,7 @@ static OSErr CRCReadEnd(HQXDecVarsPtr decv) {
 	OSErr err;
 	unsigned short saved_crc;
 	if ((err = RLERead(decv, &saved_crc, 2)) != noErr) return err;
+	saved_crc = EndianU16_BtoN(saved_crc);
 	decv->fCRC = crc_byte(decv->fCRC, 0);
 	decv->fCRC = crc_byte(decv->fCRC, 0);
 	if (saved_crc != decv->fCRC) return paramErr; else return noErr;
@@ -595,12 +634,16 @@ OSErr HQXDecode(HQXSource src, const char *fname, Boolean can_replace, Boolean h
 	if (err != noErr) goto bail;
 	err = CRCRead(decv, &zero, 1);
 	if (err != noErr) goto bail;
+	zero = EndianS32_BtoN(zero);
 	err = CRCRead(decv, &info, 10);
 	if (err != noErr) goto bail;
+	EndianFInfo_BtoN(&info);
 	err = CRCRead(decv, &data_length, 4);
 	if (err != noErr) goto bail;
+	data_length = EndianS32_BtoN(data_length);
 	err = CRCRead(decv, &rsrc_length, 4);
 	if (err != noErr) goto bail;
+	rsrc_length = EndianS32_BtoN(rsrc_length);
 	err = CRCReadEnd(decv);
 	if (err != noErr) goto bail;
 	

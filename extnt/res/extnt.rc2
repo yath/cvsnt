@@ -14,5 +14,3 @@
 #define PROJECTDESCRIPTION "extnt protoocl wrapper"
 #define PROJECTFILENAME "extnt.exe"
 #include "..\windows-NT\VersionInfoCommon.rc2"
-
-1 RT_MANIFEST "res\extnt.manifest"

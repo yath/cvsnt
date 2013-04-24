@@ -20,16 +20,16 @@
 static std::string RemoveDirFromPath(LPCTSTR szPath, LPCTSTR szDir)
 {
 	std::string path = szPath;
-	char *p;
+	const char *p;
 	
 	if(!*szDir)
 		return path;
 
 	while((p=strstr(path.data(),szDir))!=NULL)
 	{
-		strcpy(p,p+strlen(szDir));
+		strcpy((char*)p,p+strlen(szDir));
 		if(*p==';')
-			strcpy(p,p+1);
+			strcpy((char*)p,p+1);
 	}
 	path.resize(strlen(path.c_str()));
 	return path;

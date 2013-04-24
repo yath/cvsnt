@@ -14,8 +14,6 @@
 
 1 TYPELIB script_trigger.tlb
 
-#include "..\cvsservice\ServiceMsg.rc"
-
 #define PROJECTNAME "script_trigger"
 #define PROJECTDESCRIPTION "cvsnt scripting trigger interface"
 #define PROJECTFILENAME "script_trigger.dll"

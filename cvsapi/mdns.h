@@ -30,19 +30,10 @@ struct MdnsBrowseCallback
 class CMdnsHelperBase
 {
 public:
-	enum mdnsType
-	{
-		mdnsMini,
-		mdnsHowl,
-		mdnsApple,
-
-		mdnsDefault = MDNS_DEFAULT
-	};
-
 	CMdnsHelperBase() { }
 	virtual ~CMdnsHelperBase() { }
 
-	static CVSAPI_EXPORT CMdnsHelperBase* Alloc(mdnsType type, const char *dir);
+	static CVSAPI_EXPORT CMdnsHelperBase* CreateHelper(const char *type, const char *dir);
 
 	virtual int open() =0;
 	virtual int publish(const char *instance, const char *service, const char *location, int port, const char *text) =0;

@@ -23,16 +23,20 @@
  *
  */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal. 
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#endif
+
 #ifdef DEBUG
 #include <stdio.h>
 #endif
 
-#ifdef _WIN32
 #include <string.h>
-#endif
 
-#ifndef STATIC
-#define STATIC static
+#ifndef static
+#define static static
 #endif
 
 #include "patchlevel.h"
@@ -262,48 +266,16 @@ static ufc_long longmask[32] = {
   0x00000008, 0x00000004, 0x00000002, 0x00000001
 };
 
-#ifdef DEBUG
-
-pr_bits(a, n)
-  ufc_long *a;
-  int n;
-  { ufc_long i, j, t, tmp;
-    n /= 8;
-    for(i = 0; i < n; i++) {
-      tmp=0;
-      for(j = 0; j < 8; j++) {
-	t=8*i+j;
-	tmp|=(a[t/24] & BITMASK(t % 24))?bytemask[j]:0;
-      }
-      (void)printf("%02x ",tmp);
-    }
-    printf(" ");
-  }
-
-static set_bits(v, b)
-  ufc_long v;
-  ufc_long *b;
-  { ufc_long i;
-    *b = 0;
-    for(i = 0; i < 24; i++) {
-      if(v & longmask[8 + i])
-	*b |= BITMASK(i);
-    }
-  }
-
-#endif
-
 /*
  * Silly rewrite of 'bzero'. I do so
  * because some machines don't have
  * bzero and some don't have memset.
  */
 
-STATIC void clearmem(start, cnt)
-  char *start;
-  int cnt;
-  { while(cnt--)
-      *start++ = '\0';
+static void clearmem(char *start, int cnt)
+  { 
+	  while(cnt--)
+		*start++ = '\0';
   }
 
 static int initialized = 0;
@@ -317,8 +289,9 @@ static int initialized = 0;
  * by fcrypt users.
  */
 
-void init_des()
-  { int comes_from_bit;
+static void init_des()
+  { 
+	  int comes_from_bit;
     int bit, sg;
     ufc_long j;
     ufc_long mask1, mask2;
@@ -486,7 +459,7 @@ void init_des()
  */
 
 #ifdef _UFC_32_
-STATIC void shuffle_sb(k, saltbits)
+static void shuffle_sb(k, saltbits)
   long32 *k;
   ufc_long saltbits;
   { ufc_long j;
@@ -500,7 +473,7 @@ STATIC void shuffle_sb(k, saltbits)
 #endif
 
 #ifdef _UFC_64_
-STATIC void shuffle_sb(k, saltbits)
+static void shuffle_sb(k, saltbits)
   long64 *k;
   ufc_long saltbits;
   { ufc_long j;
@@ -521,7 +494,7 @@ static unsigned char current_salt[3] = "&&"; /* invalid value */
 static ufc_long current_saltbits = 0;
 static int direction = 0;
 
-STATIC void setup_salt(s)
+static void setup_salt(s)
   char *s;
   { ufc_long i, j, saltbits;
 
@@ -561,7 +534,7 @@ STATIC void setup_salt(s)
     current_saltbits = saltbits;
   }
 
-STATIC void ufc_mk_keytab(key)
+static void ufc_mk_keytab(key)
   char *key;
   { ufc_long v1, v2, *k1;
     int i;
@@ -650,7 +623,7 @@ ufc_long *_ufc_dofinalperm(l1, l2, r1, r2)
  * prefixing with the salt
  */
 
-STATIC char *output_conversion(v1, v2, salt)
+static char *output_conversion(v1, v2, salt)
   ufc_long v1, v2;
   char *salt;
   { static char outbuf[14];
@@ -679,10 +652,10 @@ ufc_long *_ufc_doit();
 /* 
  * UNIX crypt function
  */
-   
-char *crypt(key, salt)
-  const char *key, *salt;
-  { ufc_long *s;
+
+char *crypt(const char *key, const char *salt)
+{
+	ufc_long *s;
     char ktab[9];
 
     /*
@@ -708,125 +681,4 @@ char *crypt(key, salt)
      */
     return output_conversion(s[0], s[1], salt);
   }
-
-/* 
- * To make fcrypt users happy.
- * They don't need to call init_des.
- */
-
-char *fcrypt(key, salt)
-  char *key;
-  char *salt;
-  { return crypt(key, salt);
-  }
-
-/* 
- * UNIX encrypt function. Takes a bitvector
- * represented by one byte per bit and
- * encrypt/decrypt according to edflag
- */
-
-void encrypt(block, edflag)
-  char *block;
-  int edflag;
-  { ufc_long l1, l2, r1, r2, *s;
-    int i;
-
-    /*
-     * Undo any salt changes to E expansion
-     */
-    setup_salt("..");
-
-    /*
-     * Reverse key table if
-     * changing operation (encrypt/decrypt)
-     */
-    if((edflag == 0) != (direction == 0)) {
-      for(i = 0; i < 8; i++) {
-#ifdef _UFC_32_
-	long32 x;
-	x = _ufc_keytab[15-i][0]; 
-        _ufc_keytab[15-i][0] = _ufc_keytab[i][0]; 
-        _ufc_keytab[i][0] = x;
-
-	x = _ufc_keytab[15-i][1]; 
-        _ufc_keytab[15-i][1] = _ufc_keytab[i][1]; 
-        _ufc_keytab[i][1] = x;
-#endif
-#ifdef _UFC_64_
-	long64 x;
-	x = _ufc_keytab[15-i];
-	_ufc_keytab[15-i] = _ufc_keytab[i];
-	_ufc_keytab[i] = x;
-#endif
-      }
-      direction = edflag;
-    }
-
-    /*
-     * Do initial permutation + E expansion
-     */
-    i = 0;
-    for(l1 = 0; i < 24; i++) {
-      if(block[initial_perm[esel[i]-1]-1])
-	l1 |= BITMASK(i);
-    }
-    for(l2 = 0; i < 48; i++) {
-      if(block[initial_perm[esel[i]-1]-1])
-	l2 |= BITMASK(i-24);
-    }
-
-    i = 0;
-    for(r1 = 0; i < 24; i++) {
-      if(block[initial_perm[esel[i]-1+32]-1])
-	r1 |= BITMASK(i);
-    }
-    for(r2 = 0; i < 48; i++) {
-      if(block[initial_perm[esel[i]-1+32]-1])
-	r2 |= BITMASK(i-24);
-    }
-
-    /*
-     * Do DES inner loops + final conversion
-     */
-    s = _ufc_doit(l1, l2, r1, r2, (ufc_long)1);
-
-    /*
-     * And convert to bit array
-     */
-    l1 = s[0]; r1 = s[1];
-    for(i = 0; i < 32; i++) {
-      *block++ = (l1 & longmask[i]) != 0;
-    }
-    for(i = 0; i < 32; i++) {
-      *block++ = (r1 & longmask[i]) != 0;
-    }
-    
-  }
-
-/* 
- * UNIX setkey function. Take a 64 bit DES
- * key and setup the machinery.
- */
-
-void setkey(key)
-  char *key;
-  { int i,j;
-    unsigned char c;
-    unsigned char ktab[8];
-
-    setup_salt(".."); /* be sure we're initialized */
-
-    for(i = 0; i < 8; i++) {
-      for(j = 0, c = 0; j < 8; j++)
-	c = c << 1 | *key++;
-      ktab[i] = c >> 1;
-    }
-    
-    ufc_mk_keytab(ktab);
-  }
-
-
-
-
 

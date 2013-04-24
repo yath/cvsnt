@@ -1,162 +1,206 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="7.10"
+	Version="9.00"
 	Name="cvsapi"
 	ProjectGUID="{BCF71D75-2C0F-4B0F-967E-20D2EE52AB08}"
-	RootNamespace="cvsapi">
+	RootNamespace="cvsapi"
+	TargetFrameworkVersion="131072"
+	>
 	<Platforms>
 		<Platform
-			Name="Win32"/>
+			Name="Win32"
+		/>
 	</Platforms>
+	<ToolFiles>
+	</ToolFiles>
 	<Configurations>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory="..\WinRel"
-			IntermediateDirectory=".\Release"
+			OutputDirectory="$(SolutionDir)$(ConfigurationName)$(PlatformName)"
+			IntermediateDirectory="$(SolutionDir)tmp\$(ConfigurationName)$(PlatformName)\$(ProjectName)"
 			ConfigurationType="2"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
 			UseOfMFC="0"
-			ATLMinimizesCRunTimeLibraryUsage="FALSE"
-			CharacterSet="1">
+			ATLMinimizesCRunTimeLibraryUsage="false"
+			CharacterSet="1"
+			>
+			<Tool
+				Name="VCPreBuildEventTool"
+			/>
+			<Tool
+				Name="VCCustomBuildTool"
+			/>
+			<Tool
+				Name="VCXMLDataGeneratorTool"
+			/>
+			<Tool
+				Name="VCWebServiceProxyGeneratorTool"
+			/>
+			<Tool
+				Name="VCMIDLTool"
+			/>
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
 				InlineFunctionExpansion="2"
-				EnableIntrinsicFunctions="TRUE"
-				ImproveFloatingPointConsistency="TRUE"
+				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
-				OmitFramePointers="TRUE"
-				OptimizeForProcessor="0"
-				OptimizeForWindowsApplication="TRUE"
-				AdditionalIncludeDirectories=".\lib;.\win32;..\expat\lib"
+				OmitFramePointers="true"
+				AdditionalIncludeDirectories=".\lib;.\win32;..\libxml\include"
 				PreprocessorDefinitions="_WINDOWS;NDEBUG;WIN32;HAVE_CONFIG_H;CVSAPI_EXPORT=__declspec(dllexport),XML_STATIC,PCRE_STATIC"
-				StringPooling="TRUE"
+				StringPooling="true"
 				RuntimeLibrary="2"
-				EnableFunctionLevelLinking="FALSE"
+				EnableFunctionLevelLinking="false"
 				EnableEnhancedInstructionSet="0"
-				TreatWChar_tAsBuiltInType="TRUE"
-				ForceConformanceInForLoopScope="TRUE"
-				RuntimeTypeInfo="TRUE"
+				TreatWChar_tAsBuiltInType="true"
+				ForceConformanceInForLoopScope="true"
+				RuntimeTypeInfo="true"
 				UsePrecompiledHeader="0"
 				PrecompiledHeaderFile=".\Release/cvsapi.pch"
 				AssemblerListingLocation="$(IntDir)/"
 				ObjectFile="$(IntDir)/"
 				ProgramDataBaseFileName="$(IntDir)/"
 				WarningLevel="3"
-				SuppressStartupBanner="TRUE"
-				Detect64BitPortabilityProblems="FALSE"
+				SuppressStartupBanner="true"
+				Detect64BitPortabilityProblems="false"
 				DebugInformationFormat="3"
-				CompileAs="0"/>
+				CompileAs="0"
+			/>
 			<Tool
-				Name="VCCustomBuildTool"/>
-			<Tool
-				Name="VCLinkerTool"
-				AdditionalDependencies="iconv.lib ws2_32.lib mysql\mysql-3.23\libmysql.lib sqlite.lib urlmon.lib wininet.lib secur32.lib libpq.lib howl.lib dnssd.lib dnsapi.lib"
-				DelayLoadDLLs="libmysql.dll;libpq.dll;sqlite.dll;howl.dll;dnssd.dll;dnsapi.dll"
-				GenerateDebugInformation="TRUE"
-				ProgramDatabaseFile="$(TargetDir)/$(TargetName).pdb"
-				SubSystem="0"
-				LargeAddressAware="2"
-				TerminalServerAware="2"
-				SwapRunFromNet="TRUE"
-				OptimizeReferences="2"
-				EnableCOMDATFolding="2"
-				OptimizeForWindows98="1"
-				SetChecksum="TRUE"
-				TargetMachine="1"/>
-			<Tool
-				Name="VCMIDLTool"/>
-			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Making Manifest"
-				CommandLine="$(TargetDir)/mkmanifest.exe $(TargetPath)"
-				ExcludedFromBuild="FALSE"/>
-			<Tool
-				Name="VCPreBuildEventTool"/>
-			<Tool
-				Name="VCPreLinkEventTool"/>
+				Name="VCManagedResourceCompilerTool"
+			/>
 			<Tool
 				Name="VCResourceCompilerTool"
-				Culture="2057"/>
+				Culture="2057"
+			/>
 			<Tool
-				Name="VCWebServiceProxyGeneratorTool"/>
+				Name="VCPreLinkEventTool"
+			/>
 			<Tool
-				Name="VCXMLDataGeneratorTool"/>
+				Name="VCLinkerTool"
+				AdditionalDependencies="libiconv.lib ws2_32.lib urlmon.lib wininet.lib secur32.lib dnsapi.lib wintrust.lib libxml2.lib libpcreposix.lib"
+				OutputFile="$(OutDir)\$(ProjectName).dll"
+				DelayLoadDLLs=""
+				GenerateDebugInformation="true"
+				ProgramDatabaseFile="$(TargetDir)/$(TargetName).pdb"
+				SubSystem="0"
+				OptimizeReferences="2"
+				EnableCOMDATFolding="2"
+				SetChecksum="true"
+			/>
 			<Tool
-				Name="VCWebDeploymentTool"/>
+				Name="VCALinkTool"
+			/>
 			<Tool
-				Name="VCManagedWrapperGeneratorTool"/>
+				Name="VCManifestTool"
+			/>
 			<Tool
-				Name="VCAuxiliaryManagedWrapperGeneratorTool"/>
+				Name="VCXDCMakeTool"
+			/>
+			<Tool
+				Name="VCBscMakeTool"
+			/>
+			<Tool
+				Name="VCFxCopTool"
+			/>
+			<Tool
+				Name="VCAppVerifierTool"
+			/>
+			<Tool
+				Name="VCPostBuildEventTool"
+			/>
 		</Configuration>
 		<Configuration
 			Name="Debug|Win32"
-			OutputDirectory="..\WinDebug"
-			IntermediateDirectory=".\Debug"
+			OutputDirectory="$(SolutionDir)$(ConfigurationName)$(PlatformName)"
+			IntermediateDirectory="$(SolutionDir)tmp\$(ConfigurationName)$(PlatformName)\$(ProjectName)"
 			ConfigurationType="2"
+			InheritedPropertySheets="$(VCInstallDir)VCProjectDefaults\UpgradeFromVC71.vsprops"
 			UseOfMFC="0"
-			ATLMinimizesCRunTimeLibraryUsage="FALSE"
-			CharacterSet="1">
+			ATLMinimizesCRunTimeLibraryUsage="false"
+			CharacterSet="1"
+			>
+			<Tool
+				Name="VCPreBuildEventTool"
+			/>
+			<Tool
+				Name="VCCustomBuildTool"
+			/>
+			<Tool
+				Name="VCXMLDataGeneratorTool"
+			/>
+			<Tool
+				Name="VCWebServiceProxyGeneratorTool"
+			/>
+			<Tool
+				Name="VCMIDLTool"
+			/>
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				OmitFramePointers="FALSE"
-				OptimizeForProcessor="0"
-				OptimizeForWindowsApplication="TRUE"
+				OmitFramePointers="false"
 				AdditionalIncludeDirectories=".\lib;.\win32;..\expat\lib"
 				PreprocessorDefinitions="_DEBUG;_WINDOWS;WIN32;HAVE_CONFIG_H;CVSAPI_EXPORT=__declspec(dllexport),XML_STATIC,PCRE_STATIC"
-				MinimalRebuild="TRUE"
+				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
-				SmallerTypeCheck="FALSE"
+				SmallerTypeCheck="false"
 				RuntimeLibrary="3"
-				BufferSecurityCheck="TRUE"
-				EnableFunctionLevelLinking="TRUE"
+				BufferSecurityCheck="true"
+				EnableFunctionLevelLinking="true"
 				EnableEnhancedInstructionSet="0"
-				TreatWChar_tAsBuiltInType="TRUE"
-				ForceConformanceInForLoopScope="TRUE"
-				RuntimeTypeInfo="TRUE"
+				TreatWChar_tAsBuiltInType="true"
+				ForceConformanceInForLoopScope="true"
+				RuntimeTypeInfo="true"
 				UsePrecompiledHeader="0"
 				PrecompiledHeaderFile=".\Debug/cvsapi.pch"
 				AssemblerListingLocation="$(IntDir)/"
 				ObjectFile="$(IntDir)/"
 				ProgramDataBaseFileName="$(IntDir)/"
 				WarningLevel="3"
-				SuppressStartupBanner="TRUE"
-				Detect64BitPortabilityProblems="TRUE"
+				SuppressStartupBanner="true"
 				DebugInformationFormat="4"
-				CompileAs="0"/>
+				CompileAs="0"
+			/>
 			<Tool
-				Name="VCCustomBuildTool"/>
-			<Tool
-				Name="VCLinkerTool"
-				AdditionalDependencies="iconv.lib ws2_32.lib mysql\mysql-3.23\libmysql.lib sqlite.lib urlmon.lib wininet.lib secur32.lib libpq.lib howl.lib dnssd.lib dnsapi.lib"
-				DelayLoadDLLs="libmysql.dll;libpq.dll;sqlite.dll;howl.dll;dnssd.dll;dnsapi.dll"
-				GenerateDebugInformation="TRUE"
-				ProgramDatabaseFile="$(TargetDir)/$(TargetName).pdb"/>
-			<Tool
-				Name="VCMIDLTool"/>
-			<Tool
-				Name="VCPostBuildEventTool"
-				Description="Making Manifest"
-				CommandLine="$(TargetDir)/mkmanifest.exe $(TargetPath)"
-				ExcludedFromBuild="FALSE"/>
-			<Tool
-				Name="VCPreBuildEventTool"/>
-			<Tool
-				Name="VCPreLinkEventTool"/>
+				Name="VCManagedResourceCompilerTool"
+			/>
 			<Tool
 				Name="VCResourceCompilerTool"
-				Culture="2057"/>
+				Culture="2057"
+			/>
 			<Tool
-				Name="VCWebServiceProxyGeneratorTool"/>
+				Name="VCPreLinkEventTool"
+			/>
 			<Tool
-				Name="VCXMLDataGeneratorTool"/>
+				Name="VCLinkerTool"
+				AdditionalDependencies="libiconv.lib ws2_32.lib urlmon.lib wininet.lib secur32.lib dnsapi.lib wintrust.lib libxml2.lib libpcreposix.lib"
+				OutputFile="$(OutDir)\$(ProjectName).dll"
+				DelayLoadDLLs=""
+				GenerateDebugInformation="true"
+				ProgramDatabaseFile="$(TargetDir)/$(TargetName).pdb"
+			/>
 			<Tool
-				Name="VCWebDeploymentTool"/>
+				Name="VCALinkTool"
+			/>
 			<Tool
-				Name="VCManagedWrapperGeneratorTool"/>
+				Name="VCManifestTool"
+			/>
 			<Tool
-				Name="VCAuxiliaryManagedWrapperGeneratorTool"/>
+				Name="VCXDCMakeTool"
+			/>
+			<Tool
+				Name="VCBscMakeTool"
+			/>
+			<Tool
+				Name="VCFxCopTool"
+			/>
+			<Tool
+				Name="VCAppVerifierTool"
+			/>
+			<Tool
+				Name="VCPostBuildEventTool"
+			/>
 		</Configuration>
 	</Configurations>
 	<References>
@@ -164,458 +208,499 @@
 	<Files>
 		<Filter
 			Name="Generic Objects"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90">
+				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90"
+				>
 				<File
-					RelativePath=".\Codepage.cpp">
+					RelativePath=".\Codepage.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\cvs_string.cpp">
+					RelativePath=".\crypt.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\GetOptions.cpp">
+					RelativePath=".\cvs_string.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\md5calc.cpp">
+					RelativePath=".\GetOptions.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\RunFile.cpp">
+					RelativePath=".\md5calc.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\ServerIO.cpp">
+					RelativePath=".\win32\RunFile.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\TokenLine.cpp">
+					RelativePath=".\ServerIO.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\TokenLine.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="h;hpp;hxx;hm;inl">
+				Filter="h;hpp;hxx;hm;inl"
+				>
 				<File
-					RelativePath=".\Codepage.h">
+					RelativePath=".\Codepage.h"
+					>
 				</File>
 				<File
-					RelativePath=".\cvs_smartptr.h">
+					RelativePath=".\crypt.h"
+					>
 				</File>
 				<File
-					RelativePath=".\cvs_string.h">
+					RelativePath=".\cvs_smartptr.h"
+					>
 				</File>
 				<File
-					RelativePath=".\GetOptions.h">
+					RelativePath=".\cvs_string.h"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\manifest.h">
+					RelativePath=".\GetOptions.h"
+					>
 				</File>
 				<File
-					RelativePath=".\md5calc.h">
+					RelativePath=".\win32\manifest.h"
+					>
 				</File>
 				<File
-					RelativePath=".\RunFile.h">
+					RelativePath=".\md5calc.h"
+					>
 				</File>
 				<File
-					RelativePath=".\ServerIO.h">
+					RelativePath=".\RunFile.h"
+					>
 				</File>
 				<File
-					RelativePath=".\TokenLine.h">
+					RelativePath=".\ServerIO.h"
+					>
+				</File>
+				<File
+					RelativePath=".\TokenLine.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
 			Name="Standard file API"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90">
+				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90"
+				>
 				<File
-					RelativePath=".\win32\DirectoryAccess.cpp">
+					RelativePath=".\win32\DirectoryAccess.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\FileAccess.cpp">
+					RelativePath=".\win32\FileAccess.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\FileCompat.cpp">
+					RelativePath=".\win32\FileCompat.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\SplitPath.cpp">
+					RelativePath=".\SplitPath.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="h;hpp;hxx;hm;inl">
+				Filter="h;hpp;hxx;hm;inl"
+				>
 				<File
-					RelativePath=".\DirectoryAccess.h">
+					RelativePath=".\DirectoryAccess.h"
+					>
 				</File>
 				<File
-					RelativePath=".\FileAccess.h">
+					RelativePath=".\FileAccess.h"
+					>
 				</File>
 				<File
-					RelativePath=".\SplitPath.h">
+					RelativePath=".\SplitPath.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
 			Name="Version Control"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90">
+				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90"
+				>
 				<File
-					RelativePath=".\TagDate.cpp">
+					RelativePath=".\TagDate.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="h;hpp;hxx;hm;inl">
+				Filter="h;hpp;hxx;hm;inl"
+				>
 				<File
-					RelativePath=".\FileEntry.h">
+					RelativePath=".\FileEntry.h"
+					>
 				</File>
 				<File
-					RelativePath=".\TagDate.h">
+					RelativePath=".\TagDate.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
 			Name="Database Access"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90">
+				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90"
+				>
 				<File
-					RelativePath=".\db2\Db2Connection.cpp">
+					RelativePath=".\SqlConnection.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\db2\Db2Recordset.cpp">
+					RelativePath=".\SqlConnectionInformation.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\mssql\MssqlConnection.cpp">
+					RelativePath=".\SqlRecordset.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\mssql\MssqlRecordset.cpp">
-				</File>
-				<File
-					RelativePath=".\MySql\MySqlConnection.cpp">
-				</File>
-				<File
-					RelativePath=".\MySql\MySqlRecordset.cpp">
-				</File>
-				<File
-					RelativePath=".\odbc\OdbcConnection.cpp">
-				</File>
-				<File
-					RelativePath=".\odbc\OdbcRecordset.cpp">
-				</File>
-				<File
-					RelativePath=".\postgres\PostgresConnection.cpp">
-				</File>
-				<File
-					RelativePath=".\postgres\PostgresRecordset.cpp">
-				</File>
-				<File
-					RelativePath=".\SqlConnection.cpp">
-				</File>
-				<File
-					RelativePath=".\sqlite\SQLiteConnection.cpp">
-				</File>
-				<File
-					RelativePath=".\sqlite\SQLiteRecordset.cpp">
-				</File>
-				<File
-					RelativePath=".\SqlRecordset.cpp">
-				</File>
-				<File
-					RelativePath=".\SqlVariant.cpp">
+					RelativePath=".\SqlVariant.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="h;hpp;hxx;hm;inl">
+				Filter="h;hpp;hxx;hm;inl"
+				>
 				<File
-					RelativePath=".\db2\Db2Connection.h">
+					RelativePath=".\SqlConnection.h"
+					>
 				</File>
 				<File
-					RelativePath=".\db2\Db2Recordset.h">
+					RelativePath=".\SqlConnectionInformation.h"
+					>
 				</File>
 				<File
-					RelativePath=".\mssql\MssqlConnection.h">
+					RelativePath=".\SqlRecordset.h"
+					>
 				</File>
 				<File
-					RelativePath=".\mssql\MssqlRecordset.h">
-				</File>
-				<File
-					RelativePath=".\MySql\MySqlConnection.h">
-				</File>
-				<File
-					RelativePath=".\MySql\MySqlRecordset.h">
-				</File>
-				<File
-					RelativePath=".\odbc\OdbcConnection.h">
-				</File>
-				<File
-					RelativePath=".\odbc\OdbcRecordset.h">
-				</File>
-				<File
-					RelativePath=".\postgres\PostgresConnection.h">
-				</File>
-				<File
-					RelativePath=".\postgres\PostgresRecordset.h">
-				</File>
-				<File
-					RelativePath=".\SqlConnection.h">
-				</File>
-				<File
-					RelativePath=".\sqlite\SQLiteConnection.h">
-				</File>
-				<File
-					RelativePath=".\sqlite\SQLiteRecordset.h">
-				</File>
-				<File
-					RelativePath=".\SqlRecordset.h">
-				</File>
-				<File
-					RelativePath=".\SqlVariant.h">
+					RelativePath=".\SqlVariant.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
 			Name="lib"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90">
+				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90"
+				>
 				<File
-					RelativePath=".\lib\fncmp.c">
+					RelativePath=".\lib\fncmp.c"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\fnmatch.c">
+					RelativePath=".\lib\fnmatch.c"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\getdate.c">
+					RelativePath=".\lib\getdate.c"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\getmode.c">
+					RelativePath=".\lib\getmode.c"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\md5.c">
+					RelativePath=".\lib\GetOsVersion.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\ndir.cpp">
+					RelativePath=".\lib\md5.c"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\timegm.c">
+					RelativePath=".\lib\md5crypt.c"
+					>
+				</File>
+				<File
+					RelativePath=".\lib\ndir.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\lib\timegm.c"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="h;hpp;hxx;hm;inl">
+				Filter="h;hpp;hxx;hm;inl"
+				>
 				<File
-					RelativePath=".\lib\api_system.h">
+					RelativePath=".\lib\api_system.h"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\config.h">
+					RelativePath=".\win32\config.h"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\fncmp.h">
+					RelativePath=".\lib\fncmp.h"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\fnmatch.h">
+					RelativePath=".\lib\fnmatch.h"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\getdate.h">
+					RelativePath=".\lib\getdate.h"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\getmode.h">
+					RelativePath=".\lib\getmode.h"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\md5.h">
+					RelativePath=".\lib\GetOsVersion.h"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\ndir.h">
+					RelativePath=".\lib\md5.h"
+					>
 				</File>
 				<File
-					RelativePath=".\lib\timegm.h">
+					RelativePath=".\lib\md5crypt.h"
+					>
+				</File>
+				<File
+					RelativePath=".\lib\ndir.h"
+					>
+				</File>
+				<File
+					RelativePath=".\lib\timegm.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
 			Name="Socket API"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90">
+				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90"
+				>
 				<File
-					RelativePath=".\win32\autoproxy.cpp">
+					RelativePath=".\win32\autoproxy.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\DnsApi.cpp">
+					RelativePath=".\win32\DnsApi.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\HttpSocket.cpp">
+					RelativePath=".\win32\HttpSocket.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\SocketIO.cpp">
+					RelativePath=".\win32\SocketIO.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\win32\SSPIHandler.cpp">
+					RelativePath=".\win32\SSPIHandler.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="h;hpp;hxx;hm;inl">
+				Filter="h;hpp;hxx;hm;inl"
+				>
 				<File
-					RelativePath=".\DnsApi.h">
+					RelativePath=".\DnsApi.h"
+					>
 				</File>
 				<File
-					RelativePath=".\HttpSocket.h">
+					RelativePath=".\HttpSocket.h"
+					>
 				</File>
 				<File
-					RelativePath=".\SocketIO.h">
+					RelativePath=".\SocketIO.h"
+					>
 				</File>
 				<File
-					RelativePath=".\SSPIHandler.h">
+					RelativePath=".\SSPIHandler.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
 			Name="Diff"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90">
+				Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat;for;f90"
+				>
 				<File
-					RelativePath=".\diff\DiffBase.cpp">
+					RelativePath=".\diff\DiffBase.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\diff\StringDiff.cpp">
+					RelativePath=".\diff\StringDiff.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="h;hpp;hxx;hm;inl">
+				Filter="h;hpp;hxx;hm;inl"
+				>
 				<File
-					RelativePath=".\diff\DiffBase.h">
+					RelativePath=".\diff\DiffBase.h"
+					>
 				</File>
 				<File
-					RelativePath=".\diff\StringDiff.h">
+					RelativePath=".\diff\StringDiff.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
-			Name="Xml API">
+			Name="Xml API"
+			>
 			<Filter
-				Name="Source Files">
+				Name="Source Files"
+				>
 				<File
-					RelativePath=".\rpcBase.cpp">
+					RelativePath=".\rpcBase.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\XmlApi.cpp">
+					RelativePath=".\XmlNode.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\xmltree.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
-				Name="Header Files">
+				Name="Header Files"
+				>
 				<File
-					RelativePath=".\rpcBase.h">
+					RelativePath=".\rpcBase.h"
+					>
 				</File>
 				<File
-					RelativePath=".\Xmlapi.h">
+					RelativePath=".\XmlNode.h"
+					>
+				</File>
+				<File
+					RelativePath=".\XmlTree.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
 		<Filter
 			Name="Zeroconf"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="">
+				>
 				<File
-					RelativePath=".\mdns.cpp">
+					RelativePath=".\mdns.cpp"
+					>
 				</File>
 				<File
-					RelativePath=".\mdns_apple.cpp">
-				</File>
-				<File
-					RelativePath=".\mdns_howl.cpp">
-				</File>
-				<File
-					RelativePath=".\mdns_mini.cpp">
-				</File>
-				<File
-					RelativePath=".\Zeroconf.cpp">
+					RelativePath=".\Zeroconf.cpp"
+					>
 				</File>
 				<Filter
 					Name="Header Files"
-					Filter="">
+					>
 					<File
-						RelativePath=".\mdns.h">
+						RelativePath=".\mdns.h"
+						>
 					</File>
 					<File
-						RelativePath=".\mdns_apple.h">
-					</File>
-					<File
-						RelativePath=".\mdns_howl.h">
-					</File>
-					<File
-						RelativePath=".\mdns_mini.h">
-					</File>
-					<File
-						RelativePath=".\Zeroconf.h">
+						RelativePath=".\Zeroconf.h"
+						>
 					</File>
 				</Filter>
 			</Filter>
 		</Filter>
 		<Filter
+			Name="Resources"
+			>
+			<File
+				RelativePath=".\win32\cvsapi.rc"
+				>
+			</File>
+			<File
+				RelativePath=".\win32\cvsapi.rc2"
+				>
+			</File>
+			<File
+				RelativePath=".\win32\ServiceMsg.mc"
+				>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+						CommandLine="mc win32/ServiceMsg.mc&#x0D;&#x0A;"
+						Outputs="msg00001.bin"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+						CommandLine="mc win32/ServiceMsg.mc&#x0D;&#x0A;"
+						Outputs="msg00001.bin"
+					/>
+				</FileConfiguration>
+			</File>
+		</Filter>
+		<Filter
 			Name="Library access"
-			Filter="">
+			>
 			<Filter
 				Name="Source Files"
-				Filter="">
+				>
 				<File
-					RelativePath=".\win32\LibraryAccess.cpp">
+					RelativePath=".\win32\LibraryAccess.cpp"
+					>
 				</File>
 			</Filter>
 			<Filter
 				Name="Header Files"
-				Filter="">
+				>
 				<File
-					RelativePath=".\LibraryAccess.h">
+					RelativePath=".\LibraryAccess.h"
+					>
 				</File>
 			</Filter>
 		</Filter>
-		<Filter
-			Name="Resources"
-			Filter="">
-			<File
-				RelativePath=".\win32\cvsapi.manifest">
-			</File>
-			<File
-				RelativePath=".\win32\cvsapi.rc">
-			</File>
-			<File
-				RelativePath=".\win32\cvsapi.rc2">
-			</File>
-			<File
-				RelativePath=".\win32\ServiceMsg.mc">
-				<FileConfiguration
-					Name="Release|Win32">
-					<Tool
-						Name="VCCustomBuildTool"
-						CommandLine="mc win32/ServiceMsg.mc
-"
-						Outputs="msg00001.bin"/>
-				</FileConfiguration>
-				<FileConfiguration
-					Name="Debug|Win32">
-					<Tool
-						Name="VCCustomBuildTool"
-						CommandLine="mc win32/ServiceMsg.mc
-"
-						Outputs="msg00001.bin"/>
-				</FileConfiguration>
-			</File>
-		</Filter>
 		<File
-			RelativePath=".\cvsapi.h">
+			RelativePath=".\cvsapi.h"
+			>
 		</File>
 	</Files>
 	<Globals>

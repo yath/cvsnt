@@ -11,7 +11,8 @@
 #define STRICT
 #define WINVER 0x0501
 #define _WIN32_WINNT 0x0501
-#define ISOLATION_AWARE_ENABLED 1
+#define _CRT_SECURE_NO_DEPRECATE
+#pragma warning(disable:4996)
 
 #include <afxwin.h>         // MFC core and standard components
 #include <afxext.h>         // MFC extensions
@@ -40,5 +41,9 @@
 extern std::map<std::string,std::string> g_Passwords;
 extern bool g_bTopmost;
 
-#include <cvsapi.h>
+//Deprecated
+//#define HAVE_U3
+
+#ifdef HAVE_U3
 #include <u3dapi10.h>
+#endif

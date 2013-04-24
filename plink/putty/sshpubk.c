@@ -1,3 +1,9 @@
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 /*
  * Generic SSH public-key handling operations. In particular,
  * reading of SSH public-key files, and also the generic `sign'

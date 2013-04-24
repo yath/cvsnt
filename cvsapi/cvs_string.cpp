@@ -15,27 +15,16 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-#include <stdio.h>
-#include <stdarg.h>
 #include <config.h>
 #include "lib/api_system.h"
+#include <stdio.h>
+#include <stdarg.h>
 #include <assert.h>
 #include <ctype.h>
 
 #include "ServerIO.h"
 
-#ifdef _WIN32
-#include "../pcre/pcreposix.h"
-#else
-  #ifdef HAVE_PCRE
-  #include <pcreposix.h>
-  #elif defined(HAVE_REGEX_H)
-  #include <sys/types.h>
-  #include <regex.h>
-  #else
-  #error "Need pcre or regex."
-  #endif
-#endif
+#include <pcreposix.h>
 
 #include "cvs_string.h"
 
@@ -43,12 +32,15 @@
 // platforms prefer it.
 // OSX barfs if we try this also.
 // Also HPUX aCC
-#if !defined (_WIN32) && !defined(__APPLE__) && !defined(__hpux)
+#if !defined (_WIN32) && !defined(__APPLE__) && !defined(__hpux) && !defined(__digital)
 template class std::char_traits<char>;
 template class std::char_traits<wchar_t>;
 template class std::basic_string<char>;
 template class std::basic_string<wchar_t>;
 #endif
+
+// Cache for cache_static_string
+std::queue<cvs::string> cvs::cache_static_string::global_string_cache;
 
 // Note that if we're using PCRE the string match is always extended...
 // for this reason avoid setting extended=false as it'll behave differently on

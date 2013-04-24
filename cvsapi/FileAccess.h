@@ -20,13 +20,24 @@
 
 #include <sys/types.h>
 
+
 #ifdef _WIN32
+#include <windows.h>
 #ifndef loff_t
 #define loff_t __int64
 #endif
 #endif
 
 #include "cvs_string.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#define ISDIRSEP(c) (c=='/' || c=='\\')
+#else
+#ifndef ISDIRSEP
+#define ISDIRSEP(c) ((c) == '/')
+#endif
+#endif
 
 class CFileAccess
 {
@@ -64,6 +75,10 @@ public:
 	CVSAPI_EXPORT size_t write(const void *buf, size_t length);
 
 	CVSAPI_EXPORT loff_t length();
+	static CVSAPI_EXPORT void make_directories (const char *name);
+#ifdef _WIN32
+	CVSAPI_EXPORT bool copyfile(const char *ExistingFileName, const char *NewFileName, bool FailIfExists);
+#endif
 	CVSAPI_EXPORT loff_t pos();
 	CVSAPI_EXPORT bool eof();
 	CVSAPI_EXPORT bool seek(loff_t pos, SeekEnum whence);
@@ -106,6 +121,8 @@ protected:
 	FILE *m_file;
 
 #ifdef _WIN32
+	static void _tmake_directories(const char *name, const TCHAR *fn);
+	static void _dosmaperr(DWORD dwErr);
 	static cvs::wstring wtempdir();
 	static bool _remove(cvs::wstring& path);
 

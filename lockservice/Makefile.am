@@ -14,12 +14,6 @@
 
 AM_CPPFLAGS = -I$(top_srcdir)/lib -I$(top_srcdir)/cvsapi -I$(top_srcdir)/cvstools $(includeopt) @PTHREAD_CPPFLAGS@
 
-if WITH_PCRE
-  pcre_lib = @PCRE_LIBS@
-else
-  pcre_lib = ../pcre/.libs/libpcreposix.a ../pcre/.libs/libpcre.a
-endif
-
 cvs_targets = cvslockd
 
 cvslockd_SOURCES = \
@@ -32,7 +26,7 @@ bin_PROGRAMS=$(cvs_targets)
 cvslockd_LDADD = \
 	-L$(DESTDIR)/$(libdir) \
 	../lib/libcvs.a ../cvsapi/libcvsapi.la ../cvstools/libcvstools.la \
-	$(pcre_lib) @PTHREAD_LIBS@
+	@PTHREAD_LIBS@
 
 EXTRA_DIST = \
 	.cvsignore 

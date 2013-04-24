@@ -12,31 +12,8 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-AUTOMAKE_OPTIONS = 1.6
-
-if WITH_ZLIB
-  ZLIB_SUBDIR =
-else
-  ZLIB_SUBDIR = zlib
-endif
-
-if WITH_EXPAT
-  EXPAT_SUBDIR =
-else
-  EXPAT_SUBDIR = expat
-endif
-
-if WITH_PCRE
-  PCRE_SUBDIR =
-else
-  PCRE_SUBDIR = pcre
-endif
-
-if WITH_LOCKSERVER
-  LOCKSERVER_SUBDIR = lockservice
-else
-  LOCKSERVER_SUBDIR =
-endif
+AUTOMAKE_OPTIONS = 1.10
+ACLOCAL_AMFLAGS = -I m4
 
 if WITH_RCSTOOLS
   RCSTOOLS_SUBDIR = rcs
@@ -44,15 +21,13 @@ else
   RCSTOOLS_SUBDIR =
 endif
 
-ltdl_subdir = libltdl
-
 if WITH_MAC_HFS_SUPPORT
   MACOSX_SUBDIR = osx
 else
   MACOSX_SUBDIR =
 endif
 
-if WITH_MDNS
+if WITH_MINI_MDNS
   MDNSCLIENT_SUBDIR = mdnsclient
 else
   MDNSCLIENT_SUBDIR =
@@ -61,25 +36,8 @@ endif
 cvs_config_dir=@cvs_config_dir@
 
 # All other subdirs:
-SUBDIRS = $(ZLIB_SUBDIR) lib $(ltdl_subdir) $(EXPAT_SUBDIR) $(PCRE_SUBDIR) $(MDNSCLIENT_SUBDIR) cvsapi diff cvsgui cvstools xdiff \
-	  protocols triggers cvsdelta $(MACOSX_SUBDIR) src $(LOCKSERVER_SUBDIR) $(RCSTOOLS_SUBDIR) man
-
-EXTRA_DIST = \
-	.cvsignore \
-	BUGS \
-	ChangeLog.zoo \
-	DEVEL-CVS \
-	FAQ \
-	HACKING \
-	MINOR-BUGS \
-	PROJECTS \
-	TESTS \
-	cvs-format.el \
-	redhat/cvsnt.spec.in \
-	cvsnt.dsp \
-	cvsnt.dsw \
-	cvsnt.mak \
-	cvsnt.vcproj 
+SUBDIRS = lib $(MDNSCLIENT_SUBDIR) cvsapi diff cvsgui cvstools xdiff \
+	  protocols triggers cvsdelta $(MACOSX_SUBDIR) src lockservice $(RCSTOOLS_SUBDIR) man run_script
 
 .PHONY: remotecheck
 remotecheck: all

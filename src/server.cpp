@@ -51,6 +51,11 @@ const char *serv_client_version = NULL;
 
 extern int server_io_socket;
 
+static bool have_local_root = true;
+
+// Size above which checksums are used rather than sending the file if a timestamp difference is detected
+int server_checksum_threshold = 1048576*5; // 5MB
+
 #ifdef _WIN32
 #include <fcntl.h>
 #endif
@@ -116,6 +121,11 @@ extern "C" {
 static int checksum_valid;
 static char stored_checksum[33];
 
+// If true, the client has sent server-codepage, and is therefore codepage aware and we need do nothing at this end.
+// If false, and there's a default codepage set, we translate in/out in text items from the client to our codepage.
+static bool server_codepage_sent; 
+static const char *default_client_codepage;
+
 /* While processing requests, this buffer accumulates data to be sent to
    the client, and then once we are in do_cvs_command, we use it
    for all the data to be sent.  */
@@ -140,6 +150,13 @@ static char *server_temp_dir;
  * Temporary protocol used during authentication 
  */
 static const protocol_interface *temp_protocol;
+
+/*
+ *
+ * protocol structure used in server mode.  See also client_protocol
+ *
+ */
+const struct protocol_interface *server_protocol;
 
 /* This is the original value of server_temp_dir, before any possible
    changes inserted by serve_max_dotdot.  */
@@ -191,6 +208,7 @@ struct fd_buffer
 static int check_command_legal_p (const char *cmd_name);
 
 int server_main(const char *cmd_name, int (*command)(int argc, char **argv));
+int proxy_main(const char *cmd_name, int (*command)(int argc, char **argv));
 
 static void do_chroot();
 
@@ -212,6 +230,14 @@ static struct buffer *cvs_protocol_wrap_buffer_initialize (struct buffer *buf, c
 static void cvs_protocol_wrap_set_buffer(struct buffer *buf, struct buffer *wrap);
 
 static char *check_password (const char *username, const char *password, const char *repository, void **user_token);
+
+#ifdef SERVER_SUPPORT
+// buf_read_line with a possible line translation.  Avoid using it unless the line has a filename in it
+// that require translation, due to the overhead.
+static int server_read_line(struct buffer *buf, char **line, int *lenp);
+static void server_buf_output0(buffer *buf, const char *string);
+static void server_buf_output(buffer *buf, const char *data, int len);
+#endif
 
 static int io_getc(int fd)
 {
@@ -426,28 +452,37 @@ static int fd_buffer_shutdown (void *closure)
    for output.  MEMORY is the function to call when a memory error
    occurs.  */
 
+struct client_protocol_data
+{
+	const struct protocol_interface *protocol;
+	int server_io_socket;
+};
+
 static struct buffer *client_protocol_buffer_initialize (const struct protocol_interface *protocol, int input, void (*memory)(struct buffer *))
 {
+	client_protocol_data *data = new client_protocol_data;
+	data->protocol = protocol;
+	data->server_io_socket = server_io_socket;
     return buf_initialize (input ? client_protocol_buffer_input : NULL,
 			   input ? NULL : client_protocol_buffer_output,
 			   input ? NULL : client_protocol_buffer_flush,
 			   client_protocol_buffer_block,
 			   input ? NULL : client_protocol_buffer_shutdown, /* We only shutdown when buf_to_net is closed */
 			   memory,
-			   (void*)protocol);
+			   (void*)data);
 }
 
 /* The buffer input function for a client protocol buffer.  */
 
 static int client_protocol_buffer_input (void *closure, char *data, int need, int size, int *got)
 {
-	const struct protocol_interface *protocol = (const struct protocol_interface *)closure;
+	client_protocol_data *dat = (client_protocol_data*)closure;
 	int nbytes;
 
-	if(protocol && protocol->server_read_data)
-		nbytes = protocol->server_read_data(protocol, data, size);
+	if(dat->protocol && dat->protocol->server_read_data)
+		nbytes = dat->protocol->server_read_data(dat->protocol, data, size);
 	else
-		nbytes = read(server_io_socket, data, size);
+		nbytes = read(dat->server_io_socket, data, size);
 
     if (nbytes > 0)
     {
@@ -484,7 +519,7 @@ static int client_protocol_buffer_input (void *closure, char *data, int need, in
 
 static int client_protocol_buffer_output (void *closure, const char *data, int have, int *wrote)
 {
-	const struct protocol_interface *protocol = (const struct protocol_interface *)closure;
+	client_protocol_data *dat = (client_protocol_data*)closure;
 
     *wrote = 0;
 
@@ -492,10 +527,10 @@ static int client_protocol_buffer_output (void *closure, const char *data, int h
     {
 	int nbytes;
 
-	if(protocol && protocol->server_write_data)
-		nbytes = protocol->server_write_data (protocol, data, have);
+	if(dat->protocol && dat->protocol->server_write_data)
+		nbytes = dat->protocol->server_write_data (dat->protocol, data, have);
 	else
-		nbytes = write (server_io_socket?server_io_socket:STDOUT_FILENO, data, have);
+		nbytes = write (dat->server_io_socket?dat->server_io_socket:STDOUT_FILENO, data, have);
 
 	if (nbytes <= 0)
 	{
@@ -520,9 +555,9 @@ static int client_protocol_buffer_output (void *closure, const char *data, int h
 /*ARGSUSED*/
 static int client_protocol_buffer_flush (void *closure)
 {
-	const struct protocol_interface *protocol = (const struct protocol_interface *)closure;
-	if(protocol && protocol->server_flush_data)
-		protocol->server_flush_data(protocol);
+	client_protocol_data *data = (client_protocol_data*)closure;
+	if (data) if(data->protocol && data->protocol->server_flush_data)
+		data->protocol->server_flush_data(data->protocol);
 
     return 0;
 }
@@ -541,17 +576,17 @@ static int client_protocol_buffer_block (void *closure, int block)
 
 static int client_protocol_buffer_shutdown (void *closure)
 {
-	const struct protocol_interface *protocol = (const struct protocol_interface *)closure;
-	if(protocol && protocol->server_shutdown)
-		protocol->server_shutdown(protocol);
-	else if(server_io_socket)
+	client_protocol_data *data = (client_protocol_data*)closure;
+	if(data->protocol && data->protocol->server_shutdown)
+		data->protocol->server_shutdown(data->protocol);
+	else if(data->server_io_socket)
 	{
 #ifdef _WIN32
-		shutdown(_get_osfhandle(server_io_socket),2);
-		closesocket(_get_osfhandle(server_io_socket));
+		shutdown(_get_osfhandle(data->server_io_socket),2);
+		closesocket(_get_osfhandle(data->server_io_socket));
 #else
-		shutdown(server_io_socket,2);
-		close(server_io_socket);
+		shutdown(data->server_io_socket,2);
+		close(data->server_io_socket);
 #endif
 	}
     return 0;
@@ -815,7 +850,7 @@ static void print_error (int status)
        sprintf (tmpstr, "unknown error %d", status);
        msg = tmpstr;
     }
-    buf_output0 (buf_to_net, msg);
+    server_buf_output0 (buf_to_net, msg);
     buf_append_char (buf_to_net, '\n');
 
     buf_flush (buf_to_net, 0);
@@ -898,7 +933,7 @@ static void serve_valid_responses (char *arg)
 static void serve_root (char *arg)
 {
     char *path;
-	const char *real_repository;
+	const char *real_repository,*repository_name;
 	
     if(protocol_encryption_enabled != PROTOCOL_ENCRYPTION && client_protocol && client_protocol->valid_elements&flagAlwaysEncrypted)
     {
@@ -928,15 +963,15 @@ static void serve_root (char *arg)
     }
  
 #ifdef SERVER_SUPPORT
-    if (client_protocol && client_protocol->auth_repository != NULL)
+    if (server_protocol && server_protocol->auth_repository != NULL)
     {
-	if (fncmp (client_protocol->auth_repository, arg) != 0)
+	if (fncmp (server_protocol->auth_repository, arg) != 0)
 	{
 		/* The explicitness is to aid people who are writing clients.
 		   I don't see how this information could help an
 		   attacker.  */
 		   error(1,0,"Protocol error: Root says \"%s\" but protocol says \"%s\"",
-			 arg, client_protocol->auth_repository);
+			 arg, server_protocol->auth_repository);
 	}
     }
 #endif
@@ -949,68 +984,75 @@ static void serve_root (char *arg)
 	/* We can be called with 'cvs server' one of two ways.  Either directly, from
 		a script or inetd, or from a wrapper which sets the allow-root directives. */
 	real_repository = arg;
-	int online = 1;
-	if(!root_allow_ok(arg,&real_repository,&online))
+	repository_name = arg;
+	const root_allow_struct *found_root = NULL;
+
+	if(server_protocol && server_protocol->auth_proxyname)
+		repository_name = server_protocol->auth_proxyname;
+
+	if(!root_allow_ok(arg,found_root,real_repository,false))
 	{
-		error(1,0,"%s: no such repository", arg);
+		error(1,0,"%s: no such repository", real_repository);
 	}
 
-	if(!online)
+	if(!found_root->online)
 	{
-		error(1,0,"%s: repository is offline", arg);
+		error(1,0,"%s: repository is offline", real_repository);
 	}
 	
-	current_parsed_root = local_cvsroot(arg,real_repository);
+	current_parsed_root = local_cvsroot(repository_name,real_repository,found_root->readwrite,found_root->repotype,found_root->remote_server.c_str(),found_root->remote_repository.c_str(),found_root->proxy_repository.c_str(),found_root->remote_passphrase.c_str());
    
 	umask(0); 
 	do_chroot();
 
-	if (!client_protocol || !client_protocol->auth_repository )
+	if (!server_protocol || !server_protocol->auth_repository )
 	{
 	    parse_config( current_parsed_root->directory );
-#ifdef _WIN32
-		if(!filenames_case_insensitive)
-			add_to_ci_directory_list(current_parsed_root->directory);
-#endif
 	}
 
     /* For pserver, this will already have happened, and the call will do
        nothing.  But for other protocols, we need to do it now.  */
-	if(client_protocol && !client_protocol->auth_repository)
+	if(server_protocol && !server_protocol->auth_repository)
 	{
 		char *host_user;
 
 		/* If we haven't verified the user before, then do it here.  The password will be NULL but we pass
 		   it anyway just in case this changes in the future. */
-		host_user = check_password (client_protocol->auth_username, client_protocol->auth_password,
+		host_user = check_password (server_protocol->auth_username, server_protocol->auth_password,
 									current_parsed_root->directory, /*user_token*/NULL);
 
 		if(!host_user)
 		{
-			CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", client_protocol->auth_username, client_protocol->auth_repository);
+			CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", server_protocol->auth_username, server_protocol->auth_repository);
 			error (1, 0,
 				"authorization failed: server %s rejected access to %s for user %s",
-				hostname, current_parsed_root->unparsed_directory, client_protocol->auth_username);
+				hostname, current_parsed_root->unparsed_directory, server_protocol->auth_username);
 		}
 		xfree(host_user);
 	}
 
-    path = (char*)xmalloc (strlen (current_parsed_root->directory)
-		   + sizeof (CVSROOTADM)
-		   + 2);
-    if (path == NULL)
-    {
-		error(1,ENOMEM,"Alloc failed");
-		return;
-    }
-    (void) sprintf (path, "%s/%s", current_parsed_root->directory, CVSROOTADM);
-    if (!isaccessible (path, R_OK | X_OK))
-    {
-		error(1,errno,"Cannot access %s", path);
-    }
-    xfree (path);
+	if(current_parsed_root->type!=RootTypeProxyAll && current_parsed_root->directory && *current_parsed_root->directory)
+	{
+		path = (char*)xmalloc (strlen (current_parsed_root->directory)
+			+ sizeof (CVSROOTADM)
+			+ 2);
+		if (path == NULL)
+		{
+			error(1,ENOMEM,"Alloc failed");
+			return;
+		}
+		(void) sprintf (path, "%s/%s", current_parsed_root->directory, CVSROOTADM);
+		if (!isaccessible (path, R_OK | X_OK))
+		{
+			error(1,errno,"Cannot access %s", path);
+		}
+		xfree (path);
 
-	lock_register_client(CVS_Username,current_parsed_root->directory);
+		lock_register_client(CVS_Username,current_parsed_root->directory);
+		have_local_root = true;
+	}
+	else
+		have_local_root = false;
 
 #ifdef HAVE_PUTENV
 	cvs_putenv(CVSROOT_ENV, current_parsed_root->directory);
@@ -1276,12 +1318,12 @@ static void dirswitch (char *dir, char *repos)
 		return;
     }
 
-    if (fprintf (f, "%s", current_parsed_root->directory) < 0)
-    {
+	if (fprintf (f, "%s", current_parsed_root->directory) < 0)
+	{
 		fclose (f);
 		error(1,errno,"error writing %s/%s", fn_root(dir_name), CVSADM_REP);
 		return;
-    }
+	}
 
     if (fprintf (f, "%s", repos + strlen(current_parsed_root->unparsed_directory)) < 0)
     {
@@ -1350,7 +1392,7 @@ serve_protocol_encrypt(char *arg)
 	if(protocol_encryption_enabled)
 		return;
 
-	if(client_protocol && !client_protocol->wrap && !(client_protocol->valid_elements&flagAlwaysEncrypted))
+	if(server_protocol && !server_protocol->wrap && !(server_protocol->valid_elements&flagAlwaysEncrypted))
 	{
 		error(1,0,"Requested protocol does not support encryption");
 		return;
@@ -1359,12 +1401,12 @@ serve_protocol_encrypt(char *arg)
 	buf_flush(stderr_buf, 1);
 	buf_flush(stdout_buf, 1);
 
-	if(client_protocol->wrap)
+	if(server_protocol->wrap)
 	{
-		buf_to_net = cvs_encrypt_wrap_buffer_initialize (buf_to_net, 0,
+		buf_to_net = cvs_encrypt_wrap_buffer_initialize (server_protocol, buf_to_net, 0,
 														1,
 														buf_to_net->memory_error);
-		buf_from_net = cvs_encrypt_wrap_buffer_initialize (buf_from_net, 1,
+		buf_from_net = cvs_encrypt_wrap_buffer_initialize (server_protocol, buf_from_net, 1,
 														1,
 														buf_from_net->memory_error);
 		cvs_protocol_wrap_set_buffer(stdout_buf, buf_to_net);
@@ -1380,7 +1422,7 @@ serve_protocol_authenticate(char *arg)
 	if(protocol_encryption_enabled)
 		return;
 
-	if(!client_protocol->wrap && !(client_protocol->valid_elements&flagAlwaysEncrypted))
+	if(!server_protocol->wrap && !(server_protocol->valid_elements&flagAlwaysEncrypted))
 	{
 		error(1,0,"Requested protocol does not support authentication");
 		return;
@@ -1389,12 +1431,12 @@ serve_protocol_authenticate(char *arg)
 	buf_flush(stderr_buf, 1);
 	buf_flush(stdout_buf, 1);
 
-	if(client_protocol->wrap)
+	if(server_protocol->wrap)
 	{
-		buf_to_net = cvs_encrypt_wrap_buffer_initialize (buf_to_net, 0,
+		buf_to_net = cvs_encrypt_wrap_buffer_initialize (server_protocol, buf_to_net, 0,
 														0,
 														buf_to_net->memory_error);
-		buf_from_net = cvs_encrypt_wrap_buffer_initialize (buf_from_net, 1,
+		buf_from_net = cvs_encrypt_wrap_buffer_initialize (server_protocol, buf_from_net, 1,
 														0,
 														buf_from_net->memory_error);
 
@@ -1410,7 +1452,7 @@ static void serve_directory (char *arg)
     int status;
     char *repos;
 
-    status = buf_read_line (buf_from_net, &repos, (int *) NULL);
+    status = server_read_line (buf_from_net, &repos, (int *) NULL);
     if (status == 0)
     {
 		if (!outside_root (repos))
@@ -1592,6 +1634,30 @@ static void receive_file (int size, char *file, bool check_textfile)
 		return;
     }
 
+#ifdef _WIN32
+	// Statistics tracking
+	if(!check_textfile)
+	{
+		int binarycount=0,binaryavg=0;
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","BinaryCount",binarycount);
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","BinaryAverage",binaryavg);
+		binarycount++;
+		binaryavg=(binaryavg+size)/2;
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","BinaryCount",binarycount);
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","BinaryAverage",binaryavg);
+	}
+	else
+	{
+		int textcount=0,textavg=0;
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","TextCount",textcount);
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","TextAverage",textavg);
+		textcount++;
+		textavg=(textavg+size)/2;
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","TextCount",textcount);
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","TextAverage",textavg);
+	}
+#endif
+
 	receive_partial_file (size, fd, check_textfile, md5, modified);
 
     if (close (fd) < 0)
@@ -1708,6 +1774,125 @@ static void serve_modified (char *arg)
 	    return;
 	}
     }
+
+    /* Make sure that the Entries indicate the right kopt.  We probably
+       could do this even in the non-kopt case and, I think, save a stat()
+       call in time_stamp_server.  But for conservatism I'm leaving the
+       non-kopt case alone.  */
+    if (kopt != NULL)
+		serve_is_modified (arg);
+}
+
+
+typedef struct _cs_entry_t { _cs_entry_t(const char *o) { strncpy(entry,o,32); entry[32]='\0'; } char entry[33]; } cs_entry_t;
+
+static void serve_binary_transfer(char *arg)
+{
+    int size, status;
+    char *size_text;
+    char *mode_text;
+
+    status = buf_read_line (buf_from_net, &mode_text, (int *) NULL);
+    if (status != 0)
+    {
+        if (status == -2)
+			error(1,ENOMEM,"Alloc failed");
+		else
+		{
+			if (status == -1)
+				error(1,0,"end of file reading mode for %s", arg);
+			else
+				error(1,0,"error reading mode for %s", arg);
+		}
+		return;
+    }
+
+    status = buf_read_line (buf_from_net, &size_text, (int *) NULL);
+    if (status != 0)
+    {
+		if (status == -2)
+			error(1,ENOMEM,"Alloc failed");
+		else
+		{
+			if (status == -1)
+				error(1,0,"end of file reading size for %s", arg);
+			else
+				error(1,0,"error reading size for %s", arg);
+		}
+		xfree (mode_text);
+		return;
+    }
+	size = atoi (size_text);
+    xfree (size_text);
+
+#ifdef _WIN32
+	// Statistics tracking
+	int binarycount=0,binaryavg=0;
+	CGlobalSettings::GetGlobalValue("cvsnt","PServer","BinaryCount",binarycount);
+	CGlobalSettings::GetGlobalValue("cvsnt","PServer","BinaryAverage",binaryavg);
+	binarycount++;
+	binaryavg=(binaryavg+size)/2;
+	CGlobalSettings::SetGlobalValue("cvsnt","PServer","BinaryCount",binarycount);
+	CGlobalSettings::SetGlobalValue("cvsnt","PServer","BinaryAverage",binaryavg);
+#endif
+
+    if (outside_dir (arg))
+    {
+		xfree (mode_text);
+		return;
+    }
+
+	std::vector<cs_entry_t> cs_list;
+	cs_list.reserve((size/65536)+2);
+	size_t s = size,l,j=0;
+	int nread;
+	while(s)
+	{
+		char *buf;
+
+		l=s>65536?65536:s;
+		
+		if((status = buf_read_data(buf_from_net,33,&buf,&nread))!=0 || nread!=33 || buf[32]!='\n')
+		{
+			error(0,0,"Invalid binary checksum sent: %s", buf);
+			return;
+		}
+		buf[32]='\0';
+		cs_list.push_back(buf);
+		s-=l;
+	}
+
+	if(cs_list.size()>1)
+	{
+		// cs_list[0] is the file checksum
+		// cs_list[1..n] are the 64k block checksums
+		//
+		// prb: we should know the original file but we don't yet.. need to store these checksums in such
+		// a manner that we can request the data from the client when we can
+	}
+
+    if (checkin_time_valid)
+    {
+		struct utimbuf t;
+
+		memset (&t, 0, sizeof (t));
+		t.modtime = t.actime = checkin_time;
+		if (utime (arg, &t) < 0)
+		{
+			xfree (mode_text);
+			error(1,errno,"cannot utime %s", arg);
+			return;
+		}
+		checkin_time_valid = 0;
+    }
+
+	status = change_mode (arg, mode_text, 0);
+	xfree (mode_text);
+	if (status)
+	{
+		error(1,0,"cannot change mode for %s", fn_root(arg));
+	    return;
+	}
 
     /* Make sure that the Entries indicate the right kopt.  We probably
        could do this even in the non-kopt case and, I think, save a stat()
@@ -1909,7 +2094,7 @@ static void serve_kopt (char *arg)
        overrun attacks.  Probably should call RCS_check_kflag here,
        but that would mean changing RCS_check_kflag to handle errors
        other than via exit(), fprintf(), and such.  */
-    if (strlen (arg) > 10)
+    if (strlen (arg) > 30)
     {
 		error(1,0,"protocol error: invalid Kopt request: %s", arg);
 		return;
@@ -1951,9 +2136,7 @@ static kflag serve_file_kopt (char *arg)
     {
 		name = p->entry + 1;
 		cp = strchr (name, '/');
-		if (cp != NULL
-	    && strlen (arg) == cp - name
-	    && strncmp (arg, name, cp - name) == 0)
+		if (cp != NULL && strlen (arg) == cp - name && strncmp (arg, name, cp - name) == 0)
 		{
 		    timefield = strchr (cp + 1, '/') + 1;
 			optfield = timefield?strchr(timefield,'/')+1:NULL;
@@ -1970,7 +2153,7 @@ static kflag serve_file_kopt (char *arg)
 		}
 	    break;
 	}
-	RCS_get_kflags(NULL,false,kf);
+	RCS_get_kflags(wrap_rcsoption(arg),false,kf);
 	return kf;
 }
 
@@ -2187,7 +2370,7 @@ static void serve_notify (char *arg)
     strcpy (pnew->filename, arg);
 	pnew->user = notify_user?xstrdup(notify_user):xstrdup(getcaller());
 
-    status = buf_read_line (buf_from_net, &data, (int *) NULL);
+    status = server_read_line (buf_from_net, &data, (int *) NULL);
     if (status != 0)
     {
 		if (status == -2)
@@ -2334,13 +2517,13 @@ static int server_notify ()
 			if (dir[0] == '\0')
 				buf_append_char (buf_to_net, '.');
 			else
-				buf_output0 (buf_to_net, dir);
+				server_buf_output0 (buf_to_net, dir);
 			buf_append_char (buf_to_net, '/');
 			buf_append_char (buf_to_net, '\n');
 		}
-		buf_output0 (buf_to_net, repos);
+		server_buf_output0 (buf_to_net, repos);
 		buf_append_char (buf_to_net, '/');
-		buf_output0 (buf_to_net, notify_list->filename);
+		server_buf_output0 (buf_to_net, notify_list->filename);
 		buf_append_char (buf_to_net, '\n');
 		xfree (repos);
 
@@ -2477,10 +2660,10 @@ static void serve_questionable (char *arg)
 	update_dir = dir_name + strlen (server_temp_dir) + 1;
 	if (!(update_dir[0] == '.' && update_dir[1] == '\0'))
 	{
-	    buf_output0 (buf_to_net, update_dir);
+	    server_buf_output0 (buf_to_net, update_dir);
 	    buf_output (buf_to_net, "/", 1);
 	}
-	buf_output0 (buf_to_net, arg);
+	server_buf_output0 (buf_to_net, arg);
 	buf_output (buf_to_net, "\n", 1);
     }
 }
@@ -2491,7 +2674,7 @@ static void serve_utf8 (char *arg)
 
 static void authentication_requested(char *flag)
 {
-	if(encryption_level == 1 && client_protocol && client_protocol->wrap)
+	if(encryption_level == 1 && server_protocol && server_protocol->wrap)
 		*flag = 1;
 	else
 		*flag = 0;
@@ -2499,7 +2682,7 @@ static void authentication_requested(char *flag)
 
 static void encryption_requested(char *flag)
 {
-	if(encryption_level == 2 && client_protocol && client_protocol->wrap)
+	if(encryption_level == 2 && server_protocol && server_protocol->wrap)
 		*flag = 1;
 	else
 		*flag = 0;
@@ -2594,8 +2777,16 @@ static int check_command_legal_p (const char *cmd_name)
          *    Else read-write access for user.
          */
 
-		  if(read_only_server) /* Server is running read only */
+		/* Local repositories obey the read write flags from the server configuration */
+		/* Remote repositories don't - it's up to the remote server to reject if required */
+		  if(current_parsed_root->type==RootTypeStandard)
+		  {
+			  if(read_only_server) /* Server is running read only */
+				  return 0;
+
+			if(!current_parsed_root->readwrite) /* Repository is running read only */
 			  return 0;
+		  }
 
          char *linebuf = NULL;
          int num_red = 0;
@@ -2762,7 +2953,24 @@ error  \n");
 	/* Flush out any pending data.  */
     buf_flush (buf_to_net, 1);
 
-    errs = server_main(cmd_name, command);
+	switch(current_parsed_root->type)
+	{
+		case RootTypeStandard:
+			errs = server_main(cmd_name, command);
+			break;
+		case RootTypeProxyAll:
+			errs = proxy_main(cmd_name, command);
+			break;
+		case RootTypeProxyWrite:
+			if(lookup_command_attribute (cmd_name) & CVS_CMD_MODIFIES_REPOSITORY)
+				errs = proxy_main(cmd_name, command);
+			else
+				errs = server_main(cmd_name, command);
+			break;
+		default:
+			error(1,0, "Unknown root type - cannot continue");
+	}
+
 
     buf_flush(stderr_buf, 1);
     buf_flush(stdout_buf, 1);
@@ -2816,7 +3024,7 @@ static void output_dir(const char *update_dir, const char *repository)
 
     if (server_dir != NULL)
 	{
-		buf_output0(buf_to_net,client_where(server_dir));
+		server_buf_output0(buf_to_net,client_where(server_dir));
 		buf_output0(buf_to_net,"/");
 	}
 
@@ -2826,9 +3034,9 @@ static void output_dir(const char *update_dir, const char *repository)
 		buf_output0(buf_to_net,client_where(update_dir));
 	buf_output0(buf_to_net,"/\n");
 
-	buf_output0(buf_to_net,current_parsed_root->unparsed_directory);
+	server_buf_output0(buf_to_net,current_parsed_root->unparsed_directory);
 	if(strlen(repository)>strlen(current_parsed_root->directory))
-		buf_output0(buf_to_net,repository+strlen(current_parsed_root->directory));
+		server_buf_output0(buf_to_net,repository+strlen(current_parsed_root->directory));
 	buf_output0(buf_to_net,"/");
 }
 
@@ -2838,9 +3046,9 @@ int send_rename_to_client(const char *oldfile, const char *newfile)
 	if(supported_response("Rename"))
 	{
 		buf_output0(buf_to_net,"Rename ");
-		buf_output0(buf_to_net,oldfile);
+		server_buf_output0(buf_to_net,oldfile);
 		buf_output0(buf_to_net,"\n");
-		buf_output0(buf_to_net,newfile);
+		server_buf_output0(buf_to_net,newfile);
 		buf_output0(buf_to_net,"\n");
 	}
 	else
@@ -2856,9 +3064,9 @@ int server_rename_file(const char *oldfile, const char *newfile)
 	if(supported_response("Renamed"))
 	{
 		buf_output0(buf_to_net,"Renamed ./\n");
-		buf_output0(buf_to_net,oldfile);
+		server_buf_output0(buf_to_net,oldfile);
 		buf_output0(buf_to_net,"\n");
-		buf_output0(buf_to_net,newfile);
+		server_buf_output0(buf_to_net,newfile);
 		buf_output0(buf_to_net,"\n");
 	}
 	return 0;
@@ -2906,7 +3114,7 @@ static int kill_scratched_file;
 void server_register(const char *name, const char *version, const char *timestamp, const char *options,
 				const char *tag, const char *date, const char *conflict, const char *merge_from_tag_1,
 				const char *merge_from_tag_2, time_t rcs_timestamp,
-				const char *edit_revision, const char *edit_tag, const char *edit_bugid)
+				const char *edit_revision, const char *edit_tag, const char *edit_bugid, const char *md5)
 {
     int len;
 	char *temp_options;
@@ -2914,7 +3122,7 @@ void server_register(const char *name, const char *version, const char *timestam
     if (options == NULL)
 		options = "";
 
-	TRACE(1,"server_register(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+	TRACE(1,"server_register(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
 			PATCH_NULL(name), PATCH_NULL(version), timestamp ? timestamp : "", PATCH_NULL(options),
 			tag ? tag : "", date ? date : "",
 			conflict ? conflict : "", 
@@ -2922,7 +3130,8 @@ void server_register(const char *name, const char *version, const char *timestam
 			merge_from_tag_2 ? merge_from_tag_2 : "",
 			edit_revision?edit_revision:"",
 			edit_tag?edit_tag:"",
-			edit_bugid?edit_bugid:"");
+			edit_bugid?edit_bugid:"",
+			md5?md5:"");
 
     if (entries_line != NULL)
     {
@@ -2957,6 +3166,10 @@ void server_register(const char *name, const char *version, const char *timestam
 	len += strlen (date);
 	if (timestamp)
 	len += strlen (timestamp);
+	if(md5)
+	len += strlen(md5);
+
+	len += 128; // This is for patching the md5 in later...
     
     entries_line = (char*)xmalloc (len);
 	entries_ex_line = (char*)xmalloc(len);
@@ -2991,7 +3204,7 @@ void server_register(const char *name, const char *version, const char *timestam
 	sprintf (entries_ex_line, "/%s/%s/%s/", name, merge_from_tag_1 ? merge_from_tag_1 : "",merge_from_tag_2 ? merge_from_tag_2 : "");
 	if(rcs_timestamp!=(time_t)-1)
 		sprintf (entries_ex_line+strlen(entries_ex_line), "%"TIME_T_SPRINTF"d", rcs_timestamp);
-	sprintf(entries_ex_line+strlen(entries_ex_line),"/%s/%s/%s/", edit_revision?edit_revision:"",edit_tag?edit_tag:"",edit_bugid?edit_bugid:"");
+	sprintf(entries_ex_line+strlen(entries_ex_line),"/%s/%s/%s/%s/", edit_revision?edit_revision:"",edit_tag?edit_tag:"",edit_bugid?edit_bugid:"",md5?md5:"");
 }
 
 void server_scratch (const char *fname)
@@ -3038,7 +3251,7 @@ static void new_entries_line ()
 {
     if (entries_line)
     {
-		buf_output0(buf_to_net,entries_line);
+		server_buf_output0(buf_to_net,entries_line);
 		buf_output0(buf_to_net,"\n");
     }
     else
@@ -3057,7 +3270,7 @@ static void new_entries_ex_line ()
 		if (entries_ex_line)
 		{
 			buf_output0(buf_to_net,"EntriesExtra ");
-			buf_output0(buf_to_net,entries_ex_line);
+			server_buf_output0(buf_to_net,entries_ex_line);
 			buf_output0(buf_to_net,"\n");
 		}
 	}
@@ -3098,7 +3311,7 @@ static void checked_in_response (const char *file, const char *update_dir, const
 
 	buf_output0(buf_to_net,"Checked-in ");
     output_dir (update_dir, repository);
-	buf_output0(buf_to_net,file);
+	server_buf_output0(buf_to_net,file);
 	buf_output0(buf_to_net,"\n");
     new_entries_line ();
 }
@@ -3115,7 +3328,7 @@ void server_checked_in (const char *file, const char *update_dir, const char *re
 	 */
 		buf_output0(buf_to_net,"Remove-entry ");
 		output_dir (update_dir, repository);
-		buf_output0(buf_to_net,file);
+		server_buf_output0(buf_to_net,file);
 		buf_output0(buf_to_net,"\n");
 		xfree (scratched_file);
 		scratched_file = NULL;
@@ -3164,6 +3377,11 @@ void serve_passwd (char *arg)
    do_cvs_command ("passwd", passwd);
 }
 
+static void serve_passwd_md5(char *flag)
+{
+	*flag = 1;
+}
+
 void serve_info (char *arg)
 {
    do_cvs_command ("info", info);
@@ -3181,7 +3399,7 @@ void server_update_entries (const char *file, const char *update_dir, const char
 			return;
 		buf_output0(buf_to_net,"New-entry ");
 		output_dir (update_dir, repository);
-		buf_output0(buf_to_net,file);
+		server_buf_output0(buf_to_net,file);
 		buf_output0(buf_to_net,"\n");
 		new_entries_line ();
     }
@@ -3327,7 +3545,7 @@ static void serve_rename(char *arg)
 		return;
 	}
 
-    status = buf_read_line (buf_from_net, &p->to, (int *) NULL);
+    status = server_read_line (buf_from_net, &p->to, (int *) NULL);
     if (status == 0)
     {
 		if (isabsolute(p->to) || strstr(p->to,".."))
@@ -3447,11 +3665,11 @@ static void serve_expand_modules(char *arg)
 		else if(dir_map.find(frst)!=dir_map.end())
 		{
 			buf_output0 (buf_to_net, "Module-expansion ");
-			buf_output0 (buf_to_net, dir_map[frst].c_str());
+			server_buf_output0 (buf_to_net, dir_map[frst].c_str());
 			if(nxt.size())
 			{
 				buf_output0 (buf_to_net, "/");
-				buf_output0 (buf_to_net, nxt.c_str());
+				server_buf_output0 (buf_to_net, nxt.c_str());
 			}
 			buf_output0 (buf_to_net, "\n");
 		}
@@ -3460,7 +3678,7 @@ static void serve_expand_modules(char *arg)
 			/* Note that we don't check for module existence here... that is done
 				in the main checkout routine. */
 			buf_output0 (buf_to_net, "Module-expansion ");
-			buf_output0 (buf_to_net, args[i].c_str());
+			server_buf_output0 (buf_to_net, args[i].c_str());
 			buf_output0 (buf_to_net, "\n");
 		}
 	}
@@ -3612,6 +3830,15 @@ static void serve_client_version(char *arg)
 	buf_output0(buf_to_net,"CVSNT "CVSNT_PRODUCTVERSION_STRING"\n");
 	buf_flush(buf_to_net,0);
 	serv_client_version = xstrdup(arg);
+
+ 	TRACE(99,"Server: CVSNT "CVSNT_PRODUCTVERSION_STRING);
+ 	TRACE(99,"Client: %s",PATCH_NULL(serv_client_version));
+
+	// At the time of writing SmartCVS is hardcoded to (I think) ISO8859-1.  This means that it can't
+	// effectively use multinational filenames.  If a future version fixes this it can send the
+	// server_codepage command to tell cvsnt it's character set aware and avoid this hack.
+	if(!server_codepage_sent && strstr(serv_client_version,"SmartCVS"))
+		default_client_codepage = xstrdup("ISO8859-1");
 }
 
 static void serve_read_cvswrappers(char *arg)
@@ -3670,7 +3897,7 @@ static void serve_co (char *arg)
 	if (status != 0 && status != EEXIST)
 	{
 	    buf_output0 (buf_to_net, "E Cannot create ");
-	    buf_output0 (buf_to_net, tempdir);
+	    server_buf_output0 (buf_to_net, fn_root(tempdir));
 	    buf_append_char (buf_to_net, '\n');
 	    print_error (errno);
 	    xfree (tempdir);
@@ -3680,7 +3907,7 @@ static void serve_co (char *arg)
 	if ( CVS_CHDIR (tempdir) < 0)
 	{
 	    buf_output0 (buf_to_net, "E Cannot change to directory ");
-	    buf_output0 (buf_to_net, fn_root(tempdir));
+	    server_buf_output0 (buf_to_net, fn_root(tempdir));
 	    buf_append_char (buf_to_net, '\n');
 	    print_error (errno);
 	    xfree (tempdir);
@@ -3718,9 +3945,9 @@ void server_copy_file (const char *file, const char *update_dir, const char *rep
 		return;
 	buf_output0(buf_to_net,"Copy-file ");
     output_dir (update_dir, repository);
-	buf_output0(buf_to_net,file);
+	server_buf_output0(buf_to_net,file);
 	buf_output0(buf_to_net,"\n");
-	buf_output0(buf_to_net,newfile);
+	server_buf_output0(buf_to_net,newfile);
 	buf_output0(buf_to_net,"\n");
 }
 
@@ -3828,12 +4055,16 @@ void server_updated (
 			checksum_supported = supported_response ("Checksum");
 	    }
 
-	    if (checksum_supported)
+	    if (checksum_supported && updated != SERVER_UPDATED)
 	    {
 			buf_output0(buf_to_net,"Checksum ");
 			buf_output0(buf_to_net,md5->Final());
 			buf_output0(buf_to_net,"\n");
 	    }
+
+		// Space was reserved earlier for this
+		if(entries_ex_line && strlen(entries_ex_line))
+			sprintf(entries_ex_line+strlen(entries_ex_line)-1,"%s/",md5->Final());
 	}
 
 	new_entries_ex_line();
@@ -3873,7 +4104,7 @@ void server_updated (
 		error(1,0,"Internal error - invalid update type");
 	
 	output_dir (finfo->update_dir, finfo->repository);
-	buf_output0(buf_to_net,finfo->file);
+	server_buf_output0(buf_to_net,finfo->file);
 	buf_output0(buf_to_net,"\n");
 
 	new_entries_line ();
@@ -3916,6 +4147,34 @@ void server_updated (
 		sprintf(text,"%lu\n",size);
 		buf_output0(buf_to_net,text);
 	}
+
+#ifdef _WIN32
+	// Statistics tracking
+	kflag kf;
+	if(vers && vers->options)
+		RCS_get_kflags(vers->options,false,kf);
+
+	if(kf.flags&KFLAG_BINARY)
+	{
+		int binarycount=0,binaryavg=0;
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","BinaryCount",binarycount);
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","BinaryAverage",binaryavg);
+		binarycount++;
+		binaryavg=(binaryavg+size)/2;
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","BinaryCount",binarycount);
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","BinaryAverage",binaryavg);
+	}
+	else
+	{
+		int textcount=0,textavg=0;
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","TextCount",textcount);
+		CGlobalSettings::GetGlobalValue("cvsnt","PServer","TextAverage",textavg);
+		textcount++;
+		textavg=(textavg+size)/2;
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","TextCount",textcount);
+		CGlobalSettings::SetGlobalValue("cvsnt","PServer","TextAverage",textavg);
+	}
+#endif
 
 	if (file != NULL)
 	{
@@ -3967,7 +4226,7 @@ void server_updated (
 	else
 		buf_output0(buf_to_net,"Remove-entry ");
 	output_dir (finfo->update_dir, finfo->repository);
-	buf_output0(buf_to_net,finfo->file);
+	server_buf_output0(buf_to_net,finfo->file);
 	buf_output0(buf_to_net,"\n");
 	/* keep the vers structure up to date in case we do a join
 	 * - if there isn't a file, it can't very well have a version number, can it?
@@ -4102,16 +4361,21 @@ static int template_proc (void *params, const trigger_interface *cb)
 		const char *template_ptr = NULL;
 
 	    if (!supported_response ("Template"))
+		{
 			/* Might want to warn the user that the rcsinfo feature won't work.  */
+			TRACE(3,"Client does not support Template (rcsinfo) feature.");
 			return 0;
-		
+		}
 		if(!cb->get_template(cb, data->directory, &template_ptr) && template_ptr)
 		{
+			long template_ptr_len=(long)strlen(template_ptr);
+			TRACE(3,"get_template returned success, so send the %d long template to client.",(int)template_ptr_len);
+			TRACE(4,"get_template sending \"%s\".",template_ptr);
 			char buf[32];
 			buf_output0(buf_to_net,"Template ");
 			output_dir (data->update_dir, data->repository);
 			buf_output0(buf_to_net,"\n");
-			snprintf(buf,sizeof(buf),"%ld\n",(long)strlen(template_ptr));
+			snprintf(buf,sizeof(buf),"%ld\n",template_ptr_len);
 			buf_output0(buf_to_net,buf);
 			buf_output0(buf_to_net,template_ptr);
 		}
@@ -4178,7 +4442,7 @@ static void serve_wrapper_sendme_rcs_options(char *arg)
 	while(wrap_unparse_rcs_options(wrapper_line,first))
     {
 		buf_output0 (buf_to_net, "Wrapper-rcsOption ");
-		buf_output0 (buf_to_net, wrapper_line.c_str());
+		server_buf_output0 (buf_to_net, wrapper_line.c_str());
 		buf_output0 (buf_to_net, "\n");;
     }
 
@@ -4243,14 +4507,15 @@ struct request requests[] =
   REQ_LINE("Checkin-time", serve_checkin_time, 0),
   REQ_LINE("Checksum", serve_checksum, 0),
   REQ_LINE("Modified", serve_modified, RQ_ESSENTIAL),
+  REQ_LINE("Binary-transfer", serve_binary_transfer, 0),
   REQ_LINE("Is-modified", serve_is_modified, 0),
   REQ_LINE("UseUnchanged", serve_enable_unchanged, RQ_ENABLEME | RQ_ROOTLESS),
   REQ_LINE("Unchanged", serve_unchanged, RQ_ESSENTIAL),
   REQ_LINE("Notify", serve_notify, 0),
   REQ_LINE("NotifyUser", serve_notify_user, 0),
   REQ_LINE("Questionable", serve_questionable, 0),
-  REQ_LINE("Case", NULL, 0), /* Depreciated */ 
   REQ_LINE("Utf8", serve_utf8, RQ_ROOTLESS), /* Depreciated, but checked for option support by server */
+  REQ_LINE("Case", NULL, 0), /* Deprecated but we send it for older clients */
   REQ_LINE("Argument", serve_argument, RQ_ESSENTIAL),
   REQ_LINE("Argumentx", serve_argumentx, RQ_ESSENTIAL),
   REQ_LINE("Global_option", serve_global_option, RQ_ROOTLESS),
@@ -4269,6 +4534,7 @@ struct request requests[] =
   REQ_LINE("lsacl", serve_lsacl, 0),
   REQ_LINE("rlsacl", serve_rlsacl, 0),
   REQ_LINE("passwd", serve_passwd, 0),
+  REQ_LINE("passwd-md5", serve_passwd_md5, RQ_SERVER_REQUEST),
   REQ_LINE("info", serve_info, 0),
   REQ_LINE("update", serve_update, RQ_ESSENTIAL),
   REQ_LINE("diff", serve_diff, 0),
@@ -4413,10 +4679,6 @@ void server_cleanup (int sig)
        for responses).  We could try something like syslog() or our own
        log file.  */
 	trace = 0;
-#ifdef _WIN32
-	if(!filenames_case_insensitive && orig_server_temp_dir)
-		remove_from_ci_directory_list(orig_server_temp_dir);
-#endif
 	if(orig_server_temp_dir)
 		unlink_file_dir (orig_server_temp_dir);
     noexec = save_noexec;
@@ -4428,11 +4690,12 @@ void server_cleanup (int sig)
 	}
 
 	CProtocolLibrary lib;
-	lib.UnloadProtocol(client_protocol);
+	lib.UnloadProtocol(server_protocol);
 }
 
 int server_active = 0;
 int pserver_active = 0;
+int proxy_active = 0;
 
 int server (int argc, char **argv)
 {
@@ -4560,10 +4823,6 @@ int server (int argc, char **argv)
 			error(1,errno,"cannot change to temporary directory %s",
 						fn_root(server_temp_dir));
 	    }
-#ifdef _WIN32
-		if(!filenames_case_insensitive)
-			add_to_ci_directory_list(server_temp_dir);
-#endif
 	}
     }
 
@@ -4631,7 +4890,7 @@ int server (int argc, char **argv)
 	struct request *rq;
 	int status;
 	
-	status = buf_read_line (buf_from_net, &cmd, (int *) NULL);
+	status = server_read_line (buf_from_net, &cmd, (int *) NULL);
 	if (status == -2)
 	{
 	    buf_output0 (buf_to_net, "E Fatal server error, aborting.\n\
@@ -4676,6 +4935,10 @@ error ENOMEM Virtual memory exhausted.\n");
 			/* valid-requests is an oddity */
             if (!(rq->flags & RQ_ROOTLESS) || ((rq->name[0]>='a' && rq->name[0]<='z') && strcmp(rq->name,"valid-requests")))
             {
+				char buf[64];
+				if(!default_client_codepage && !server_codepage_sent && !CGlobalSettings::GetGlobalValue("cvsnt","PServer","DefaultClientCodepage",buf,sizeof(buf)))
+					default_client_codepage = xstrdup(buf); // Yeah we leak this at shutdown, but it doesn't really matter
+
 				if(encryption_level==4 && protocol_encryption_enabled!=PROTOCOL_ENCRYPTION)
 					error(1,0,"This server requires an encrypted connection");
 				if(encryption_level==3 && protocol_encryption_enabled==0)
@@ -4890,12 +5153,12 @@ static void do_chroot() { }
    lets us become any arbitrary user */
 static void switch_to_user (const char *username, int username_switch, void *user_token)
 {
-	if(!username_switch && client_protocol->impersonate)
+	if(!username_switch && server_protocol->impersonate)
 	{
 		TRACE(3,"Impersonating preauthenticated user using protocol specific impersionation");
-		if(client_protocol->impersonate(client_protocol, username, NULL)!=CVSPROTO_SUCCESS)
+		if(server_protocol->impersonate(client_protocol, username, NULL)!=CVSPROTO_SUCCESS)
 		{
-			printf ("E Fatal error, aborting.\nerror 0 %s: Impersonation for :%s: protocol failed.\n", username, client_protocol->name);
+			printf ("E Fatal error, aborting.\nerror 0 %s: Impersonation for :%s: protocol failed.\n", username, server_protocol->name);
 			error_exit();
 		}
 	}
@@ -4945,8 +5208,6 @@ static void switch_to_user (const char *username, int username_switch, void *use
 }
 
 #endif /* _WIN32 */
-
-extern char *crypt(const char *, const char *);
 
 /* 
  * 0 means no entry found for this user.
@@ -5076,8 +5337,7 @@ static int check_repository_password (const char *username, const char *password
 #ifdef _WIN32 // NTServer mode sets password==NULL for authentication
 	    || (found_password[0]=='!' && win32_valid_user(username,password,found_password+1, user_token))
 #endif
-            || ((strcmp (found_password, crypt(password,found_password)))
-                 == 0))
+		|| !CCrypt::compare(password, found_password))
         {
             /* Give host_user_ptr permanent storage. */
             *host_user_ptr = xstrdup (host_user_tmp);
@@ -5253,8 +5513,7 @@ static char *check_system_password(const char *username, const char *password, v
                          ? xstrdup(username) : NULL;
 #else
       /* user exists and has a password */
-      host_user = ((! strcmp (found_passwd, crypt (password, found_passwd)))
-                      ? xstrdup (username) : NULL);
+		host_user = CCrypt::compare(password, found_passwd) ? NULL : xstrdup(username);
 #endif
     }
     else if (found_passwd && password && *password)
@@ -5285,12 +5544,16 @@ static char *check_password (const char *username, const char *password, const c
 				    &host_user, user_token);
 
     if (rc == 2)
+    {
+		TRACE(3,"User in CVSROOT/passwd, but password incorect");
 		return NULL;
+    }
 
     /* else */
 
     if (rc == 1)
     {
+	TRACE(3,"User in CVSROOT/passwd, password correct");
         /* host_user already set by reference, so just return. */
         goto handle_return;
     }
@@ -5298,18 +5561,22 @@ static char *check_password (const char *username, const char *password, const c
     {
        /* ntserver/sspi uses password=NULL */
        host_user=xstrdup(username);
+       TRACE(3,"System password already validated by authentication mechanism");
        goto handle_return;
     }
     else if (rc == 0 && system_auth)
     {
 #ifdef HAVE_PAM
+	TRACE(3,"Checking password using PAM");
 	host_user = check_pam_password (username, password);
 #else
+	TRACE(3,"Checking password using passwd/shadow files");
 	host_user = check_system_password (username, password, user_token);
 #endif
     }
     else if (rc == 0)
     {
+	TRACE(3,"No systemauth, and user not in CVSROOT/passwd");
 	/* Note that the message _does_ distinguish between the case in
 	   which we check for a system password and the case in which
 	   we do not.  It is a real pain to track down why it isn't
@@ -5336,6 +5603,7 @@ static char *check_password (const char *username, const char *password, const c
     {
 	/* Something strange happened.  We don't know what it was, but
 	   we certainly won't grant authorization. */
+	TRACE(3,"Strange authentication branch reached.  Failing");
 	host_user = NULL;
         goto handle_return;
     }
@@ -5377,11 +5645,12 @@ void server_authenticate_connection ()
 
 	bool badauth;
 	CProtocolLibrary lib;
-	client_protocol = lib.FindProtocol(tmp,badauth,server_io_socket,encryption_level==4,&temp_protocol);
+
+	server_protocol = lib.FindProtocol(tmp,badauth,server_io_socket,encryption_level==4,&temp_protocol);
 	if(badauth)
 		goto i_hate_you;
 
-	if(!client_protocol)
+	if(!server_protocol)
 	{
 		TRACE(3,"Couldn't find a matching authentication protocol");
 		error (1, 0, "bad auth protocol start: %s", tmp);
@@ -5389,37 +5658,37 @@ void server_authenticate_connection ()
 	xfree (tmp);
 	temp_protocol = NULL;
 	
-	TRACE(3,"Authentication protocol returned user(%s)",PATCH_NULL(client_protocol->auth_username));
+	TRACE(3,"Authentication protocol :%s: returned user %s",PATCH_NULL(server_protocol->name),PATCH_NULL(server_protocol->auth_username));
 
 #ifdef _WIN32
-	win32_sanitize_username((const char **)&client_protocol->auth_username);
+	win32_sanitize_username((const char **)&server_protocol->auth_username);
 #endif
 
 	/* If we're now in 'wrap' mode, setup a wrap buffer for the relevant I/O */
-	buf_from_net->closure=(void*)client_protocol;
-	buf_to_net->closure=(void*)client_protocol;
+	((client_protocol_data*)buf_from_net->closure)->protocol=server_protocol;
+	((client_protocol_data*)buf_to_net->closure)->protocol=server_protocol;
 
-	if(client_protocol->auth_repository)
+	if(server_protocol->auth_repository)
 	{
 		// If no repository is sent, we can't work out where the passwd, config, etc. file
 		//   are until the first 'Root' command
-		int online = 1;
+		const root_allow_struct *found_root = NULL;
 
-		if (!root_allow_ok (client_protocol->auth_repository,&real_repository,&online))
+		if (!root_allow_ok (server_protocol->auth_repository,found_root,real_repository,true))
 		{
-			printf ("error 0 %s: no such repository\n", client_protocol->auth_repository);
+			printf ("error 0 %s: no such repository\n", server_protocol->auth_repository);
 			fflush(stdout);
 
-			CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", client_protocol->auth_username, client_protocol->auth_repository);
+			CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", server_protocol->auth_username, server_protocol->auth_repository);
 			goto i_hate_you;
 		}
 
-		if(!online)
+		if(!found_root->online)
 		{
-			printf ("error 0 %s: repository is offline\n", client_protocol->auth_repository);
+			printf ("error 0 %s: repository is offline\n", server_protocol->auth_repository);
 			fflush(stdout);
 
-			CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", client_protocol->auth_username, client_protocol->auth_repository);
+			CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", server_protocol->auth_username, server_protocol->auth_repository);
 			goto i_hate_you;
 		}
 
@@ -5429,25 +5698,23 @@ void server_authenticate_connection ()
 		//   Why?  Because if we didn't, then there would be no way to check
 		//   in a new CVSROOT/config file to fix the broken one! 
 		parse_config (real_repository);
-#ifdef _WIN32
-		if(!filenames_case_insensitive)
-			add_to_ci_directory_list(real_repository);
-#endif
 
 		// We need the real cleartext before we hash it. 
-		host_user = check_password (client_protocol->auth_username, client_protocol->auth_password,
+		host_user = check_password (server_protocol->auth_username, server_protocol->auth_password,
 									real_repository, &user_token);
 	}
 	else 
 	{
-		if(client_protocol->auth_username)
-			host_user = xstrdup(client_protocol->auth_username);
+		if(server_protocol->auth_username)
+			host_user = xstrdup(server_protocol->auth_username);
 	}
 
     if (host_user == NULL)
     {
-		CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", client_protocol->auth_username, client_protocol->auth_repository);
+		TRACE(3,"Host user not set - login fail");
+		CServerIo::log(CServerIo::logAuth,"login failure for %s on %s", server_protocol->auth_username, server_protocol->auth_repository);
     i_hate_you:
+		TRACE(3,"I HATE YOU");
 		printf ("I HATE YOU\n");
 		fflush (stdout);
 
@@ -5455,14 +5722,31 @@ void server_authenticate_connection ()
 	   yet.  */
 		error_exit ();
     }
+    TRACE(3,"Host user is %s",host_user);
 
-    /* Switch to run as this user. */
+#ifdef _WIN32
+	// Statistics tracking
+	int usercount,trash;
+	if(CGlobalSettings::GetGlobalValue("cvsnt","PServer","UserCount",usercount))
+		usercount=0;
+	if(CGlobalSettings::GetGlobalValue("cvsnt","UserCache",server_protocol->auth_username,trash))
+	{
+		if(!CGlobalSettings::SetGlobalValue("cvsnt","UserCache",server_protocol->auth_username,1))
+		{
+			usercount++;
+			CGlobalSettings::SetGlobalValue("cvsnt","PServer","UserCount",usercount);
+		}
+	}
+#endif
+
+	/* Switch to run as this user. */
     if(runas_user && *runas_user)
 		switch_to_user (runas_user, 1, NULL);
     else
 		switch_to_user (host_user, 0, user_token);
     xfree (host_user);
 
+    TRACE(3,"I LOVE YOU");
     printf ("I LOVE YOU\n");
     fflush (stdout);
     
@@ -5478,7 +5762,7 @@ void server_authenticate_connection ()
 	/* Moved from above as I'm not sure it makes sense to be able to
 	   login then not do anything (because you don't have a valid
 	   alias) */
-    if (client_protocol->verify_only)
+    if (server_protocol->verify_only)
     {
 #ifdef SYSTEM_CLEANUP
 	/* Hook for OS-specific behavior, for example socket subsystems on
@@ -5511,6 +5795,7 @@ int cvsauthenticate;
 struct cvs_encrypt_wrap_data
 {
 	int encrypt; /* 1 = wrap & encrypt, 0 = wrap only */
+	const struct protocol_interface *protocol;
 };
 
 struct cvs_protocol_wrap_data
@@ -5526,14 +5811,14 @@ static int cvs_protocol_wrap_output(void *, const char *, char *, int, int *);
 
 /* Create a protocol wrapping buffer.  We use a packetizing buffer. */
 
-struct buffer *
-cvs_encrypt_wrap_buffer_initialize (struct buffer *buf,
+struct buffer *cvs_encrypt_wrap_buffer_initialize (const struct protocol_interface *protocol, struct buffer *buf,
      int input, int encrypt, void (*memory)(struct buffer *))
 {
     struct cvs_encrypt_wrap_data *ed;
 
     ed = (struct cvs_encrypt_wrap_data *) xmalloc (sizeof *ed);
     ed->encrypt = encrypt;
+	ed->protocol = protocol;
 
     return (packetizing_buffer_initialize
             (buf,
@@ -5545,17 +5830,16 @@ cvs_encrypt_wrap_buffer_initialize (struct buffer *buf,
 
 /* Unwrap data using GSSAPI.  */
 
-static int
-cvs_encrypt_wrap_input (void *fnclosure, const char *input,
-     char *output, int size)
+static int cvs_encrypt_wrap_input (void *fnclosure, const char *input, char *output, int size)
 {
     struct cvs_encrypt_wrap_data *ed =
         (struct cvs_encrypt_wrap_data *) fnclosure;
+	const struct protocol_interface *protocol = ed->protocol; 
 	int newsize;
 
-	if(client_protocol && client_protocol->wrap)
+	if(protocol && protocol->wrap)
 	{
-		if(client_protocol->wrap(client_protocol, 1, ed->encrypt, input, size, output, &newsize))
+		if(protocol->wrap(protocol, 1, ed->encrypt, input, size, output, &newsize))
 		{
 			error(1, 0, "cvs_encrypt_wrap_input failed: error");
 		}
@@ -5578,17 +5862,17 @@ cvs_encrypt_wrap_input (void *fnclosure, const char *input,
 /* Wrap data using GSSAPI.  */
 
 static int
-cvs_encrypt_wrap_output (void *fnclosure, const char *input,
-     char *output, int size, int *translated)
+cvs_encrypt_wrap_output (void *fnclosure, const char *input, char *output, int size, int *translated)
 {
     struct cvs_encrypt_wrap_data *ed =
         (struct cvs_encrypt_wrap_data *) fnclosure;
+	const struct protocol_interface *protocol = ed->protocol; 
 	int newsize;
 
 
-	if(client_protocol)
+	if(protocol)
 	{
-		if(client_protocol->wrap(client_protocol, 0, ed->encrypt, input, size, output, &newsize))
+		if(protocol->wrap(protocol, 0, ed->encrypt, input, size, output, &newsize))
 		{
 			error(1, 0, "cvs_encrypt_wrap_output failed: error");
 		}
@@ -5664,6 +5948,29 @@ static int cvs_protocol_wrap_output (void *fnclosure, const char *input,
     return 0;
 }
 
+#ifdef SERVER_SUPPORT
+int cvs_output_raw(const char *str, size_t len, bool flush)
+{
+    if (len == 0)
+		len = strlen (str);
+	if(!len)
+		return 0;
+
+	if(temp_protocol && temp_protocol->server_write_data)
+		len = temp_protocol->server_write_data(temp_protocol,str,len);
+    else if (server_active)
+	{
+		buf_output (buf_to_net, str, len);
+		if(flush) buf_flush(buf_to_net,1);
+	}
+	else
+	{
+		error(1,0,"cvs_output_raw called on local connection");
+	}
+	return len;
+}
+#endif
+
 /* Output LEN bytes at STR.  If LEN is zero, then output up to (not including)
    the first '\0' byte.  */
 
@@ -5679,9 +5986,41 @@ int cvs_output (const char *str, size_t len)
 		len = temp_protocol->server_write_data(temp_protocol,str,len?len:strlen(str));
     else if (server_active)
     {
-		buf_output (stdout_buf?stdout_buf:buf_to_net, str, len);
-		if(str[len-1]=='\n')
-			buf_send_output(stdout_buf?stdout_buf:buf_to_net);
+		char *ostr=NULL;
+		size_t olen=0;
+		if(!server_codepage_sent && default_client_codepage)
+		{
+			// This isn't particularly efficient, especially for some uses of cvs output, but
+			// is probably the only way if the client can't be manually set to use something common
+			// like utf8.
+			const char *server_codepage;
+#if defined(_WIN32) && defined(_UNICODE)
+			if(win32_global_codepage==CP_UTF8)
+				server_codepage="UTF-8";
+			else
+#endif
+				server_codepage = CCodepage::GetDefaultCharset();
+			int ret = CCodepage::TranscodeBuffer(server_codepage,default_client_codepage,str,len,(void*&)ostr,olen);
+			// Note that whilst it would seem nice to warn the user here, any such warning would
+			// end up recursively calling back into this function, plus it gets called in the middle
+			// of protocol calls and sticking 'E xxxx' in the middle stands a good chance of breaking it totally.
+			if(ret>0)
+			{
+				CServerIo::trace(3,"Translation from server codepage '%s' to client codepage '%s' lost characters",server_codepage, default_client_codepage);
+				// Should we disable here?  Either client codepage is wrong, or no translation is possible (which could be solved by putting the server in utf8).
+			}
+			else if(ret<0)
+			{
+				CServerIo::trace(3,"Translation between '%s' and '%s' not possible - disabling",server_codepage, default_client_codepage);
+				server_codepage_sent=true; // Slight cheat, but it has the effect of disabling further translation
+			}
+			str=ostr;
+			len=olen;
+		}
+ 		buf_output (stdout_buf?stdout_buf:buf_to_net, str, len);
+ 		if(str[len-1]=='\n')
+ 			buf_send_output(stdout_buf?stdout_buf:buf_to_net);
+		if(ostr) xfree(ostr);
     }
 	else
 #endif
@@ -5689,12 +6028,13 @@ int cvs_output (const char *str, size_t len)
 #if defined(_WIN32) && !defined(CVS95)
 	// Convert the UTF8 string to Unicode/ANSI for console output
 		HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+		DWORD NumberOfCharsWritten;
 		if(GetFileType(hConsole)==FILE_TYPE_CHAR)
 		{
-			int wlen = len*4;
-			wchar_t *wstr = (wchar_t*)xmalloc(wlen);
+			int wlen = (len)*4;
+			wchar_t *wstr = (wchar_t*)xmalloc(wlen+4);
 			wlen = MultiByteToWideChar(win32_global_codepage,0,str,len,wstr,wlen);
-			WriteConsoleW(hConsole, wstr, wlen, NULL, NULL);
+			WriteConsoleW(hConsole, wstr, wlen, &NumberOfCharsWritten, NULL);
 			xfree(wstr);
 			return len;
 		}
@@ -5847,10 +6187,44 @@ int cvs_outerr (const char *str, size_t len)
 	return temp_protocol->server_write_data(temp_protocol,str,len);
     else if (server_active && (stderr_buf || buf_to_net))
     {
-		buf_output (stderr_buf?stderr_buf:buf_to_net, str, len);
-		if(str[len-1]=='\n')
-			buf_send_output(stderr_buf?stderr_buf:buf_to_net);
-		return len;
+		char *ostr=NULL;
+		size_t olen=0;
+		if(!server_codepage_sent && default_client_codepage)
+		{
+			// This isn't particularly efficient, especially for some uses of cvs output, but
+			// is probably the only way if the client can't be manually set to use something common
+			// like utf8.
+			const char *server_codepage;
+#if defined(_WIN32) && defined(_UNICODE)
+			if(win32_global_codepage==CP_UTF8)
+				server_codepage="UTF-8";
+			else
+#endif
+				server_codepage = CCodepage::GetDefaultCharset();
+			int ret = CCodepage::TranscodeBuffer(server_codepage,default_client_codepage,str,len,(void*&)ostr,olen);
+			// Note that whilst it would seem nice to warn the user here, any such warning would
+			// end up recursively calling back into this function, plus it gets called in the middle
+			// of protocol calls and sticking 'E xxxx' in the middle stands a good chance of breaking it totally.
+			if(ret>0)
+			{
+				CServerIo::trace(3,"Translation from server codepage '%s' to client codepage '%s' lost characters",server_codepage, default_client_codepage);
+				// Should we disable here?  Either client codepage is wrong, or no translation is possible (which could be solved by putting the server in utf8).
+			}
+			else if(ret<0)
+			{
+				CServerIo::trace(3,"Translation between '%s' and '%s' not possible - disabling",server_codepage, default_client_codepage);
+				server_codepage_sent=true; // Slight cheat, but it has the effect of disabling further translation
+			}
+			str=ostr;
+			len=olen;
+		}
+
+ 		buf_output (stderr_buf?stderr_buf:buf_to_net, str, len);
+ 		if(str[len-1]=='\n')
+ 			buf_send_output(stderr_buf?stderr_buf:buf_to_net);
+
+		if(ostr) xfree(ostr);
+
 	}
 	else
 #endif
@@ -5858,12 +6232,13 @@ int cvs_outerr (const char *str, size_t len)
 #if defined(_WIN32) && !defined(CVS95)
 		// Convert the UTF8 string to Unicode/ANSI for console output
 		HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+		DWORD NumberOfCharsWritten;
 		if(GetFileType(hConsole)==FILE_TYPE_CHAR)
 		{
-			int wlen = len*4;
-			wchar_t *wstr = (wchar_t*)xmalloc(wlen);
+			int wlen = (len)*4;
+			wchar_t *wstr = (wchar_t*)xmalloc(wlen+4);
 			wlen = MultiByteToWideChar(win32_global_codepage,0,str,len,wstr,wlen);
-			WriteConsoleW(hConsole, wstr, wlen, NULL, NULL);
+			WriteConsoleW(hConsole, wstr, wlen, &NumberOfCharsWritten, NULL);
 			xfree(wstr);
 			return len;
 		}
@@ -5888,6 +6263,7 @@ int cvs_outerr (const char *str, size_t len)
 			return len - to_write;
 		}
 	}
+	return len;
 }
 
 /* Flush stderr.  stderr is normally flushed automatically, of course,
@@ -6003,6 +6379,7 @@ int server_main(const char *cmd_name, int (*command)(int argc, char **argv))
 	args.argc = argument_count-1;
 	args.argv = (const char **)argument_vector+1;
 	args.command = server_command_name;
+	args.retval = 0;
 	TRACE(3,"run precommand proc server");
 	if(run_trigger(&args, precommand_proc))
 	{
@@ -6013,8 +6390,108 @@ int server_main(const char *cmd_name, int (*command)(int argc, char **argv))
 		exitstatus = (*command) (argument_count, argument_vector);
 
 	TRACE(3,"run postcommand proc server");
+	args.retval = exitstatus;
 	run_trigger(&args, postcommand_proc);
 	xfree(last_repository);
+
+	return exitstatus;
+}
+
+/* Send the request off to the proxy server instead */
+int proxy_main(const char *cmd_name, int (*command)(int argc, char **argv))
+{
+	int exitstatus = -1;
+
+	TRACE(3,"proxy_main started");
+	/*
+	 * Set this in .bashrc if you want to give yourself time to attach
+	 * to the subprocess with a debugger.
+	 */
+	if (CProtocolLibrary::GetEnvironment ("CVS_SERVER_SLEEP"))
+	{
+	    int secs = atoi (CProtocolLibrary::GetEnvironment ("CVS_SERVER_SLEEP"));
+	    sleep (secs);
+	}
+
+
+	server_command_name = cmd_name;
+
+	cvsroot *oldroot = current_parsed_root;
+
+	/* Construct a root as if we were the client */
+	TRACE(3,"proxy main -Construct a root as if we were the client- phys repos=(%s,%s,%s)."
+				,PATCH_NULL(oldroot->directory)
+				,PATCH_NULL(oldroot->proxy_repository_root)
+				,PATCH_NULL(oldroot->unparsed_directory));
+
+	current_parsed_root = new_cvsroot_t();
+	current_parsed_root->original = xstrdup(oldroot->directory);
+	current_parsed_root->directory = xstrdup(oldroot->unparsed_directory);
+	//current_parsed_root->directory = xstrdup(oldroot->proxy_repository_root);
+	current_parsed_root->unparsed_directory = xstrdup(oldroot->unparsed_directory);
+	current_parsed_root->isremote = true;
+	strcpy(current_parsed_root->method,"sync");
+	current_parsed_root->hostname = xstrdup(oldroot->remote_server);
+	if(!strncmp(oldroot->remote_passphrase,"$1$",3))
+		current_parsed_root->password = xstrdup(oldroot->remote_passphrase);
+	else
+	{
+		CCrypt crypt;
+		current_parsed_root->password = xstrdup(crypt.crypt(oldroot->remote_passphrase));
+	}
+	current_parsed_root->username = xstrdup(CVS_Username);
+	current_parsed_root->optional_1 = xstrdup(oldroot->unparsed_directory);
+	current_parsed_root->optional_2 = xstrdup(CVS_Username);
+	current_parsed_root->optional_3 = xstrdup("proxy");
+	current_parsed_root->remote_repository = xstrdup(oldroot->remote_repository);
+	current_parsed_root->proxy_repository_root = xstrdup(oldroot->proxy_repository_root);
+
+	CProtocolLibrary lib;
+	client_protocol = lib.LoadProtocol("sync");
+	if(!client_protocol)
+	{
+		error(0, 0, "Sync protocol not available.  Cannot start proxy");
+		exitstatus = 1;
+		goto finish_command;
+	}
+
+	lib.SetupServerInterface(current_parsed_root, server_io_socket);
+
+	precommand_args_t args;
+	args.argc = argument_count-1;
+	args.argv = (const char **)argument_vector+1;
+	args.command = server_command_name;
+	args.retval = 0;
+	if(have_local_root)
+	{
+		TRACE(3,"run precommand proc server");
+		if(run_trigger(&args, precommand_proc))
+		{
+			error (0, 0, "Pre-command check failed");
+			exitstatus = 1;
+			goto finish_command;
+		}
+	}
+
+	start_server(2);
+	proxy_active = 1;
+
+	/* Run the command in client mode */
+	/* The condition server_active == true and current_parsed_root->isremote == true is unique to the proxy */
+	exitstatus = (*command) (argument_count, argument_vector);
+
+finish_command:
+	TRACE(3,"proxy main - change current parsed root to the 'original' one.");
+	current_parsed_root = oldroot;
+	lib.SetupServerInterface(current_parsed_root, server_io_socket);
+
+	if(have_local_root)
+	{
+		args.retval = exitstatus;
+		TRACE(3,"run postcommand proc server (proxy)");
+		run_trigger(&args, postcommand_proc);
+		xfree(last_repository);
+	}
 
 	return exitstatus;
 }
@@ -6129,7 +6606,7 @@ void server_send_baserev(struct file_info *finfo, const char *basefile, const ch
 	unsigned long len;
 	buf_output0(buf_to_net,"Update-baserev ");
 	output_dir (finfo->update_dir, finfo->repository);
-	buf_output0(buf_to_net,finfo->file);
+	server_buf_output0(buf_to_net,finfo->file);
 	buf_output0(buf_to_net,"\n");
 	buf_output0(buf_to_net,type);
 	buf_output0(buf_to_net,"\n");
@@ -6174,9 +6651,114 @@ int postcommand_proc(void *param, const trigger_interface *cb)
 	TRACE(1,"postcommand_proc()");
 
 	if(cb->postcommit && !strcmp(args->command,"commit"))
+	{
 		ret = cb->postcommit(cb,last_repository?Short_Repository(last_repository):"");
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+		TRACE(3,"commit server_active=%s, CVSNT_SPECIAL_BUILD=%s",(server_active)?"yes":"no",CVSNT_SPECIAL_BUILD);
+#else
+		TRACE(3,"commit server_active=%s",(server_active)?"yes":"no");
+#endif
+#ifdef _WIN32
+		if (server_active)
+		{
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+			if (strcasecmp(CVSNT_SPECIAL_BUILD,"Suite")!=0)
+#endif
+			{
+				error(0, 0, "Committed on the Free edition of March Hare Software CVSNT Server\n           Upgrade to CVS Suite for more features and support:\n           http://march-hare.com/cvsnt/");
+			}
+		}
+#endif
+
+	}
 	if(!ret && cb->postcommand)
-		ret = cb->postcommand(cb,last_repository?Short_Repository(last_repository):"");
+		ret = cb->postcommand(cb,last_repository?Short_Repository(last_repository):"",args->retval);
 	return ret;
 }
 
+#ifdef SERVER_SUPPORT
+// Wrap buf_read_line for lines which potentially have filenames in them.  Don't use for others as there's overhead to using this.
+int server_read_line(struct buffer *buf, char **line, int *lenp)
+{
+	int ret = buf_read_line(buf,line,lenp);
+	if(ret) return ret;
+
+	if(!server_codepage_sent && default_client_codepage)
+	{
+		char *iline=NULL;
+		size_t ilen=0;
+
+		// This isn't particularly efficient,
+		// is probably the only way if the client can't be manually set to use something common
+		// like utf8.
+		const char *server_codepage;
+#if defined(_WIN32) && defined(_UNICODE)
+		if(win32_global_codepage==CP_UTF8)
+			server_codepage="UTF-8";
+		else
+#endif
+			server_codepage = CCodepage::GetDefaultCharset();
+		int ret = CCodepage::TranscodeBuffer(default_client_codepage,server_codepage,*line,lenp?*lenp:0,(void*&)iline,ilen);
+		// Note that whilst it would seem nice to warn the user here, any such warning would
+		// end up recursively calling back into this function, plus it gets called in the middle
+		// of protocol calls and sticking 'E xxxx' in the middle stands a good chance of breaking it totally.
+		if(ret>0)
+		{
+			CServerIo::trace(3,"Translation from client codepage '%s' to server codepage '%s' lost characters",default_client_codepage, server_codepage);
+			// Should we disable here?  Either client codepage is wrong, or no translation is possible (which could be solved by putting the server in utf8).
+		}
+		else if(ret<0)
+		{
+			CServerIo::trace(3,"Translation between '%s' and '%s' not possible - disabling",default_client_codepage, server_codepage);
+			server_codepage_sent=true; // Slight cheat, but it has the effect of disabling further translation
+		}
+		xfree(*line);
+		*line=iline;
+		if(lenp) *lenp=ilen;
+	}
+	return 0;
+}
+
+void server_buf_output0(buffer *buf, const char *string)
+{
+	return server_buf_output(buf,string,strlen(string));
+}
+
+void server_buf_output(buffer *buf, const char *data, int len)
+{
+	char *ostr=NULL;
+	size_t olen=0;
+	if(!server_codepage_sent && default_client_codepage)
+	{
+		// This isn't particularly efficient, especially for some uses of cvs output, but
+		// is probably the only way if the client can't be manually set to use something common
+		// like utf8.
+		const char *server_codepage;
+#if defined(_WIN32) && defined(_UNICODE)
+		if(win32_global_codepage==CP_UTF8)
+			server_codepage="UTF-8";
+		else
+#endif
+			server_codepage = CCodepage::GetDefaultCharset();
+		int ret = CCodepage::TranscodeBuffer(server_codepage,default_client_codepage,data,len,(void*&)ostr,olen);
+
+		// Note that whilst it would seem nice to warn the user here, any such warning would
+		// end up recursively calling back into this function, plus it gets called in the middle
+		// of protocol calls and sticking 'E xxxx' in the middle stands a good chance of breaking it totally.
+		if(ret>0)
+		{
+			CServerIo::trace(3,"Translation from server codepage '%s' to client codepage '%s' lost characters",server_codepage, default_client_codepage);
+			// Should we disable here?  Either client codepage is wrong, or no translation is possible (which could be solved by putting the server in utf8).
+		}
+		else if(ret<0)
+		{
+			CServerIo::trace(3,"Translation between '%s' and '%s' not possible - disabling",server_codepage, default_client_codepage);
+			server_codepage_sent=true; // Slight cheat, but it has the effect of disabling further translation
+		}
+		data=ostr;
+		len=olen;
+	}
+	buf_output(buf,data,len);
+	if(ostr) xfree(ostr);
+}
+#endif

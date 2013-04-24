@@ -23,68 +23,23 @@
 #include "mdns.h"
 #include "LibraryAccess.h"
 
-#ifdef _WIN32
-#define STATIC_MDNS /* We can use late binding in Win32 to be more efficient */
-#else
-#undef STATIC_MDNS
-#endif
-
-extern "C" CMdnsHelperBase *MdnsHelperMini_Alloc();
-extern "C" CMdnsHelperBase *MdnsHelperHowl_Alloc();
-extern "C" CMdnsHelperBase *MdnsHelperApple_Alloc();
-
-CMdnsHelperBase* CMdnsHelperBase::Alloc(mdnsType type, const char *dir)
+CMdnsHelperBase* CMdnsHelperBase::CreateHelper(const char *type, const char *dir)
 {
-#ifdef STATIC_MDNS
-	switch(type)
-	{
-	case mdnsMini:
-		CServerIo::trace(3,"Loading miniMdns");
-		return MdnsHelperMini_Alloc();
-#ifdef HAVE_HOWL_H
-	case mdnsHowl:
-		CServerIo::trace(3,"Loading Howl mdns");
-		return MdnsHelperHowl_Alloc();
-#endif
-#ifdef HAVE_DNS_SD_H
-	case mdnsApple:
-		CServerIo::trace(3,"Loading Apple mdns");
-		return MdnsHelperApple_Alloc();
-#endif
-	default:
-		return NULL;
-	}
-#else /* Not STATIC_MDNS */
 	CLibraryAccess la;
 	CMdnsHelperBase* (*pNewMdnsHelper)() = NULL;
 
-	switch(type)
-	{
-	case mdnsMini:
-		CServerIo::trace(3,"Loading miniMdns");
-		if(!la.Load("mini"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewMdnsHelper = (CMdnsHelperBase*(*)())la.GetProc("MdnsHelperMini_Alloc");
-		break;
-	case mdnsHowl:
-		CServerIo::trace(3,"Loading Howl mdns");
-		if(!la.Load("howl"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewMdnsHelper = (CMdnsHelperBase*(*)())la.GetProc("MdnsHelperHowl_Alloc");
-		break;
-	case mdnsApple:
-		CServerIo::trace(3,"Loading Apple mdns");
-		if(!la.Load("apple"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewMdnsHelper = (CMdnsHelperBase*(*)())la.GetProc("MdnsHelperApple_Alloc");
-		break;
-	default:
-		return NULL;
-	}
+	if(!type)
+		type=MDNS_DEFAULT;
+
+	CServerIo::trace(3,"Loading MDNS helper %s",type);
+	cvs::string tmp = type;
+	tmp+=SHARED_LIBRARY_EXTENSION;
+	if(!la.Load(tmp.c_str(),dir))
+		return false;
+	pNewMdnsHelper = (CMdnsHelperBase*(*)())la.GetProc("CreateHelper");
 	if(!pNewMdnsHelper)
 		return NULL;
 	CMdnsHelperBase *mdns = pNewMdnsHelper();
-	la.Detach(); // Add a reference so the library never unloads
+	la.Detach(); 
 	return mdns;
-#endif
 }

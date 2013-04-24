@@ -1,7 +1,7 @@
 #ifndef fooqueryhfoo
 #define fooqueryhfoo
 
-/* $Id: mdnsclient.h,v 1.1.2.7 2005/10/15 19:33:13 tmh Exp $ */
+/* $Id: mdnsclient.h,v 1.1.2.9 2008/11/17 14:29:39 tmh Exp $ */
 
 /***
   This file is part of nss-mdns.
@@ -27,10 +27,13 @@ extern "C" {
 #endif
 
 #ifndef _WIN32
-#include <stdarg.h> // hpux needs this
-#include <inttypes.h>
+ #include <stdarg.h> // hpux needs this
+ #include <inttypes.h>
+ #if defined(_MDNS_EXPORT) && defined(HAVE_GCC_VISIBILITY)
+  #define MDNS_EXPORT __attribute__ ((visibility("default")))
+ #endif
 #else
-#include "win32/inttypes.h"
+ #include "win32/inttypes.h"
 #endif
 
 #ifndef MDNS_EXPORT
@@ -73,7 +76,7 @@ typedef struct _mdns_service_item_t
 MDNS_EXPORT int mdns_query_services(mdnshandle_t handle, const char *name, struct mdns_callback *callback, void *userdata, uint64_t timeout);
 MDNS_EXPORT int mdns_query_name(mdnshandle_t handle, const char *name, struct mdns_callback *callback, void *userdata, uint64_t timeout);
 MDNS_EXPORT int mdns_query_ipv4(mdnshandle_t handle, const ipv4_address_t *ipv4, struct mdns_callback *callback, void *userdata, uint64_t timeout);
-MDNS_EXPORT int mdns_query_ipv6(mdnshandle_t handle, const ipv4_address_t *ipv6, struct mdns_callback *callback, void *userdata, uint64_t timeout);
+MDNS_EXPORT int mdns_query_ipv6(mdnshandle_t handle, const ipv6_address_t *ipv6, struct mdns_callback *callback, void *userdata, uint64_t timeout);
 MDNS_EXPORT int mdns_server_step(mdnshandle_t handle);
 MDNS_EXPORT int mdns_add_service(mdnshandle_t handle, mdns_service_item_t *item);
 

@@ -14,6 +14,16 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
+
+#include <config.h>
+#include "../cvsapi/lib/api_system.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -41,7 +51,7 @@
 
 static int mkit(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int days);
 
-int main(int argc, char *argv[])
+CVSNT_EXPORT int main(int argc, char *argv[])
 {
 	BIO *bio_err;
 	X509 *x509=NULL;

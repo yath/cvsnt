@@ -1,22 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<Wix xmlns='http://schemas.microsoft.com/wix/2003/01/wi'>
-<Fragment Id="workspacemanager">
-      <DirectoryRef Id="CVSNT_INSTALLDIR" src="$(var.MARCH_HARE)\">
-         <Directory Id="WorkspaceManagerStuff" Name=".">
-	   <Component Id="WorkspaceManager" Guid="7A652787-168E-4e25-ADE3-65BA6B267B05" DiskId="5">
-	      <File Id="WorkspaceManager.exe" Name="WORKSP~1.EXE" LongName="WorkspaceManager.exe">
-	        <Shortcut Id="WorkspaceManager.exe" Name="WORKSP~1.EXE" Directory="CvsntStartMenuFolder" Advertise="no" LongName="Workspace Manager"/>
-	      </File>
-            </Component>
-         </Directory>
-      </DirectoryRef>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Fragment Id="workspacemanager">
+        <DirectoryRef Id="TOOLS_INSTALLDIR" FileSource="$(var.MARCH_HARE)\">
+            <Directory Id="WorkspaceManagerStuff" Name=".">
+                <Component Id="WorkspaceManager" Guid="7A652787-168E-4e25-ADE3-65BA6B267B05" DiskId="5">
+		    <RegistryValue Id="WorkspaceManage" Root="HKCU" Key="SOFTWARE\March Hare Software Ltd\Msi" Name="WorkspaceManage" Type="string" Value="1" KeyPath="yes" />
+                    <File Id="WMFreer.exe" Name="WMFree.exe">
+                        <Shortcut Id="WMFreeLnk.exe" Name="CVS Suite Studio" Directory="CvsntStartMenuFolder" Advertise="no" />
+                    </File>
+                </Component>
+            </Directory>
+        </DirectoryRef>
 
-   <FeatureRef Id="Cvsnt">
-    <Feature Id="WorkspaceManager" Title="Workspace Manager" Description="CVSNT Workspace Manager" AllowAdvertise="no" Level="3">
-      <ComponentRef Id="WorkspaceManager" />
-      <ComponentRef Id="MSSystemDlls" />
-    </Feature>
-   </FeatureRef>
-  </Fragment>
+            <Feature Id="WorkspaceManager" Title="CVS Suite Studio" Description="CVS Suite Studio" AllowAdvertise="no" Level="3">
+                <ComponentRef Id="WorkspaceManager" />
+                <ComponentRef Id="CvsntStartMenuFolder" />
+            </Feature>
+    </Fragment>
 </Wix>

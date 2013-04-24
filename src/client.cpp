@@ -96,6 +96,34 @@ static char *server_codepage;
 static const char *client_codepage;
 static int server_codepage_translation;
 
+static void send_filename(const char *fn, bool linefeed, bool slash)
+{
+	char *p,*q;
+	char *fncpy = xstrdup(fn);
+
+	for(p=fncpy,q=fncpy; *p; p++)
+	{
+		// There's an assumption here that directory seperator doesn't occur in a multibyte sequence.  This
+		// is true for most character sets.
+		if(ISDIRSEP(*p) && slash)
+			*p='/';
+		// Same assumption as above
+		if(*p=='\n')
+		{
+			if(linefeed)
+			{
+				if(p>q) send_to_server(q, p-q);
+				send_to_server("\nArgumentx ",0);
+				q=p+1;
+			}
+			else
+				*p=' ';
+		}
+	}
+	if(p>q) send_to_server(q, p-q);
+	xfree(fncpy);
+}
+
 static int is_arg_a_parent_or_listed_dir (Node *n, void *d)
 {
     char *directory = n->key;	/* name of the dir sent to server */
@@ -1410,6 +1438,7 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
 	char *edit_revision = "*";
 	char *edit_tag = NULL;
 	char *edit_bugid = NULL;
+	char *md5 = NULL;
 
 #ifdef UTIME_EXPECTS_WRITABLE
     int change_it_back = 0;
@@ -1590,7 +1619,7 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
            flag, then we don't want to convert, else we do (because
            CVS assumes text files by default). */
 
-	crlf = CRLF_DEFAULT;
+	crlf = crlf_mode;
 	if (options)
 	{
 		RCS_get_kflags(options, false, options_flags);
@@ -1606,8 +1635,8 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
 	}
 	else
 	{
-		encode = false;
-		open_binary = false;
+		encode = (crlf!=CRLF_DEFAULT);
+		open_binary = (crlf!=CRLF_DEFAULT);
 		encoding = CCodepage::NullEncoding;
 	}
 
@@ -1617,9 +1646,11 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
 	   but it's good to check, just in case. */
 	if(!supported_request("Utf8"))
 	{
-		if(encode)
-			error(0,0,"Codepage transformation not supported by server.  Results may not be correct");
-		encode = false;
+		if(encode && encoding.encoding)
+		{
+			error(0,0,"Transformation not supported by server.  Results may not be correct");
+			encode = false;
+		}
 	}
 
 	if (data->contents == UPDATE_ENTRIES_RCS_DIFF)
@@ -1647,8 +1678,18 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
 		   a permission problem, or some such, then it is
 		   entirely possible that future files will not have
 		   the same problem.  */
-		error (0, errno, "cannot open temp file %s for writing", temp_filename);
-		goto discard_file_and_return;
+#ifdef _WIN32
+		if(errno==EBADF) 
+		{
+			// This case from validate_filename() and the filename has already been reported as bad
+			goto discard_file_and_return;
+		}
+		else
+#endif
+		{
+			error (0, errno, "cannot open temp file %s for writing", temp_filename);
+			goto discard_file_and_return;
+		}
 	    }
 
 	    if (size > 0)
@@ -1662,11 +1703,14 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
 
 			if(encode)
 			{
-				CCodepage cdp;
-				cdp.BeginEncoding(CCodepage::NullEncoding, encoding);
-				if(cdp.OutputAsEncoded(fd,buf,size,crlf))
+				CCodepage *cdp3;
+				cdp3 = new CCodepage;
+				cdp3->BeginEncoding(CCodepage::NullEncoding, encoding);
+				if(cdp3->OutputAsEncoded(fd,buf,size,crlf))
 					error(1, errno, "Cannot write %s", short_pathname);
-				cdp.EndEncoding();
+				cdp3->EndEncoding();
+				delete cdp3;
+				cdp3=NULL;
 			}
 			else
 			{
@@ -1793,11 +1837,14 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
 						open_binary ? "wb" : "w");
 				if(encode)
 				{
-					CCodepage cdp;
-					cdp.BeginEncoding(CCodepage::NullEncoding,encoding);
-					if(cdp.OutputAsEncoded(fileno(e),patchedbuf,patchedlen,crlf))
+					CCodepage *cdp4;
+					cdp4 = new CCodepage;
+					cdp4->BeginEncoding(CCodepage::NullEncoding,encoding);
+					if(cdp4->OutputAsEncoded(fileno(e),patchedbuf,patchedlen,crlf))
 						error(1, errno, "Cannot write %s", temp_filename);
-					cdp.EndEncoding();
+					cdp4->EndEncoding();
+					delete cdp4;
+					cdp4=NULL;
 				}
 				else
 				{
@@ -1986,11 +2033,16 @@ static void update_entries (char *data_arg, List *ent_list, char *short_pathname
 			break;
 		*cp++ = '\0';
 
+		md5 = cp;
+		if ((cp = strchr (md5, '/')) == NULL)
+			break;
+		*cp++ = '\0';
+
 		break;
 	}
 
 	Register (ent_list, filename, vn, local_timestamp,
-		  options, tag, date, ts[0] == '+' ? file_timestamp : NULL, merge_tag1, merge_tag2, rcs_timestamp, edit_revision, edit_tag, edit_bugid);
+		  options, tag, date, ts[0] == '+' ? file_timestamp : NULL, merge_tag1, merge_tag2, rcs_timestamp, edit_revision, edit_tag, edit_bugid, md5);
 
 	if (file_timestamp)
 	    xfree (file_timestamp);
@@ -2476,6 +2528,7 @@ static void send_repository(const char *dir, const char *repos, const char *upda
 	FILE *f;
     char line[MAX_PATH];
 
+	TRACE(3,"send_repository(%s,%s,%s)",(dir)?dir:"NULL",(repos)?repos:"NULL",(update_dir)?update_dir:"NULL");
     /* FIXME: this is probably not the best place to check; I wish I
      * knew where in here's callers to really trap this bug.  To
      * reproduce the bug, just do this:
@@ -2504,11 +2557,15 @@ static void send_repository(const char *dir, const char *repos, const char *upda
 	&& strcmp (repos, last_repos) == 0
 	&& last_update_dir != NULL
 	&& strcmp (update_dir, last_update_dir) == 0)
+	{
 	/* We've already sent it.  */
 	return;
+	}
 
     if (client_prune_dirs)
+	{
 		add_prune_candidate (update_dir);
+	}
 
     /* Add a directory name to the list of those sent to the
        server. */
@@ -2522,11 +2579,18 @@ static void send_repository(const char *dir, const char *repos, const char *upda
 	n->key = xstrdup (update_dir);
 	n->data = NULL;
 
+	if (dirs_sent_to_server==NULL)
+	{
+		TRACE(3,"create a list dirs_sent_to_server");
+	    dirs_sent_to_server = getlist ();
+	}
+
 	if (addnode (dirs_sent_to_server, n))
 	    error (1, 0, "cannot add directory %s to list", n->key);
     }
 
     /* 80 is large enough for any of CVSADM_*.  */
+	TRACE(3,"allocate adm_name * 80 is large enough for any of CVSADM_*.  ");
     adm_name = (char*)xmalloc (strlen (dir) + 80);
 
     send_to_server ("Directory ", 0);
@@ -2534,23 +2598,8 @@ static void send_repository(const char *dir, const char *repos, const char *upda
 		/* Send the directory name.  I know that this
 		sort of duplicates code elsewhere, but each
 		case seems slightly different...  */
-		char buf[1];
-		const char *p = update_dir;
-		while (*p != '\0')
-		{
-			assert (*p != '\n');
-			if (ISDIRSEP (*p))
-			{
-				buf[0] = '/';
-				send_to_server (buf, 1);
-			}
-			else
-			{
-				buf[0] = *p;
-				send_to_server (buf, 1);
-			}
-			++p;
-		}
+		TRACE(3,"* Send the directory name.  ");
+		send_filename (update_dir, false, true);
 	}
     send_to_server ("\n", 1);
 	adm_name[0] = '\0';
@@ -2584,7 +2633,7 @@ static void send_repository(const char *dir, const char *repos, const char *upda
 		error (0, errno, "closing %s", adm_name);
 	}
 	else
-	  send_to_server(repos,0);
+		send_to_server(repos,0);
 	send_to_server("\n",1);
 
     if (supported_request ("Static-directory"))
@@ -2620,6 +2669,7 @@ static void send_repository(const char *dir, const char *repos, const char *upda
 	    send_to_server ("Sticky ", 0);
 	    while (fgets (line, sizeof (line), f) != NULL)
 	    {
+		// why don't we do this? line[strlen(line)-1]='\0';
 		send_to_server (line, 0);
 		nl = strchr (line, '\n');
 		if (nl != NULL)
@@ -2633,10 +2683,17 @@ static void send_repository(const char *dir, const char *repos, const char *upda
     }
 	send_renames(dir);
     xfree (adm_name);
+	adm_name=NULL;
     if (last_repos != NULL)
+	{
 	xfree (last_repos);
+	last_repos=NULL;
+	}
     if (last_update_dir != NULL)
+	{
 	xfree (last_update_dir);
+	last_update_dir=NULL;
+	}
     last_repos = xstrdup (repos);
     last_update_dir = xstrdup (update_dir);
 }
@@ -2645,6 +2702,7 @@ static void send_repository(const char *dir, const char *repos, const char *upda
 
 void send_a_repository (const char *dir, const char *repository, const char *update_dir)
 {
+	TRACE(3,"send_a_repository(%s,%s,%s)",(dir)?dir:"NULL",(repository)?repository:"NULL",(update_dir)?update_dir:"NULL");
     if (toplevel_repos == NULL && repository != NULL)
     {
 	if (update_dir[0] == '\0'
@@ -2661,7 +2719,9 @@ void send_a_repository (const char *dir, const char *repository, const char *upd
 	     * matter that we don't hit the "internal error" code below).
 	     */
 	    if (update_dir[0] == '/')
+		{
 		toplevel_repos = Name_Repository (update_dir, update_dir);
+		}
 	    else
 	    {
 		/*
@@ -2697,8 +2757,8 @@ void send_a_repository (const char *dir, const char *repository, const char *upd
 
 		int repository_len, update_dir_len;
 
-		repository_len = strlen (repository);
-		update_dir_len = strlen (update_dir);
+		repository_len = (repository)? strlen (repository) : 0;
+		update_dir_len = (update_dir)? strlen (update_dir) : 0;
 		while (update_dir_len >= 0 && ISDIRSEP(update_dir[update_dir_len-1]))
 			update_dir_len--;
 
@@ -2719,7 +2779,7 @@ void send_a_repository (const char *dir, const char *repository, const char *upd
                        toplevel_repos to the repository name without
                        UPDATE_DIR. */
 
-		    toplevel_repos = (char*)xmalloc (repository_len - update_dir_len);
+		    toplevel_repos = (char*)xmalloc (repository_len - update_dir_len + 10);
 		    /* Note that we don't copy the trailing '/'.  */
 		    strncpy (toplevel_repos, repository,
 			     repository_len - update_dir_len - 1);
@@ -2860,8 +2920,8 @@ static void handle_e (char *args, int len)
 		else if(!strncmp(p,"New directory",13))
 		{
 			const char *fn=p+15,*q;
-			p=strchr(fn,'\'');
-			if(!p) p=strchr(fn,'`');
+			p=(char*)strchr(fn,'\'');
+			if(!p) p=(char*)strchr(fn,'`');
 			if(p)
 			{
 				q=strrchr(fn,'/');
@@ -3046,64 +3106,155 @@ static void handle_notranslateend(char *args, int len)
 		server_codepage_translation=1;
 }
 
+static void proxy_line1(char *cmd)
+{
+#ifdef SERVER_SUPPORT
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,false);
+	cmd=NULL;
+	read_line(&cmd);
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,true);
+	xfree(cmd);
+#endif
+}
+
+static void proxy_line2(char *cmd)
+{
+#ifdef SERVER_SUPPORT
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,false);
+	cmd=NULL;
+	read_line(&cmd);
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,false);
+	xfree(cmd);
+	read_line(&cmd);
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,true);
+	xfree(cmd);
+#endif
+}
+
+static void proxy_updated(char *cmd)
+{
+#ifdef SERVER_SUPPORT
+	int size,n;
+	char *buf;
+
+	proxy_line2(cmd);
+	cmd=NULL;
+	read_line(&cmd);
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,true);
+	xfree(cmd);
+	read_line(&cmd);
+	size = atoi(cmd);
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,true);
+	xfree(cmd);
+
+	if(size)
+	{
+		buf = (char*)xmalloc(size);
+		while (size > 0)
+		{
+			n = try_read_from_server (buf, size);
+			size -= n;
+		        cvs_output_raw(buf,n,size?false:true);
+		}
+		xfree(buf);
+	}
+#endif
+}
+
+static void proxy_file(char *cmd)
+{
+#ifdef SERVER_SUPPORT
+	int size,n;
+	char *buf;
+
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,false);
+	cmd=NULL;
+	read_line(&cmd);
+	size = atoi(cmd);
+	cvs_output_raw(cmd,0,false);
+	cvs_output_raw("\n",1,true);
+	xfree(cmd);
+
+	if(size)
+	{
+		buf = (char*)xmalloc(size);
+		while (size > 0)
+		{
+			n = try_read_from_server (buf, size);
+			size -= n;
+			cvs_output_raw(buf,n,size?false:true);
+		}
+		xfree(buf);
+	}
+#endif
+}
+
 /* This table must be writeable if the server code is included.  */
 struct response responses[] =
 {
-#define RSP_LINE(n, f, t, s) {n, f, t, s}
+#define RSP_LINE(n, f, p, t, s) {n, f, p, t, s}
 
-    RSP_LINE("ok", handle_ok, response_type_ok, rs_essential),
-    RSP_LINE("error", handle_error, response_type_error, rs_essential),
-    RSP_LINE("Valid-requests", handle_valid_requests, response_type_normal,
+    RSP_LINE("ok", handle_ok, NULL, response_type_ok, rs_essential),
+    RSP_LINE("error", handle_error, NULL, response_type_error, rs_essential),
+    RSP_LINE("Valid-requests", handle_valid_requests, NULL, response_type_normal,
        rs_essential),
-    RSP_LINE("Checked-in", handle_checked_in, response_type_normal,
+    RSP_LINE("Checked-in", handle_checked_in, proxy_line2, response_type_normal,
        rs_essential),
-    RSP_LINE("New-entry", handle_new_entry, response_type_normal, rs_optional),
-    RSP_LINE("Checksum", handle_checksum, response_type_normal, rs_optional),
-    RSP_LINE("Copy-file", handle_copy_file, response_type_normal, rs_optional),
-    RSP_LINE("Updated", handle_updated, response_type_normal, rs_essential),
-    RSP_LINE("Created", handle_created, response_type_normal, rs_optional),
-    RSP_LINE("Update-existing", handle_update_existing, response_type_normal,
+    RSP_LINE("New-entry", handle_new_entry, proxy_line2, response_type_normal, rs_optional),
+    RSP_LINE("Checksum", handle_checksum, NULL, response_type_normal, rs_optional),
+    RSP_LINE("Copy-file", handle_copy_file, proxy_line1, response_type_normal, rs_optional),
+    RSP_LINE("Updated", handle_updated, proxy_updated, response_type_normal, rs_essential),
+    RSP_LINE("Created", handle_created, proxy_updated, response_type_normal, rs_optional),
+    RSP_LINE("Update-existing", handle_update_existing, proxy_updated, response_type_normal,
        rs_optional),
-    RSP_LINE("Merged", handle_merged, response_type_normal, rs_essential),
-    RSP_LINE("Patched", handle_patched, response_type_normal, rs_optional),
-    RSP_LINE("Rcs-diff", handle_rcs_diff, response_type_normal, rs_optional),
-    RSP_LINE("Update-baserev", handle_update_baserev, response_type_normal, rs_optional),
-    RSP_LINE("Mode", handle_mode, response_type_normal, rs_optional),
-    RSP_LINE("Mod-time", handle_mod_time, response_type_normal, rs_optional),
-    RSP_LINE("Removed", handle_removed, response_type_normal, rs_essential),
-	RSP_LINE("Renamed", handle_renamed, response_type_normal, rs_optional),
-    RSP_LINE("Remove-entry", handle_remove_entry, response_type_normal,
+    RSP_LINE("Merged", handle_merged, proxy_updated, response_type_normal, rs_essential),
+    RSP_LINE("Patched", handle_patched, proxy_updated, response_type_normal, rs_optional),
+    RSP_LINE("Rcs-diff", handle_rcs_diff, proxy_updated, response_type_normal, rs_optional),
+    RSP_LINE("Update-baserev", handle_update_baserev, proxy_updated, response_type_normal, rs_optional),
+    RSP_LINE("Mode", handle_mode, NULL, response_type_normal, rs_optional),
+    RSP_LINE("Mod-time", handle_mod_time, NULL, response_type_normal, rs_optional),
+    RSP_LINE("Removed", handle_removed, NULL, response_type_normal, rs_essential),
+	RSP_LINE("Renamed", handle_renamed, NULL, response_type_normal, rs_optional),
+    RSP_LINE("Remove-entry", handle_remove_entry, NULL, response_type_normal,
        rs_optional),
-    RSP_LINE("Set-static-directory", handle_set_static_directory,
+    RSP_LINE("Set-static-directory", handle_set_static_directory, proxy_line1,
        response_type_normal,
        rs_optional),
-    RSP_LINE("Clear-static-directory", handle_clear_static_directory,
+    RSP_LINE("Clear-static-directory", handle_clear_static_directory, proxy_line1,
        response_type_normal,
        rs_optional),
-    RSP_LINE("Set-sticky", handle_set_sticky, response_type_normal,
+    RSP_LINE("Set-sticky", handle_set_sticky, proxy_line2, response_type_normal,
        rs_optional),
-    RSP_LINE("Clear-sticky", handle_clear_sticky, response_type_normal,
+    RSP_LINE("Clear-sticky", handle_clear_sticky, proxy_line1, response_type_normal, 
        rs_optional),
-    RSP_LINE("Template", handle_template, response_type_normal,
+    RSP_LINE("Template", handle_template, proxy_file, response_type_normal,
        rs_optional),
-    RSP_LINE("Notified", handle_notified, response_type_normal, rs_optional),
-    RSP_LINE("Module-expansion", handle_module_expansion, response_type_normal,
+    RSP_LINE("Notified", handle_notified, NULL, response_type_normal, rs_optional),
+    RSP_LINE("Module-expansion", handle_module_expansion, NULL, response_type_normal, 
        rs_optional),
-    RSP_LINE("Wrapper-rcsOption", handle_wrapper_rcs_option,
+    RSP_LINE("Wrapper-rcsOption", handle_wrapper_rcs_option, NULL,
        response_type_normal,
        rs_optional),
-    RSP_LINE("Clear-rename", handle_clear_rename, response_type_normal, rs_optional),
-	RSP_LINE("Rename", handle_rename, response_type_normal, rs_optional),
-	RSP_LINE("EntriesExtra", handle_entries_extra, response_type_normal, rs_optional),
-    RSP_LINE("M", handle_m, response_type_normal, rs_essential),
-    RSP_LINE("Mbinary", handle_mbinary, response_type_normal, rs_optional),
-    RSP_LINE("E", handle_e, response_type_normal, rs_essential),
-    RSP_LINE("F", handle_f, response_type_normal, rs_optional),
-    RSP_LINE("MT", handle_mt, response_type_normal, rs_optional),
-	RSP_LINE("NoTranslateBegin", handle_notranslatebegin, response_type_normal, rs_optional),
-	RSP_LINE("NoTranslateEnd", handle_notranslateend, response_type_normal, rs_optional),
+    RSP_LINE("Clear-rename", handle_clear_rename, NULL, response_type_normal, rs_optional),
+	RSP_LINE("Rename", handle_rename, NULL, response_type_normal, rs_optional), 
+	RSP_LINE("EntriesExtra", handle_entries_extra, NULL, response_type_normal, rs_optional), 
+    RSP_LINE("M", handle_m, NULL, response_type_normal, rs_essential), 
+    RSP_LINE("Mbinary", handle_mbinary, proxy_file, response_type_normal, rs_optional),
+    RSP_LINE("E", handle_e, NULL, response_type_normal, rs_essential),
+    RSP_LINE("F", handle_f, NULL, response_type_normal, rs_optional),
+    RSP_LINE("MT", handle_mt, NULL, response_type_normal, rs_optional),
+	RSP_LINE("NoTranslateBegin", handle_notranslatebegin, NULL, response_type_normal, rs_optional),
+	RSP_LINE("NoTranslateEnd", handle_notranslateend, NULL, response_type_normal, rs_optional),
     /* Possibly should be response_type_error.  */
-    RSP_LINE(NULL, NULL, response_type_normal, rs_essential)
+    RSP_LINE(NULL, NULL, NULL, response_type_normal, rs_essential)
 
 #undef RSP_LINE
 };
@@ -3206,8 +3357,7 @@ void read_from_server (char *buf, size_t len)
 /*
  * Get some server responses and process them.  Returns nonzero for
  * error, 0 for success.  */
-int
-get_server_responses ()
+int get_server_responses ()
 {
     struct response *rs;
     do
@@ -3231,7 +3381,24 @@ get_server_responses ()
 		     * matched "ok".
 		     */
 		    continue;
-		(*rs->func) (cmd + cmdlen, len - cmdlen);
+#ifdef SERVER_SUPPORT
+		if(proxy_active)
+		{
+			// We are proxying for a client.  Don't execute this commmand, proxy it
+			if(rs->proxy)
+				(*rs->proxy) (cmd);
+			else
+			{
+				cvs_output_raw(cmd,0,false);
+				cvs_output_raw("\n",1,true);
+			}
+		}
+		else
+#endif
+		{
+			// Local command
+			(*rs->func) (cmd + cmdlen, len - cmdlen);
+		}
 		break;
 	    }
 	if (rs->name == NULL)
@@ -3283,6 +3450,19 @@ get_server_responses ()
     if (failure_exit)
 	return 1;
     return 0;
+}
+
+int get_server_responses_noproxy()
+{
+#ifdef SERVER_SUPPORT
+	int _prox=proxy_active;
+	proxy_active=0;
+#endif
+	int ret = get_server_responses();
+#ifdef SERVER_SUPPORT
+	proxy_active=_prox;
+#endif
+	return ret;
 }
 
 /*
@@ -3418,6 +3598,34 @@ static void send_variable_proc (variable_list_t::const_reference item)
     send_to_server ("\n", 1);
 }
 
+#ifdef _WIN32
+bool SendStatistics(char *url)
+{
+	CHttpSocket sock;
+
+	if(!sock.create("http://march-hare.com"))
+	{
+		TRACE(3,"Failed to send statistics.  Server not responding");
+		return false;
+	}
+
+	if(!sock.request("GET",url))
+	{
+		// Not sure this can actually fail.. it would normally succeed with an error code
+		TRACE(3,"Failed to send statistics.  Server not responding to GET requests");
+		return false;
+	}
+
+	if(sock.responseCode()!=200)
+	{
+		TRACE(3,"Failed to send statistics.  Server returned error %d\n",sock.responseCode());
+		return false;
+	}
+
+	return true;
+}
+#endif
+
 /* Contact the server.  */
 int start_server (int verify_only)
 {
@@ -3430,13 +3638,16 @@ int start_server (int verify_only)
 	to_server = NULL;
 	from_server = NULL;
 
+	TRACE(3,"start_server(%d)",verify_only);
+
 
     /* Clear our static variables for this invocation. */
     if (toplevel_repos != NULL)
 	xfree (toplevel_repos);
     toplevel_repos = NULL;
 
-	connect_state = client_protocol->connect(client_protocol,0);
+	TRACE(2,"client start - client_protocol->connect");
+	connect_state = client_protocol->connect(client_protocol,verify_only);
 	if(connect_state==CVSPROTO_AUTHFAIL)
 	{
 		if(current_parsed_root->username)
@@ -3459,9 +3670,11 @@ int start_server (int verify_only)
 	else if(connect_state==CVSPROTO_SUCCESS)
 	{
 		/* Loop, getting responses from the server.  */
+		TRACE(2,"client start - Loop, getting responses from the server.");
 		while (1)
 		{
 			recv_line (&read_buf);
+			TRACE(2,"client start - got \"%s\"",read_buf);
 
 			if (strcmp (read_buf, "I HATE YOU") == 0)
 			{
@@ -3540,13 +3753,17 @@ int start_server (int verify_only)
 		}
 	}
 
-	if(verify_only)
+	if(verify_only == 1)
 		return 0;
+
+	TRACE(2,"client start - continue login.");
 
 	/* If there was a password in the root string, and the login has succeeded,
 	   do an implicit login from the supplied data so that future operations work */
 	if(current_parsed_root->password_used && client_protocol->login)
 		client_protocol->login(client_protocol,(char*)current_parsed_root->password);
+
+	TRACE(2,"client start - server started.");
 
     /* "Hi, I'm Darlene and I'll be your server tonight..." */
     server_started = 1;
@@ -3567,6 +3784,7 @@ int start_server (int verify_only)
 	char *p;
 	FILE *fp;
 
+	TRACE(2,"client start - set up logfiles.");
 	strcpy (buf, log);
 	p = buf + len;
 
@@ -3619,15 +3837,20 @@ int start_server (int verify_only)
     {
 	struct response *rs;
 
+	TRACE(2,"client start - send Valid-responses to server.");
 	send_to_server ("Valid-responses", 0);
 
 	for (rs = responses; rs->name != NULL; ++rs)
 	{
+		// If we are proxying then we remove things our client doesn't want
+		if(verify_only==2 && rs->status == rs_not_supported)
+			continue;
 	    send_to_server (" ", 0);
 	    send_to_server (rs->name, 0);
 	}
 	send_to_server ("\n", 1);
     }
+	TRACE(2,"client start - send valid-requests to server.");
     send_to_server ("valid-requests\n", 0);
 
     if (get_server_responses ())
@@ -3650,8 +3873,12 @@ int start_server (int verify_only)
 
     if (!rootless_encryption)
     {
+		TRACE(2,"client start - !rootless_encryption.");
 		send_to_server ("Root ", 0);
-		send_to_server (current_parsed_root->directory, 0);
+		if(server_active)
+			send_to_server (current_parsed_root->remote_repository, 0);
+		else
+			send_to_server (current_parsed_root->directory, 0);
 		send_to_server ("\n", 1);
     }
 
@@ -3666,6 +3893,7 @@ int start_server (int verify_only)
 		we want to encrypt the compressed stream.  If we can't turn
 		on encryption, bomb out; don't let the user think the data
 		is being encrypted when it is not.  */
+		TRACE(2,"client start - cvsencrypt && rootless_encryption.");
 	if (client_protocol->wrap)
 	{
 		if(supported_request("Protocol-encrypt")) // CVSNT specific protocol encryption
@@ -3683,11 +3911,11 @@ int start_server (int verify_only)
 		else
 			error (1, 0, "This server does not support encryption");
 
-		to_server = cvs_encrypt_wrap_buffer_initialize (to_server, 0,
+		to_server = cvs_encrypt_wrap_buffer_initialize (client_protocol, to_server, 0,
 													1,
 													((BUFMEMERRPROC)
 														NULL));
-		from_server = cvs_encrypt_wrap_buffer_initialize (from_server, 1,
+		from_server = cvs_encrypt_wrap_buffer_initialize (client_protocol, from_server, 1,
 														1,
 														((BUFMEMERRPROC)
 														NULL));
@@ -3703,6 +3931,7 @@ int start_server (int verify_only)
 
 	if (gzip_level>0 && rootless_encryption)
 	{
+	TRACE(2,"client start - gzip_level>0 && rootless_encryption.");
 	if (supported_request ("Gzip-stream"))
 	{
 		char gzip_level_buf[5];
@@ -3738,6 +3967,7 @@ int start_server (int verify_only)
 		assume that encrypted data is always authenticated--the
 		ability to decrypt the data stream is itself a form of
 		authentication.  */
+	TRACE(2,"client start - cvsauthenticate && !cvsencrypt && rootless_encryption.");
 	if (client_protocol->wrap)
 	{
 		if(supported_request("Protocol-authenticate")) // CVSNT specific protocol authentication
@@ -3751,11 +3981,11 @@ int start_server (int verify_only)
 		else
 			error (1, 0, "This server does not support authentication");
 
-		to_server = cvs_encrypt_wrap_buffer_initialize (to_server, 0,
+		to_server = cvs_encrypt_wrap_buffer_initialize (client_protocol, to_server, 0,
 													0,
 													((BUFMEMERRPROC)
 														NULL));
-		from_server = cvs_encrypt_wrap_buffer_initialize (from_server, 1,
+		from_server = cvs_encrypt_wrap_buffer_initialize (client_protocol, from_server, 1,
 														0,
 														((BUFMEMERRPROC)
 														NULL));
@@ -3770,8 +4000,12 @@ int start_server (int verify_only)
 
     if (rootless_encryption)
     {
+		TRACE(2,"client start - rootless_encryption.");
 		send_to_server ("Root ", 0);
-		send_to_server (current_parsed_root->directory, 0);
+		if(server_active)
+			send_to_server (current_parsed_root->remote_repository, 0);
+		else
+			send_to_server (current_parsed_root->directory, 0);
 		send_to_server ("\n", 1);
     }
 
@@ -3969,31 +4203,8 @@ int start_server (int verify_only)
 /* Send an argument STRING.  */
 void send_arg (const char *string)
 {
-    char buf[1];
-    const char *p = string;
-
     send_to_server ("Argument ", 0);
-
-	if(!strchr(string,'\n'))
-	{
-		send_to_server(string,0);
-	}
-	else
-	{
-		while (*p)
-		{
-			if (*p == '\n')
-			{
-				send_to_server ("\nArgumentx ", 0);
-			}
-			else
-			{
-			buf[0] = *p;
-			send_to_server (buf, 1);
-			}
-			++p;
-		}
-	}
+	send_filename(string,true,false);
     send_to_server ("\n", 1);
 }
 
@@ -4023,18 +4234,10 @@ static void send_modified (const char *file, const char *short_pathname, const V
 
     mode_string = mode_to_string (sb.st_mode);
 
-    /* Beware: on systems using CRLF line termination conventions,
-       the read and write functions will convert CRLF to LF, so the
-       number of characters read is not the same as sb.st_size.  Text
-       files should always be transmitted using the LF convention, so
-       we don't want to disable this conversion.  */
-    bufsize = sb.st_size;
-    buf = (char*)xmalloc (bufsize);
-
     /* Is the file marked as containing binary data by the "-kb" flag?
        If so, make sure to open it in binary mode: */
 
-	crlf = CRLF_DEFAULT;
+	crlf = crlf_mode;
     if (vers && vers->options)
 	{
 		RCS_get_kflags(vers->options, false, options_flags);
@@ -4055,6 +4258,14 @@ static void send_modified (const char *file, const char *short_pathname, const V
 		encode = false;
 		encoding = targetencoding = CCodepage::NullEncoding;
 	}
+
+    /* Beware: on systems using CRLF line termination conventions,
+       the read and write functions will convert CRLF to LF, so the
+       number of characters read is not the same as sb.st_size.  Text
+       files should always be transmitted using the LF convention, so
+       we don't want to disable this conversion.  */
+    bufsize = sb.st_size;
+    buf = (char*)xmalloc (bufsize);
 
 #ifdef MAC_HFS_STUFF
 	{
@@ -4084,7 +4295,7 @@ static void send_modified (const char *file, const char *short_pathname, const V
 
 	{
 	    char *bufp = buf;
-		CCodepage cdp;
+		CCodepage *cdp1;
 	    int len;
 
 	    /* FIXME: This is gross.  It assumes that we might read
@@ -4101,14 +4312,27 @@ static void send_modified (const char *file, const char *short_pathname, const V
 	    newsize = bufp - buf;
 
 		/* If the file is unicode (and the remote server supports it), translate it to utf8 before transmitting */
+		TRACE(3,"If the file is unicode (and the remote server supports it), translate it to utf8 before transmitting.");
+		if((!open_binary)||(encode))
+		{
+			TRACE(3,"instantiate cdp1.");
+			cdp1 = new CCodepage;
+			TRACE(3,"!open_binary - will begin.");
+			cdp1->BeginEncoding(encoding,targetencoding);
+		}
 		if(encode)
 		{
+			TRACE(3,"encode is set.");
 		    if(supported_request("Utf8"))
 			{
 				void *newbuf = NULL;
 				int res;
-				cdp.BeginEncoding(encoding,targetencoding);
-				if((res=cdp.ConvertEncoding(buf,newsize,newbuf,newsize))>0)
+				CCodepage *cdp2;
+				TRACE(3,"instantiate cdp2.");
+				cdp2 = new CCodepage;
+				TRACE(3,"Utf8 is a supported request.");
+				cdp2->BeginEncoding(encoding,targetencoding);
+				if((res=cdp2->ConvertEncoding(buf,newsize,newbuf,newsize))>0)
 				{
 					xfree(buf);
 					buf = (char*)newbuf;
@@ -4117,18 +4341,27 @@ static void send_modified (const char *file, const char *short_pathname, const V
 				{
 					error(0,0,"Unable to file from %s to UTF-8.  Checkin may be invalid.",encoding.encoding);
 				}
-				cdp.EndEncoding();
+				cdp2->EndEncoding();
+				delete cdp2;
+				cdp2=NULL;
 			}
 			else 
 				error(0,0,"Remote server does not support codepage transformation.  Checkin may be invalid.");
 		}
+		else
+			TRACE(3,"encode is NOT set.");
 		/* Normalise the file, removing CRLF, CR only, etc. */
-		if(!open_binary)
-			cdp.StripCrLf(buf,newsize);
+		if((encode)||(!open_binary))
+		{
+			cdp1->StripCrLf(buf,newsize);
+			cdp1->EndEncoding();
+			delete cdp1;
+			cdp1=NULL;
+		}
 	}
 	if (close (fd) < 0)
 	    error (0, errno, "warning: can't close %s", short_pathname);
-
+   
 	if (supported_request ("Checkin-time") && strcmp(command_name,"import"))
 	{
 	    struct stat sb;
@@ -4146,26 +4379,53 @@ static void send_modified (const char *file, const char *short_pathname, const V
 	    send_to_server ("\n", 1);
 	}
 
-	if(send_checksum && supported_request("Checksum"))
+#if 0 // Not implemented yet
+	if(newsize>1024*1024 && supported_request("Binary-transfer")) // We don't do this on files <1MB..
 	{
+		char tmp[80];
+		const char *p = buf;
+		size_t s = newsize,l;
 		CMD5Calc md5;
+
+		send_to_server("Binary-transfer",0);
+		send_to_server (file, 0);
+		send_to_server ("\n", 1);
+		send_to_server (mode_string, 0);
+		send_to_server ("\n", 1);
+		snprintf (tmp, 80, "%lu\n", (unsigned long) newsize);
+		send_to_server (tmp, 0);
+
 		md5.Update(buf,newsize);
-		send_to_server ("Checksum ",0);
 		send_to_server(md5.Final(),0);
 		send_to_server("\n",1);
+
+		while(s)
+		{
+			md5.Init();
+			l=s>65536?65536:s;
+			md5.Update(p,l);
+			p+=l;
+			s-=l;
+			send_to_server_untranslated(md5.Final(),0);
+			send_to_server_untranslated("\n",1);
+		}
 	}
+	else
+#endif
+	{
+		char tmp[80];
 
-    {
-      char tmp[80];
+		send_to_server ("Modified ", 0);
+		send_to_server (file, 0);
+		send_to_server ("\n", 1);
+		send_to_server (mode_string, 0);
+		send_to_server ("\n", 1);
+		sprintf (tmp, "%lu\n", (unsigned long) newsize);
+		send_to_server (tmp, 0);
 
-	  send_to_server ("Modified ", 0);
-	  send_to_server (file, 0);
-	  send_to_server ("\n", 1);
-	  send_to_server (mode_string, 0);
-	  send_to_server ("\n", 1);
-      sprintf (tmp, "%lu\n", (unsigned long) newsize);
-      send_to_server (tmp, 0);
-    }
+		if (newsize > 0)
+			send_to_server_untranslated(buf, newsize);
+	}
 
 #ifdef MAC_HFS_STUFF
 	{
@@ -4182,8 +4442,7 @@ static void send_modified (const char *file, const char *short_pathname, const V
 	 * Note that this only ends with a newline if the file ended with
 	 * one.
 	 */
-	if (newsize > 0)
-	    send_to_server_untranslated(buf, newsize);
+
     xfree (buf);
     xfree (mode_string);
 }
@@ -4214,6 +4473,7 @@ static int send_fileproc (void *callerdat, struct file_info *finfo)
        finfo->file.  */
     const char *filename;
 
+    TRACE(3,"send_fileproc (1)");
     send_a_repository ("", finfo->repository, finfo->update_dir);
 
     xfinfo = *finfo;
@@ -4281,6 +4541,8 @@ static int send_fileproc (void *callerdat, struct file_info *finfo)
 		send_to_server (vers->entdata->edit_tag,0);
 		send_to_server ("/", 0);
 		send_to_server (vers->entdata->edit_bugid,0);
+		send_to_server ("/", 0);
+		send_to_server (vers->entdata->md5,0);
 		send_to_server ("/\n", 0);
 	}
     }
@@ -4304,34 +4566,66 @@ static int send_fileproc (void *callerdat, struct file_info *finfo)
     else if (vers->ts_rcs == NULL
 	     || args->force || strcmp (vers->ts_user, vers->ts_rcs) != 0)
     {
-	if (args->no_contents
-	    && supported_request ("Is-modified"))
-	{
-	    send_to_server ("Is-modified ", 0);
-	    send_to_server (filename, 0);
-	    send_to_server ("\n", 1);
-	}
-	else
-	    send_modified (filename, finfo->fullname, vers);
+		bool modified = true;
+		if(!args->force && vers->entdata && vers->entdata->md5)
+		{
+			char *buf = NULL;
+			size_t bufsize=0,len=0;
+			kflag kf;
 
-        if (args->backup_modified)
-        {
-            char *bakname;
-            bakname = backup_file (filename, vers->vn_user);
-            /* This behavior is sufficiently unexpected to
-               justify overinformativeness, I think. */
-            if (! really_quiet)
-                printf ("(Locally modified %s moved to %s)\n",
-                        filename, bakname);
-            xfree (bakname);
-			client_overwrite_existing = 1;
-        }
+			// This is the one case where for md5 we have to deal with unicode
+			// The md5 stored is the server side protocol file which is always ANSI or UTF8 and
+			// contains only LF.
+			RCS_get_kflags(vers->options, false, kf);
+			get_file(finfo->file,filename,"r",&buf,&bufsize,&len,kf);
+
+			if(len)
+			{
+				CMD5Calc md5;
+				md5.Update(buf,len);
+				if(!strcmp(md5.Final(),vers->entdata->md5))
+					modified = false;
+			}
+
+			xfree(buf);
+		}
+
+		if(modified)
+		{
+			if (args->no_contents && supported_request ("Is-modified"))
+			{
+				send_to_server ("Is-modified ", 0);
+				send_to_server (filename, 0);
+				send_to_server ("\n", 1);
+			}
+			else
+				send_modified (filename, finfo->fullname, vers);
+
+			if (args->backup_modified)
+			{
+				char *bakname;
+				bakname = backup_file (filename, vers->vn_user);
+				/* This behavior is sufficiently unexpected to
+				justify overinformativeness, I think. */
+				if (! really_quiet)
+					printf ("(Locally modified %s moved to %s)\n",
+							filename, bakname);
+				xfree (bakname);
+				client_overwrite_existing = 1;
+			}
+		}
+		else
+		{
+			send_to_server ("Unchanged ", 0);
+			send_to_server (filename, 0);
+			send_to_server ("\n", 1);
+		}
     }
     else
     {
-	send_to_server ("Unchanged ", 0);
-	send_to_server (filename, 0);
-	send_to_server ("\n", 1);
+		send_to_server ("Unchanged ", 0);
+		send_to_server (filename, 0);
+		send_to_server ("\n", 1);
     }
 
     /* if this directory has an ignore list, add this file to it */
@@ -4389,9 +4683,10 @@ static int send_filesdoneproc (void *callerdat, int err, char *repository, char 
 static Dtype send_dirent_proc (void *callerdat, char *dir, char *repository, char *update_dir, List *entries, const char *virtual_repository, Dtype hint)
 {
     struct send_data *args = (struct send_data *) callerdat;
-    int dir_exists;
-    char *cvsadm_name;
+    int dir_exists=0;
+    char *cvsadm_name=NULL;
 
+	TRACE(3,"send_dirent_proc called by recursion processor?");
     if (ignore_directory (update_dir))
     {
 	/* print the warm fuzzy message */
@@ -4412,6 +4707,7 @@ static Dtype send_dirent_proc (void *callerdat, char *dir, char *repository, cha
     sprintf (cvsadm_name, "%s/%s", dir, CVSADM);
     dir_exists = isdir (cvsadm_name);
     xfree (cvsadm_name);
+	cvsadm_name=NULL;
 
     /*
      * If there is an empty directory (e.g. we are doing `cvs add' on a
@@ -4428,6 +4724,7 @@ static Dtype send_dirent_proc (void *callerdat, char *dir, char *repository, cha
 	char *repos = Name_Repository (dir, update_dir);
 	send_a_repository (dir, repos, update_dir);
 	xfree (repos);
+	repos=NULL;
 
 	/* initialize the ignore list for this directory */
 	ignlist = getlist ();
@@ -4515,6 +4812,7 @@ void send_file_names (int argc, char **argv, unsigned int flags)
     if (flags & SEND_EXPAND_WILD)
 		expand_wild (argc, argv, &argc, &argv);
 
+	TRACE(3,"send_files (1)");
 	if(!client_max_dotdot)
 	{
 		/* Send Max-dotdot if needed.  */
@@ -4553,90 +4851,80 @@ void send_file_names (int argc, char **argv, unsigned int flags)
 
     for (i = 0; i < argc; ++i)
     {
-	char buf[1];
-	char *p = argv[i];
-	char *line = NULL;
+		char *file = argv[i];
+		char *dir = NULL;
 
-	if (arg_should_not_be_sent_to_server (argv[i]))
-	    continue;
+		if (arg_should_not_be_sent_to_server (file))
+		    continue;
 
-	if(flags&SEND_DIRECTORIES_ONLY && !isdir(argv[i]))
-	{
-		error(1,0,"Can only specify directories for this command");
-		continue;
-	}
-
-	if(filenames_case_insensitive && !(flags&SEND_CASE_SENSITIVE))
-	{
-		/* We want to send the file name as it appears
-		in CVS/Entries.  We put this inside an ifdef
-		to avoid doing all these system calls in
-		cases where fncmp is just strcmp anyway.  */
-		/* For now just do this for files in the local
-		directory.  Would be nice to handle the
-		non-local case too, though.  */
-		/* The isdir check could more gracefully be replaced
-		with a way of having Entries_Open report back the
-		error to us and letting us ignore existence_error.
-		Or some such.  */
-		if (p == last_component (p) && isdir (CVSADM))
+		if(flags&SEND_DIRECTORIES_ONLY && !isdir(file))
 		{
-			List *entries;
-			Node *node;
-
-			/* If we were doing non-local directory,
-			we would save_cwd, CVS_CHDIR
-			like in update.c:isemptydir.  */
-			/* Note that if we are adding a directory,
-			the following will read the entry
-			that we just wrote there, that is, we
-			will get the case specified on the
-			command line, not the case of the
-			directory in the filesystem.  This
-			is correct behavior.  */
-			entries = Entries_Open (0, NULL);
-			node = findnode_fn (entries, p);
-			if (node != NULL)
-			{
-			line = xstrdup (node->key);
-			p = line;
-			delnode (node);
-			}
-			Entries_Close (entries);
+			error(1,0,"Can only specify directories for this command");
+			continue;
 		}
-	}
 
-	send_to_server ("Argument ", 0);
+		if(filenames_case_insensitive && !(flags&SEND_CASE_SENSITIVE))
+		{
+			const char *p;
 
-	while (*p)
-	{
-	    if (*p == '\n')
-	    {
-		send_to_server ("\nArgumentx ", 0);
-	    }
-	    else if (ISDIRSEP (*p))
-	    {
-		buf[0] = '/';
-		send_to_server (buf, 1);
-	    }
-	    else
-	    {
-		buf[0] = *p;
-		send_to_server (buf, 1);
-	    }
-	    ++p;
+			if ((p=last_component (file))!=NULL && isdir (CVSADM))
+			{
+				List *entries = NULL;
+				Node *node;
+
+				/* Note that if we are adding a directory,
+				the following will read the entry
+				that we just wrote there, that is, we
+				will get the case specified on the
+				command line, not the case of the
+				directory in the filesystem.  This
+				is correct behavior.  */
+
+				/* If the file doesn't exist then the send the argument as passed anyway.. let the
+				   server sort out whether that matters or not */
+				if(p>file)
+				{
+					dir = xstrdup(file);
+					dir[p-file]='\0';
+					if(isdir(dir))
+					   	entries = Entries_Open_Dir(0, dir, dir);
+					else
+						xfree(dir);
+				}
+				else
+					entries = Entries_Open(0, NULL);
+				if(entries)
+				{
+					node = findnode_fn (entries, p);
+					if (node != NULL)
+					{
+				  		if(!dir)
+							dir = xstrdup(node->key);
+				  		else
+				  		{
+							dir = (char *)xrealloc(dir, strlen(dir)+strlen(node->key)+2);
+							strcat(dir,node->key);
+				  		}
+					}
+					else
+				  		xfree(dir);
+					Entries_Close (entries);
+				}
+			}
+		}
+
+		send_to_server ("Argument ", 0);
+		send_filename(dir?dir:file, true, true);
+		send_to_server ("\n", 1);
+		xfree(dir);
 	}
-	send_to_server ("\n", 1);
-	if (line != NULL)
-	    xfree (line);
-    }
 
     if (flags & SEND_EXPAND_WILD)
     {
-	int i;
-	for (i = 0; i < argc; ++i)
-	    xfree (argv[i]);
-	xfree (argv);
+		int i;
+		for (i = 0; i < argc; ++i)
+			xfree (argv[i]);
+		xfree (argv);
     }
 }
 
@@ -4705,7 +4993,7 @@ void send_files (int argc, char **argv, int local, int aflag, unsigned int flags
 	(send_fileproc, send_filesdoneproc, (PREDIRENTPROC) NULL,
 	 send_dirent_proc, send_dirleave_proc, (void *) &args,
 	 argc, argv, local, W_LOCAL, aflag, 0, (char *)NULL, NULL, 0,
-	 (PERMPROC) NULL);
+	 (PERMPROC) NULL, NULL);
     if (err)
 		error_exit ();
     if (toplevel_repos == NULL)
@@ -4767,6 +5055,7 @@ int client_process_import_file(const char *message, const char *vfile, const cha
 		if (supported_request ("Kopt"))
 		{
 			send_to_server ("Kopt ", 0);
+			send_to_server ("-k", 0);
 			send_to_server (vers.options, 0);
 			send_to_server ("\n", 1);
 		}

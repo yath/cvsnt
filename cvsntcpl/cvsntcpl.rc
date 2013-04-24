@@ -66,7 +66,89 @@ END
 // Dialog
 //
 
+// +000000000000000000000000000000000000000000000000000000000000000000000000000
+//
+// This is the new advert dialog - encourage community participation 
+//
+
+IDD_FREEDIALOG DIALOGEX 0, 0, 380, 206
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TOPMOST
+CAPTION "Support those that write Free Software"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,7,187,50,14
+    LTEXT           "Free Software is not about price, but about the freedom that the license grants you.",IDC_STATIC,13,5,282,12
+    LTEXT           "We recommend that EACH person in your team or organisation pay your share of the ",IDC_STATIC,11,30,274,10
+    LTEXT           "cost of developing CVSNT using one of these methods:",IDC_STATIC,11,39,181,11
+    CONTROL         "Purchase CVS Suite 2009 (CVSNT 2.8)",IDC_FREEOPT1,
+                    "Button",BS_AUTORADIOBUTTON,15,58,134,10
+    LTEXT           "the QA tested and commercially supported release that includes the high-performance CVS Suite Server, Defect Tracking Integration with Bugzilla, Mantis or Jira and over 380 bug fixes for $133.",IDC_STATIC,27,71,320,19
+    CONTROL         "Purchase CM Suite (EVS / CVSNT 3.1)",IDC_FREEOPT2,"Button",BS_AUTORADIOBUTTON,14,95,133,10
+    LTEXT           "a single repository server that works with Subversion, CVS, CVSNT, Web, Web Folders and TeamSystem clients for $401",IDC_STATIC,27,108,228,19
+    CONTROL         "Contribute more than 40 hours of documentation or coding fixes to the cvsnt-dev newsgroup forum",IDC_FREEOPT3,
+                    "Button",BS_AUTORADIOBUTTON,15,130,350,10
+    LTEXT           "If you use CVSNT as a part of a paying job and fail to pay your share of the development costs using one of the",IDC_STATIC,6,150,364,10
+    LTEXT           "above methods then someone else has to pay your share which is very unfair and also likely to result in a future with far less innovation in the development of free software.",IDC_STATIC,5,158,366,18
+    CONTROL         "<a href=""http://www.ohloh.net/p/cvsnt"">$ 9,895,730</a>",IDC_SYSLINK1,
+                    "SysLink",WS_TABSTOP,286,30,41,13
+    CONTROL         "<a href=""http://www.gnu.org/philosophy/free-sw.html"">http://www.gnu.org/philosophy/free-sw.html</a>",IDC_SYSLINK2,
+                    "SysLink",WS_TABSTOP,13,13,162,9
+    CONTROL         "<a href=""http://store.march-hare.com/s.nl/sc.2/category.2/.f"">Buy</a>",IDC_SYSLINK3,
+                    "SysLink",WS_TABSTOP,154,57,16,11
+    CONTROL         "<a href=""http://march-hare.com/cvspro/?lang=EN#downcvsnt"">Try</a>",IDC_SYSLINK6,
+                    "SysLink",WS_TABSTOP,174,57,19,10
+    CONTROL         "<a href=""http://march-hare.com/cvsnt/en.asp"">More info</a>",IDC_SYSLINK4,
+                    "SysLink",WS_TABSTOP,194,57,35,9
+    CONTROL         "<a href=""http://march-hare.com/cvspro/?lang=EN#downcmserver"">Try</a>",IDC_SYSLINK5,
+                    "SysLink",WS_TABSTOP,154,94,19,10
+END
+
+
+
+// +111111111111111111111111111111111111111111111111111111111111111111111111111
+//
+// This is the new front page front 
+//
+
 IDD_PAGE1 DIALOGEX 0, 0, 409, 209
+STYLE DS_SETFONT | DS_MODALFRAME | WS_CHILD | WS_DISABLED | WS_CAPTION
+CAPTION "Server information"
+FONT 8, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    GROUPBOX        "Server Information",IDC_STATIC,7,49,394,55
+    LTEXT           "CVSNT Version",IDC_STATIC,17,64,50,8
+    LTEXT           "Registration Number",IDC_STATIC,17,75,65,8
+    LTEXT           "Host Operating System",IDC_STATIC,17,86,73,8
+    GROUPBOX        "Statistics",IDC_STATIC,7,106,394,74
+    LTEXT           "Uptime",IDC_STATIC,17,118,23,9
+    LTEXT           "Number of users",IDC_STATIC,17,130,52,8
+    LTEXT           "Max. Number of simultaneous users",IDC_STATIC,17,152,
+                    112,8
+    LTEXT           "Average time per user",IDC_STATIC,17,163,70,8
+    CONTROL         "Send weeky statistical summary to March Hare",
+                    IDC_CHECK1,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,7,189,
+                    163,10
+    PUSHBUTTON      "What's this?",IDC_BUTTON1,185,187,50,14
+    LTEXT           "1.1.1.1",IDC_CVSNTVERSION,127,64,243,8
+    LTEXT           "9999",IDC_REGISTRATION,127,75,243,8
+    LTEXT           "Altair OS 1.0",IDC_HOSTOS,127,86,243,8
+    LTEXT           "1 billion years",IDC_UPTIME,148,119,174,8
+    LTEXT           "200,000,000",IDC_USERS,148,130,174,8
+    LTEXT           "3",IDC_SIMULTANEOUSUSERS,148,152,174,8
+    LTEXT           "1:40:33:15",IDC_TIMEPERUSER,148,163,174,8
+    PUSHBUTTON      "",IDC_LOGO,23,8,363,35,BS_BITMAP | NOT WS_TABSTOP,
+                    WS_EX_TRANSPARENT | WS_EX_STATICEDGE
+    LTEXT           "Number of sessions",IDC_STATIC,17,141,62,8
+    LTEXT           "12313",IDC_SESSIONCOUNT,148,141,253,8
+END
+
+// +222222222222222222222222222222222222222222222222222222222222222222222222222
+//
+// ABOUT
+//
+
+IDD_PAGE4 DIALOGEX 0, 0, 409, 209
 STYLE DS_SETFONT | DS_MODALFRAME | WS_CHILD | WS_DISABLED | WS_CAPTION
 CAPTION "About"
 FONT 8, "MS Sans Serif", 0, 0, 0x0
@@ -74,10 +156,10 @@ BEGIN
     CTEXT           "Static",IDC_VERSION,7,8,394,9,SS_NOPREFIX
     PUSHBUTTON      "",IDC_LOGO,20,20,363,35,BS_BITMAP | NOT WS_TABSTOP,
                     WS_EX_TRANSPARENT | WS_EX_STATICEDGE
-    CTEXT           "CVSNT (C) 1999-2005 Tony Hoyle, March Hare Software, and others.\n\nCommercial support and training provided by March Hare software Ltd. see http://www.march-hare.com/cvspro for details.\n\nCVSNT comes with ABSOLUTELY NO WARRANTY -  for details type 'cvs -v'",
+    CTEXT           "CVSNT (C) 1999-2007 Tony Hoyle, March Hare Software, and others.\n\nCommercial support and training provided by March Hare software Ltd. see http://www.march-hare.com/cvspro for details.\n\nCVSNT comes with ABSOLUTELY NO WARRANTY -  for details type 'cvs -v'",
                     IDC_COPYING,7,63,394,46,SS_NOPREFIX | SS_NOTIFY
     GROUPBOX        "Services",IDC_STATIC,47,153,314,48
-    LTEXT           "CVSNT Service",IDC_STATIC,59,166,51,8
+    LTEXT           "Low Performance Service",IDC_STATIC,59,166,131,8
     CTEXT           "Static",IDC_STATUS,161,166,103,8
     PUSHBUTTON      "&Start",IDC_START,289,163,29,14
     PUSHBUTTON      "S&top",IDC_STOP,321,163,29,14
@@ -87,27 +169,40 @@ BEGIN
     PUSHBUTTON      "S&top",IDC_STOP2,321,180,29,14
 END
 
-IDD_NEWROOT DIALOGEX 0, 0, 252, 164
+IDD_NEWROOT DIALOGEX 0, 0, 284, 193
 STYLE DS_SETFONT | DS_MODALFRAME | DS_3DLOOK | DS_CENTER | WS_POPUP | 
     WS_CAPTION | WS_SYSMENU
-CAPTION "Server Settings"
+CAPTION "Repository Settings"
 FONT 8, "MS Sans Serif", 0, 0, 0x0
 BEGIN
-    LTEXT           "Location:",IDC_STATIC,7,7,30,8
-    EDITTEXT        IDC_ROOT,17,19,196,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "...",IDC_SELECT,218,19,22,14
-    LTEXT           "Name:",IDC_STATIC,7,38,22,8
-    EDITTEXT        IDC_NAME,16,48,223,14,ES_AUTOHSCROLL
-    LTEXT           "Description:",IDC_STATIC,7,68,38,8
-    EDITTEXT        IDC_DESCRIPTION,16,81,223,14,ES_AUTOHSCROLL
+    LTEXT           "Type",IDC_STATIC,23,8,17,8
+    COMBOBOX        IDC_TYPE,49,7,223,47,CBS_DROPDOWNLIST | WS_VSCROLL | 
+                    WS_TABSTOP
+    LTEXT           "Location",IDC_STATIC,14,25,28,8
+    EDITTEXT        IDC_ROOT,49,23,196,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_SELECT,250,23,22,14
+    LTEXT           "Name",IDC_STATIC,21,42,20,8
+    EDITTEXT        IDC_NAME,49,40,223,14,ES_AUTOHSCROLL
+    LTEXT           "Description",IDC_STATIC,7,59,36,8
+    EDITTEXT        IDC_DESCRIPTION,49,57,223,14,ES_AUTOHSCROLL
     CONTROL         "Publish Repository",IDC_PUBLISH,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,16,104,74,10
+                    BS_AUTOCHECKBOX | WS_TABSTOP,49,75,74,10
     CONTROL         "Default Repository",IDC_DEFAULT,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,16,115,76,8
+                    BS_AUTOCHECKBOX | WS_TABSTOP,49,86,76,8
     CONTROL         "Online",IDC_ONLINE,"Button",BS_AUTOCHECKBOX | 
-                    WS_TABSTOP,16,125,36,10
-    DEFPUSHBUTTON   "OK",IDOK,75,143,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,127,143,50,14
+                    WS_TABSTOP,167,75,36,10
+    CONTROL         "Read/Write",IDC_READWRITE,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,167,86,53,10
+    GROUPBOX        "Remote server details",IDC_REMOTEGROUP,47,98,230,68
+    LTEXT           "Server",IDC_SERVERTEXT,69,113,22,8
+    EDITTEXT        IDC_SERVER,95,110,166,14,ES_AUTOHSCROLL
+    LTEXT           "Repository",IDC_REPOSITORYTEXT,57,130,34,8
+    EDITTEXT        IDC_REPOSITORY,95,127,166,14,ES_AUTOHSCROLL
+    LTEXT           "Passphrase",IDC_PASSPHRASETEXT,53,147,38,8
+    EDITTEXT        IDC_PASSPHRASE,95,144,167,14,ES_PASSWORD | 
+                    ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,90,172,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,142,172,50,14
 END
 
 IDD_PAGE2 DIALOGEX 0, 0, 409, 209
@@ -207,16 +302,16 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,13,19,109,10
     CONTROL         "Allow clients to trace server",IDC_ALLOWTRACE,"Button",
                     BS_AUTOCHECKBOX | WS_TABSTOP,13,31,102,10
-    CONTROL         "Server is case sensitive",IDC_CASESENSITIVE,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,13,43,90,10
     CONTROL         "Unicode server",IDC_UNICODESERVER,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,13,55,64,10
+                    BS_AUTOCHECKBOX | WS_TABSTOP | WS_DISABLED ,13,41,64,10
     CONTROL         "All users are read only",IDC_READONLY,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,13,67,85,10
+                    BS_AUTOCHECKBOX | WS_TABSTOP,13,53,85,10
     CONTROL         "Allow remote init commands",IDC_REMOTEINIT,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,13,79,103,10
+                    BS_AUTOCHECKBOX | WS_TABSTOP,13,65,103,10
     CONTROL         "Atomic Checkouts",IDC_ATOMICCHECKOUTS,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,13,91,73,10
+                    BS_AUTOCHECKBOX | WS_TABSTOP,13,77,73,10
+    CONTROL         "Global Scripts",IDC_GLOBALSCRIPT,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,13,89,73,10
     CONTROL         "Enable replication server",IDC_REPLICATION,"Button",
                     BS_AUTOCHECKBOX | WS_TABSTOP,13,112,93,10
     LTEXT           "Port",IDC_REPLICATIONPORT_TEXT,26,126,14,8
@@ -245,6 +340,17 @@ BEGIN
     PUSHBUTTON      "&Configure",IDC_BUTTON1,179,188,50,14
 END
 
+IDD_DIALOG1 DIALOGEX 0, 0, 325, 119
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | 
+    WS_CAPTION | WS_SYSMENU
+CAPTION "CVSNT Usage Statistics"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "&OK",IDOK,111,98,50,14
+    PUSHBUTTON      "&Cancel",IDCANCEL,165,98,50,14
+    LTEXT           "xx",IDC_MESSAGE,7,7,311,83,SS_NOPREFIX
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -265,9 +371,9 @@ BEGIN
     IDD_NEWROOT, DIALOG
     BEGIN
         LEFTMARGIN, 7
-        RIGHTMARGIN, 245
+        RIGHTMARGIN, 277
         TOPMARGIN, 7
-        BOTTOMMARGIN, 157
+        BOTTOMMARGIN, 186
     END
 
     IDD_PAGE2, DIALOG
@@ -316,6 +422,22 @@ BEGIN
         RIGHTMARGIN, 402
         TOPMARGIN, 7
         BOTTOMMARGIN, 202
+    END
+
+    IDD_PAGE4, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 401
+        TOPMARGIN, 8
+        BOTTOMMARGIN, 202
+    END
+
+    IDD_DIALOG1, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 318
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 112
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -443,6 +565,7 @@ BEGIN
                             "Implement old buggy checkout -n behaviour that doesn't support subdirectories.   Some older clients relied on the behaviour this prior to the implementation of the ls command."
     IDC_IGNOREWRAPPERS_CVSNT 
                             "Ignore forced -k and -W options in import and add"
+    IDC_GLOBALSCRIPT        "Enable ActiveScript extension plugin to use server-wide scripts."
     IDC_REPLICATION         "Enable the replication server (unison)"
 END
 

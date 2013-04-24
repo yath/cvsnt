@@ -38,6 +38,16 @@
 #include "../ServerIO.h"
 #include "../SocketIO.h"
 
+#if defined(sun) || defined( __HP_aCC ) || defined(hpux)
+/* solaris has a poor implementation of vsnprintf() which is not able to handle
+null pointers for %s */
+# define PATCH_NULL(x) ((x)?(x):"<NULL>")
+#else
+# define PATCH_NULL(x) x
+#endif
+
+static bool v6only_set = false;
+
 CSocketIO::CSocketIO()
 {
 	m_pAddrInfo=NULL;
@@ -76,25 +86,33 @@ CSocketIO::~CSocketIO()
 
 bool CSocketIO::create(const char *address, const char *port, bool loopback /* = true */, bool tcp /* = true */)
 {
-	// XXXX what if called more than one time??
-
+	static bool v6_checked = false, v6_available = false;
 	addrinfo hint = {0}, *addr;
 	SOCKET sock;
-#if 1
+
+	// I'm still not convinced this actually does anything useful, but at least it should only run once otherwise
+	// you've simply added extra overhead.
+	if(!v6_checked)
+	{
 	// check for installed IPv6 stack
 	// this may speed up getaddrinfo() dramaticaly if no IPv6 is installed
 	sock = socket(PF_INET6, SOCK_DGRAM, 0);
 	if( -1 != sock) {
 		// IPv6 seams to be installed
 		hint.ai_family=PF_UNSPEC;
+		v6_checked = true;
+		v6_available = true;
 		::close(sock);
 	} else {
 		// IPv6 is not installed
 		hint.ai_family=PF_INET;
+		v6_checked = true;
+		v6_available = false;
 	}
-#else
-	hint.ai_family=PF_UNSPEC;
-#endif
+	}
+	else
+		hint.ai_family=v6_available?PF_UNSPEC:PF_INET;
+
 	hint.ai_socktype=tcp?SOCK_STREAM:SOCK_DGRAM;
 	hint.ai_protocol=tcp?IPPROTO_TCP:IPPROTO_UDP;
 	hint.ai_flags=loopback?0:AI_PASSIVE;
@@ -102,15 +120,69 @@ bool CSocketIO::create(const char *address, const char *port, bool loopback /* =
 	int err=getaddrinfo(address,port,&hint,&m_pAddrInfo);
 	if(err)
 	{
-		CServerIo::trace(3,"Socket creation failed: %s",gai_strerror(errno));
+		CServerIo::trace(3,"Socket creation failed %s for:",gai_strerror(errno));
+		CServerIo::trace(3,"   address %s, port %s family %s flags %s protocol %s",PATCH_NULL(address),PATCH_NULL(port),(hint.ai_family&PF_INET)?"IPv4":"Unspecified",(hint.ai_flags&AI_PASSIVE)?"AI_PASSIVE":"",(hint.ai_protocol&IPPROTO_TCP)?"TCP":"UDP");
+#if defined( __HP_aCC )
+		CServerIo::trace(3,"HP: getaddrinfo is not documented in the man pages, please refer to an HP engineer.");
+		CServerIo::trace(3," see http://docs.hp.com/en/B2355-60127/getaddrinfo.3N.html");
+		CServerIo::trace(3,"");
+		switch (err) {
+		case EAI_ADDRFAMILY:
+			CServerIo::trace(3,"Address family for hostname not supported.");
+			break;
+		case EAI_AGAIN:
+			CServerIo::trace(3,"Temporary failure in name resolution.");
+			break;
+		case EAI_BADFLAGS:
+			CServerIo::trace(3,"Invalid value for ai_flags.");
+			break;
+		case EAI_FAIL:
+			CServerIo::trace(3,"Non-recoverable failure in name resolution.");
+			break;
+		case EAI_FAMILY:
+			CServerIo::trace(3,"ai_family not supported.");
+			break;
+		case EAI_MEMORY:
+			CServerIo::trace(3,"Memory allocation failure.");
+			break;
+		case EAI_NODATA:
+			CServerIo::trace(3,"No address associated with hostname.");
+			break;
+		case EAI_NONAME:
+			CServerIo::trace(3,"No hostname nor servname provided, or not known.");
+			break;
+		case EAI_SERVICE:
+			CServerIo::trace(3,"The servname is not supported for ai_socktype.");
+			break;
+		case EAI_SOCKTYPE:
+			CServerIo::trace(3,"ai_socktype not supported.");
+			break;
+		case EAI_SYSTEM:
+			CServerIo::trace(3,"System error returned in errno. \"%s\". ",strerror(errno));
+			break;
+		default:
+			CServerIo::trace(3,"Unknown HP error.");
+		}
+#endif
 		return false;
 	}
 
 	for(addr = m_pAddrInfo; addr; addr=addr->ai_next)
 	{
 		sock = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
-		if( -1 == sock) {
-			CServerIo::trace(3,"Socket creation failed: %s",gai_strerror(errno));
+		if(sock!=-1)
+		{
+			int on = 1;
+
+#ifdef SO_REUSEADDR
+			::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char *)&on, sizeof(on));
+#endif
+
+#if defined(IPV6_V6ONLY) && defined(IPPROTO_IPV6)
+			if(v6_available && addr->ai_family==PF_INET6)
+				if(!::setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&on, sizeof(on)))
+					v6only_set = true;
+#endif
 		}
 		m_sockets.push_back(sock); // even push (-1) to keep order of m_sockets and m_pAddrInfo  
 	}
@@ -176,12 +248,23 @@ bool CSocketIO::bind()
 			{
 				::listen(m_sockets[n],SOMAXCONN);
 				bound=true;
-			} else {
-				CServerIo::trace( 3, "Socket bind failed: errno %d on socket %d (AF %d) - closing socket", errno, m_sockets[n], addr->ai_family);
+			}
+			else 
+			{
+				if(v6only_set || errno!=EADDRINUSE)
+				{
+					CServerIo::trace( 3, "Socket bind failed: errno %d on socket %d (AF %d)", errno, m_sockets[n], addr->ai_family);
+					return false;
+				}
+
 				::close(m_sockets[n]);
 				m_sockets[n] = -1;
 			}
 		}
+	}
+	if(!bound)
+	{
+		CServerIo::trace(3,"All binds failed");
 	}
 	return bound;
 }

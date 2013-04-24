@@ -28,6 +28,7 @@ public:
 	CVSAPI_EXPORT bool Unload();
 	CVSAPI_EXPORT void *GetProc(const char *name);
 	CVSAPI_EXPORT void *Detach();
+	static CVSAPI_EXPORT void VerifyTrust(const char *module, bool must_exist);
 
 protected:
 	void *m_lib;

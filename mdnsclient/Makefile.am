@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in
 
-AM_CPPFLAGS = -I$(top_srcdir)/lib $(includeopt) 
+AM_CPPFLAGS = -I$(top_srcdir)/lib -D_MDNS_EXPORT $(includeopt) 
 
 libmdnsclient_la_SOURCES = \
 	dns.c \

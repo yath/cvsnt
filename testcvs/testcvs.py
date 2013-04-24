@@ -9,16 +9,17 @@ import getopt
 def usage():
   print 'testcvs [options]'
   print '  -v  --verbose    verbose output'
-  print '  -a  --atomic     atomic commit mode'
   
 def cvs(command):
+  global count, verbose
   #cmd = 'valgrind -q --logfile-fd=9 cvs --allow-root='+base_dir+'/repos,/repos -d'+current_cvsroot+' '+command+' >'+outfile+' 2>'+errfile+' 9>/dev/stderr'
   cmd = 'cvs --allow-root="'+current_physroot+','+current_cvsroot+'" -d'+current_cvsroot+' '+command+' >"'+outfile+'" 2>"'+errfile+'"'
-  if(verbose): print cmd
+  if(verbose): print count,': ',cmd
+  count = count + 1
   result = os.system(cmd)
-#  if(verbose):
-#    cat(outfile)
-#    cat(errfile)
+  if(verbose):
+    cat(errfile)
+    cat(outfile)
   return result
 
 def cat(file):
@@ -31,6 +32,10 @@ def fail(command, result):
   print 'Test \''+current_test+'\' failed ('+command+') (result='+str(result)+')'
   cat (errfile)
   raise SystemExit
+
+def chdir(directoryname):
+  print 'chdir '+directoryname
+  os.chdir(directoryname)
 
 def cvs_pass(command):
   result = cvs(command)
@@ -75,20 +80,17 @@ def file_delete(filename):
   os.unlink(filename)
 
 def main():
-  global verbose, atomic, base_dir, current_cvsroot, current_physroot, outfile, errfile
+  global verbose, base_dir, current_cvsroot, current_physroot, outfile, errfile, count
   try:
-    opts, args = getopt.getopt(sys.argv[1:], "vai:", ["verbose", "atomic"])
+    opts, args = getopt.getopt(sys.argv[1:], "vai:", ["verbose"])
   except getopt.GetoptError:
     usage()
     sys.exit(2)
   verbose = 0
-  atomic = 0
   instance = '0'
   for o,a in opts:
     if o in ("-v", "--verbose"):
       verbose = 1
-    if o in ("-a", "--atomic"):
-      atomic = 1
     if o in ("-i", "--instance"):
        instance = a
 
@@ -111,9 +113,11 @@ def main():
   os.mkdir(current_physroot)
   os.mkdir(current_tree)
 
+  count = 1
+
   start_test('Basic functionality, Init, Import, Checkout')
   cvs_pass('-v')
-  cvs_fail('version')
+#  cvs_fail('version')
   cvs_pass('init -n')
   dir_exists(current_physroot+'/CVSROOT')
   file_exists(current_physroot+'/CVSROOT/checkoutlist')
@@ -137,13 +141,8 @@ def main():
   file_exists(current_physroot+'/CVSROOT/taginfo,v')
   file_exists(current_physroot+'/CVSROOT/verifymsg')
   file_exists(current_physroot+'/CVSROOT/verifymsg,v')
-  # This should probably do the whole checkout/commit of cvsroot thing.
-  if atomic:
-    print 'Switching to atomic mode...'
-    os.chmod(current_physroot+'/CVSROOT/config',0644)
-    file_copy(test_data + '/atomic_config', current_physroot+'/CVSROOT/config')
-  os.chdir(test_data + '/import_test')
-  cvs_pass('import -m "Initial import" testcvs test1 test2')
+  chdir(test_data + '/import_test')
+  cvs_pass('import -n -m "Initial import" testcvs')
   dir_exists(current_physroot+'/testcvs')
   dir_exists(current_physroot+'/testcvs/sub')
   dir_exists(current_physroot+'/testcvs/sub2')
@@ -154,7 +153,7 @@ def main():
   file_exists(current_physroot+'/testcvs/sub2/test5.txt,v')
   file_exists(current_physroot+'/testcvs/sub2/test6.txt,v') 
   cvs_pass('version')
-  os.chdir(current_tree)
+  chdir(current_tree)
   cvs_fail('co cvsfailtest')
   cvs_pass('co testcvs')
   dir_exists(current_tree+'/testcvs')
@@ -175,7 +174,7 @@ def main():
   file_compare(test_data+'/import_test/sub2/test6.txt',current_tree+'/testcvs/sub2/test6.txt')
 
 ###
-#  os.chdir(current_tree+'/testcvs')
+#  chdir(current_tree+'/testcvs')
 #  fname = 'test1.txt'
 #  module = 'testcvs'
 #  for fcnt in range(20000):
@@ -205,7 +204,7 @@ def main():
 
   start_test('Basic Add, Remove, Resurrect, Commit')
 
-  os.chdir(current_tree+'/testcvs')
+  chdir(current_tree+'/testcvs')
   file_copy(test_data+'/add_test.txt','add_test.txt')
   cvs_pass('add add_test.txt')
   file_exists(current_tree+'/testcvs/add_test.txt')
@@ -245,7 +244,7 @@ def main():
 
   start_test('Basic binary Add/Checkout')
   
-  os.chdir(current_tree+'/testcvs')
+  chdir(current_tree+'/testcvs')
   file_copy(test_data+'/binary_test.gif',current_tree+'/testcvs/binary_test.gif')
   cvs_pass('add -kb binary_test.gif')
   cvs_pass('commit -m "" binary_test.gif')
@@ -271,7 +270,7 @@ def main():
 
   start_test('Binary delta Add/Checkout')
   
-  os.chdir(current_tree+'/testcvs')
+  chdir(current_tree+'/testcvs')
   file_copy(test_data+'/binary_test.gif',current_tree+'/testcvs/binary_delta_test.gif')
   cvs_pass('add -kB binary_delta_test.gif')
   cvs_pass('commit -m "" binary_delta_test.gif')
@@ -312,7 +311,7 @@ def main():
 
   start_test('Checkout/Diff different versions of a text file')
 
-  os.chdir(current_tree+'/testcvs')
+  chdir(current_tree+'/testcvs')
   file_copy(test_data+'/diff_test.txt.1',current_tree+'/testcvs/diff_test.txt')
   cvs_pass('add diff_test.txt')
   cvs_pass('commit -m "" diff_test.txt')
@@ -452,10 +451,7 @@ def main():
   file_copy(test_data + '/loginfo_test', current_physroot+'/CVSROOT/loginfo')
   file_copy(test_data + '/postcommand_test', current_physroot+'/CVSROOT/postcommand')
   cvs_pass('commit -f -m "info test" diff_test.txt')
-  if os.name == 'nt':
-    file_compare(outfile, test_data+'/info_test_output.txt')
-  else:
-    file_compare(outfile, test_data+'/info_test_output.txt')
+  file_compare(outfile, test_data+'/info_test_output.txt')
 
 if __name__ == "__main__":
   main()

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 1992, Brian Berliner and Jeff Polk
  * Copyright (c) 1989-1992, Brian Berliner
- * 
+ *
  * You may distribute under the terms of the GNU General Public License as
  * specified in the README file that comes with the CVS source distribution.
  * 
@@ -168,7 +168,7 @@ static int rannotate_proc(int argc, char **argv, const char *xwhere,
 			char *path;
 
 			/* if the portion of the module is a path, put the dir part on repos */
-			if ((cp = strrchr (mfile, '/')) != NULL)
+			if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 			{
 			*cp = '\0';
 			(void) strcat (repository, "/");
@@ -233,7 +233,7 @@ static int rannotate_proc(int argc, char **argv, const char *xwhere,
     err = start_recursion (annotate_fileproc, (FILESDONEPROC) NULL,
 			   (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
 			   argc - 1, argv + 1, local, which, 0, 1,
-			   where, repository, 1, verify_read);
+			   where, repository, 1, verify_read, tag);
     return err;
 }
 

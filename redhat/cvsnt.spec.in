@@ -1,7 +1,9 @@
 Name: cvsnt
 Version: @VERSION@
 Release: 1
-Copyright: GPL
+Vendor: March Hare Software Ltd
+Packager: CVS Professional Support <support@march-hare.com>
+License: GPL
 Group: Development/Tools
 Summary: CVSNT - Concurrent version control system
 Source: http://www.cvsnt.org/archive/cvsnt-%{version}.tar.gz
@@ -50,6 +52,27 @@ directories and files can then be combined together to form a software
 release.
 
 This is the mysql support library for CVSNT.
+
+%package database-oracle
+Summary: Oracle support for CVSNT
+Group: Development/tools
+Requires: cvsnt
+%description database-oracle
+CVSNT (Concurrent Version System) is a version control system which can
+record the history of your files (usually, but not always, source
+code). CVSNT only stores the differences between versions, instead of
+every version of every file you've ever created. CVSNT also keeps a log
+of who, when and why changes occurred.
+
+CVSNT is very helpful for managing releases and controlling the
+concurrent editing of source files among multiple authors. Instead of
+providing version control for a collection of files in a single
+directory, CVSNT provides version control for a hierarchical collection
+of directories consisting of revision controlled files.  These
+directories and files can then be combined together to form a software
+release.
+
+This is the Oracle support library for CVSNT.
 
 %package database-odbc
 Summary: Odbc support for CVSNT
@@ -173,8 +196,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_prefix}/lib/cvsnt/protocols/pserver*
 %{_prefix}/lib/cvsnt/protocols/server*
 %{_prefix}/lib/cvsnt/protocols/sspi*
+%{_prefix}/lib/cvsnt/protocols/sync*
 %{_prefix}/lib/cvsnt/protocols/enum*
-%{_prefix}/lib/cvsnt/protocols/*
 %{_sysconfdir}/cvsnt
 %{_sysconfdir}/init.d/cvslockd
 %{_sysconfdir}/pam.d/cvsnt
@@ -182,6 +205,9 @@ rm -rf $RPM_BUILD_ROOT
 
 %files database-mysql
 %{_prefix}/lib/cvsnt/database/mysql*
+
+%files database-oracle
+%{_prefix}/lib/cvsnt/database/oracle*
 
 %files database-odbc
 %{_prefix}/lib/cvsnt/database/odbc*

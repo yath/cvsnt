@@ -1,15 +1,16 @@
 dnl configure.in for cvs
-AC_INIT([cvsnt],[0],[tmh@cvsnt.org])
-cc -o version_check $srcdir/src/version_check.c
+AC_INIT([cvsnt],[0],[tmh@nodomain.org])
+AC_PROG_CC
+$CC -o version_check $srcdir/src/version_check.c
 AC_CANONICAL_SYSTEM
 AM_INIT_AUTOMAKE($PACKAGE_NAME, `./version_check`)
 AC_PREREQ(2.59)
 AM_CONFIG_HEADER(config.h src/options.h)
 AC_CONFIG_SRCDIR(config.h.in)
+AC_CONFIG_MACRO_DIR([m4])
 AM_MAINTAINER_MODE
 
 AC_PROG_AWK
-AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_CPP
 AC_REQUIRE_CPP
@@ -23,26 +24,12 @@ AX_CC_MAXOPT
 CFLAGS="$CFLAGS $OPTFLAGS"
 CXXFLAGS="$CXXFLAGS $OPTFLAGS"
 
-AC_LIBTOOL_DLOPEN
-AC_LIBLTDL_CONVENIENCE
-AC_CONFIG_SUBDIRS(libltdl)
+LT_INIT([dlopen])
+LTDL_INIT([recursive])
 AC_SUBST(INCLTDL)
 AC_SUBST(LIBLTDL)
 
-# For broken libtools (eg. the one in debian sarge) where AC_LIBTOOL_PICMODE
-# is nonfunctional and the defaults are backwards..
-if test "${with_pic+set}" != set; then
-   with_pic="yes"
-fi
-AC_PROG_LIBTOOL
-
-AC_PATH_PROG(PERL, perl, no)
-AC_PATH_PROG(CSH, csh, no)
-AC_PATH_PROG(PR, pr, no)
-# For diff/util.c
-if test x"$PR" != "xno"; then
-	AC_DEFINE_UNQUOTED([PR_PROGRAM], ["$PR"], [Path to the pr utility])
-fi
+AC_DEFINE_UNQUOTED(OS_VERSION,"$target_os",[Operating system version])
 
 # FHS isn't really compatible with GNU, but we prefer FHS generally since the
 # primary target is Linux - also many linux distros don't even *have* a /usr/etc
@@ -58,7 +45,7 @@ fi
 AC_ARG_ENABLE(visibility,
 [  --enable-visibility     Enable gcc visibility options],
 [],
-[enable_visibility="no"])
+[enable_visibility="yes"])
 if test x$enable_visibility = xyes; then
 
 AC_MSG_CHECKING(whether GNUC visibility support)
@@ -98,7 +85,7 @@ if test x$g_have_gnuc_visibility = xyes; then
   CXXFLAGS="$CXXFLAGS -fvisibility=hidden -fvisibility-inlines-hidden"
 fi
 fi
-
+fi
 fi
 
 dnl FIXME This is truly gross.
@@ -117,6 +104,9 @@ if test X"$ac_cv_sys_interpreter" != X"yes" ; then
   AC_MSG_WARN($ac_msg)
 fi
 
+AC_DEFINE_UNQUOTED(CVSNT_TARGET_CPU, ["$target_cpu"],[Define target_cpu])
+AC_DEFINE_UNQUOTED(CVSNT_TARGET_VENDOR,["$target_vendor"],[Define target_vendor])
+AC_DEFINE_UNQUOTED(CVSNT_TARGET_OS,["$target_os"],[Define target_os])
 AC_DEFINE(_GNU_SOURCE,1,[Defined to enable GNU extensions])
 AC_DEFINE(_LARGEFILE_SOURCE,1,[Defined to enable large files on some systems])
 
@@ -167,24 +157,34 @@ AC_ARG_ENABLE(mdns,
 [enable_mdns="yes"])
 AC_MSG_RESULT($enable_mdns)
 
-with_howl="yes"
-AC_ARG_WITH(howl,
-[  --with-howl=DIRECTORY   Howl directory],
-  with_howl=$withval,
-[ if test "x$withval" = "xno" -o "x$enable_mdns" = "xno"; then
-    with_howl="no"
-  else 
-    CPPFLAGS="$CPPFLAGS -I$withval/include"
-    LDFLAGS="$LDFLAGS -L$withval/lib"
-  fi
-]
-,[
-if test -f /usr/include/howl/howl.h; then
-  CPPFLAGS="$CPPFLAGS -I/usr/include/howl"
-elif test -f /usr/local/include/howl/howl.h; then
-  CPPFLAGS="$CPPFLAGS -I/usr/local/include/howl"
+if test x$enable_mdns = xyes; then
+	# mDNS support using Apple's Bonjour
+	saved_libs="$LIBS"
+	AC_CHECK_HEADER(dns_sd.h,
+		[AC_CHECK_LIB(dns_sd,
+				DNSServiceRegister)])
+	if test x$ac_cv_lib_dns_sd_DNSServiceRegister = xyes; then
+	  DNS_SD_LIBS="$LIBS"
+	  AC_SUBST(DNS_SD_LIBS)
+	  AC_DEFINE(HAVE_DNS_SD, 1, [Use Bonjour/DNS-SD registration])
+	fi	
+	LIBS="$saved_libs"
+	AM_CONDITIONAL(WITH_DNS_SD,test x$ac_cv_lib_dns_sd_DNSServiceRegister = xyes)
+
+	# mDNS support using Avahi
+	saved_libs="$LIBS"
+	AC_CHECK_HEADER(avahi-client/client.h,
+		[AC_CHECK_LIB(avahi-client,
+				avahi_client_new)])
+	if test x$ac_cv_lib_avahi_client_avahi_client_new = xyes; then
+	  AVAHI_LIBS="$LIBS"
+	  AC_SUBST(AVAHI_LIBS)
+	  AC_DEFINE(HAVE_AVAHI, 1, [Use Avahi/DNS-SD registration])
+	fi	
+	LIBS="$saved_libs"
+	AM_CONDITIONAL(WITH_AVAHI,test x$ac_cv_lib_avahi_client_avahi_client_new = xyes)
+	AM_CONDITIONAL(WITH_MINI_MDNS, true)
 fi
-])
 
 AC_HEADER_STDC
 AC_HEADER_DIRENT
@@ -197,8 +197,8 @@ AC_CHECK_HEADERS(errno.h unistd.h string.h memory.h utime.h fcntl.h ndbm.h \
 		 security/pam_misc.h pam/pam_misc.h \
 		 security/pam_appl.h pam/pam_appl.h \
 		 netinet/in.h arpa/inet.h iconv.h libcharset.h locale.h localcharset.h langinfo.h \
-		 regex.h howl.h pthread.h sys/times.h dns_sd.h \
-		 termios.h sys/termios.h wchar.h)
+		 regex.h pthread.h sys/times.h dns_sd.h \
+		 termios.h sys/termios.h wchar.h idna.h)
 AC_HEADER_STAT
 AC_HEADER_TIME
 
@@ -239,12 +239,6 @@ AC_ARG_ENABLE(64bit,
 [enable_64bit="no"])
 
 case "${target_os}" in
-  hpux*)
-  #CPPFLAGS="${CPPFLAGS} -D_INCLUDE__STDC_A1_SOURCE -D_GLIBCXX_HAVE_MBSTATE_T -D_XOPEN_SOURCE=500 -D_XOPEN_SOURCE_EXTENDED"
-  #  AC_DEFINE(NO_GETPASS,,[Define to force use of replacement getpass])
-# #   AC_DEFINE(UTF8_CHARSET,"utf8",[Define if using non-standard name for UTF-8])
-    ;;
-
   solaris*)
     CPPFLAGS="$CPPFLAGS -fPIC"
     LDFLAGS="$LDFLAGS -lrt"
@@ -341,79 +335,51 @@ AC_SEARCH_LIBS(libiconv_open, iconv_plug iconv,
 
 AC_CHECK_LIB(socket,getaddrinfo)
 
+# Apparently the double underscore thing is a gccism (research puts it dating
+# back to a HURD bug in 2002 that never got fixed).  
+# This line Based on gnupg configure.
+AC_SEARCH_LIBS(res_query,resolv bind,,AC_SEARCH_LIBS(__res_query,resolv bind))
+
 AC_SEARCH_LIBS(res_query, resolv)
 
 AC_REPLACE_FUNCS(getaddrinfo getnameinfo inet_aton)
 
-if test "x$with_howl" != "xno"; then
-  # Check for howl mDNS library.  This is dependent on pthreads so if
-  # howl exists pthreads must also
-  saved_libs="$LIBS"
-  saved_cppflags="$CPPFLAGS"
-  LIBS="$PTHREAD_LIBS"
-  CPPFLAGS="$CPPFLAGS $PTHREAD_CPPFLAGS"
-  AC_SEARCH_LIBS(sw_discovery_run, howl, [AC_MSG_CHECKING([for howl])
-  AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <howl.h>]], [[int i;]])],[ac_cv_have_howl="yes"],[])
-  AC_MSG_RESULT($ac_cv_have_howl)], ac_cv_have_howl="no")
-  HOWL_LIBS="$LIBS"
-  AC_SUBST(HOWL_LIBS)
-  CPPFLAGS="$saved_cppflags"
-  LIBS="$saved_libs"
+AC_CHECK_LIB(idn, idna_to_ascii_lz)
+
+AC_PATH_PROG(XML2_CONFIG, xml2-config)
+AC_MSG_CHECKING([for libxml2])
+if test -x "$XML2_CONFIG"; then
+  LIBXML_CPPFLAGS="`$XML2_CONFIG --cflags`"
+  LIBXML_LIBS="`$XML2_CONFIG --libs`"
+  ac_cv_have_libxml="yes"
 else
-  HOWL_LIBS="";
-  AC_SUBST(HOWL_LIBS)
-  ac_cv_have_howl="no"
+  ac_cv_have_libxml="no"
+fi
+AC_MSG_RESULT($ac_cv_have_libxml)
+
+if test x$ac_cv_have_libxml = xyes; then
+  AC_CHECK_LIB(xml2,[xmlSchemaValidCtxtGetParserCtxt],,[ac_cv_have_libxml=no])
 fi
 
-if test "x$enable_mdns" = "xyes"; then
-  # Check for dns_sd, macos has this in its system
-  saved_libs="$LIBS"
-  saved_cppflags="$CPPFLAGS"
-  LIBS="$PTHREAD_LIBS"
-  CPPFLAGS="$CPPFLAGS $PTHREAD_CPPFLAGS"
-  AC_SEARCH_LIBS(DNSServiceBrowse, dnssd, [AC_MSG_CHECKING([for dns_sd])
-       AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <dns_sd.h>]], [[int i;]])],[ac_cv_have_dns_sd="yes"],[])
-       AC_MSG_RESULT($ac_cv_have_dns_sd)], ac_cv_have_dns_sd="no")
-  DNS_SD_LIBS="$LIBS"
-  AC_SUBST(DNS_SD_LIBS)
-  CPPFLAGS="$saved_cppflags"
-  LIBS="$saved_libs"
-else
-  ac_cv_have_dns_sd="no"
+if test x$ac_cv_have_libxml = xno; then
+  AC_MSG_ERROR([requres libxml 2.7 or greater])
 fi
 
-AM_CONDITIONAL(WITH_HOWL, test x$ac_cv_have_howl = xyes)
-AM_CONDITIONAL(WITH_DNS_SD, test x$ac_cv_have_dns_sd = xyes)
+CPPFLAGS="$CPPFLAGS $LIBXML_CPPFLAGS"
+AC_SUBST(LIBXML_LIBS)
 
-AC_ARG_WITH(internal-pcre,
-[  --with-internal-pcre    Use internal pcre, don't detect],
-[ac_cv_internal_pcre="yes"]
-,[])
-
-if test x$ac_cv_internal_pcre = xyes; then
-  ac_cv_have_pcre=no
-  PCRE_LIBS=""
-else
-  # Check for pcre posix library
-  saved_libs="$LIBS"
-  LIBS=""
-  AC_SEARCH_LIBS(pcre_compile, pcreposix, [AC_MSG_CHECKING([for PCRE posix library])
-       AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <pcreposix.h>]], [[int i;]])],[ac_cv_have_pcre="yes"],[])
-       AC_MSG_RESULT($ac_cv_have_pcre)], ac_cv_have_pcre="no")
-  PCRE_LIBS="$LIBS"
-  LIBS="$saved_libs"
-fi
+# Check for pcre posix library
+saved_libs="$LIBS"
+LIBS=""
+AC_SEARCH_LIBS(pcre_compile, pcreposix, [AC_MSG_CHECKING([for PCRE posix library])
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <pcreposix.h>]], [[int i;]])],[ac_cv_have_pcre="yes"],[])
+     AC_MSG_RESULT($ac_cv_have_pcre)], ac_cv_have_pcre="no")
+PCRE_LIBS="$LIBS"
+LIBS="$saved_libs"
 AC_SUBST(PCRE_LIBS)
 
-AM_CONDITIONAL(WITH_PCRE, test "$ac_cv_have_pcre" = "yes")
-
-if test x$ac_cv_have_pcre != xyes; then
-  AC_CONFIG_SUBDIRS(pcre)
-  ac_cv_have_pcre="yes"
-fi
-
-if test x$ac_cv_have_pcre = xyes; then
-  AC_DEFINE(HAVE_PCRE, [], [defined if posix PCRE is available])
+if test x$ac_cv_have_pcre = xno; then
+  AC_MSG_ERROR([requires pcre])
 fi
 
 dnl Some implementations make the second argument of iconv non-const for no
@@ -546,53 +512,18 @@ AC_SEARCH_LIBS(gethostbyname, netinet nsl)
 
 AC_CHECK_FUNC(gethostname, ,[AC_LIBOBJ([hostname])])
 
-AC_SEARCH_LIBS(crypt, crypt, AC_DEFINE(HAVE_CRYPT,[],[Define if crypt is supported]))
-
-AC_ARG_WITH(internal-zlib,
-[  --with-internal-zlib    Use internal zlib, don't detect],
-[ac_cv_internal_zlib="yes"]
-,[])
-
-if test x$ac_cv_internal_zlib = xyes; then
-  ac_cv_have_zlib="no"
-  ZLIB_LIBS=""
-else
-  saved_libs="$LIBS"
-  LIBS=""
-  AC_SEARCH_LIBS(zlibVersion, z, [AC_MSG_CHECKING([for zlib > 1.2.0])
-   AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <zlib.h>]], [[z_stream z; deflateBound(&z,99);]])],[ac_cv_have_zlib="yes"],[ac_cv_have_zlib="no"
+saved_libs="$LIBS"
+LIBS=""
+AC_SEARCH_LIBS(zlibVersion, z, [AC_MSG_CHECKING([for zlib > 1.2.0])
+ AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <zlib.h>]], [[z_stream z; deflateBound(&z,99);]])],[ac_cv_have_zlib="yes"],[ac_cv_have_zlib="no"
                LIBS="$saved_libs"])
-    AC_MSG_RESULT($ac_cv_have_zlib)], ac_cv_have_zlib="no")
-  ZLIB_LIBS="$LIBS"
-  LIBS="$saved_libs"
-fi
-AC_SUBST(ZLIB_LIBS)
-AM_CONDITIONAL(WITH_ZLIB, test "$ac_cv_have_zlib" = "yes")
-
-AC_ARG_WITH(internal-expat,
-[  --with-internal-expat   Use internal expat, don't detect],
-[ac_cv_internal_expat="yes"]
-,[])
-
-if test x$ac_cv_internal_expat = xyes; then
-  ac_cv_have_expat=no
-  EXPAT_LIBS=""
-else
-  saved_libs="$LIBS"
-  LIBS=""
-  AC_SEARCH_LIBS(XML_ExpatVersion, expat, [AC_MSG_CHECKING([for expat])
-  AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <expat.h>]], [[XML_ExpatVersion();]])],[ac_cv_have_expat="yes"],[ac_cv_have_expat="no"
-    LIBS="$saved_libs"])
-    AC_MSG_RESULT($ac_cv_have_expat)], 
-    ac_cv_have_expat="no")
-  EXPAT_LIBS="$LIBS"
-fi
-AM_CONDITIONAL(WITH_EXPAT, test "$ac_cv_have_expat" = "yes")
-AC_SUBST(EXPAT_LIBS)
+AC_MSG_RESULT($ac_cv_have_zlib)], ac_cv_have_zlib="no")
+ZLIB_LIBS="$LIBS"
 LIBS="$saved_libs"
+AC_SUBST(ZLIB_LIBS)
 
-if test x$ac_cv_have_expat != xyes; then
-  AC_CONFIG_SUBDIRS(expat)
+if test x$ac_cv_have_zlib = xno; then
+    AC_MSG_ERROR([requires zlib > 1.2.0])
 fi
 
 AM_CONDITIONAL(WITH_MDNS, test "$enable_mdns" = "yes")
@@ -705,6 +636,41 @@ ODBC_LIBS="$LIBS"
 AC_SUBST(ODBC_LIBS)
 LIBS="$saved_libs"
 
+#oracle_directory=$ORACLE_HOME
+#AC_ARG_WITH(oracle,
+#[  --with-oracle=DIRECTORY ORACLE_HOME directory],
+#[oracle_directory="$withval"]
+#,[])
+
+#AC_MSG_CHECKING(support for Oracle)
+#AC_ARG_ENABLE(oracle,
+#[  --enable-oracle         include Oracle support if available (default)
+#  --disable-oracle        don't include Oracle support],
+#[],
+#[enable_oracle="yes"])
+#AC_MSG_RESULT($enable_oracle)
+
+#saved_libs="$LIBS"
+#LIBS=""
+#if test "$enable_oracle" = "yes"; then
+#  LDFLAGS="$LDFLAGS -L$oracle_directory/lib"
+#  CPPFLAGS="$CPPFLAGS -I$oracle_directory/rdbms/public -I$oracle_directory/rdbms/demo"
+#  AC_SEARCH_LIBS(OCIInitialize, clntsh, [AC_MSG_CHECKING([for Oracle OCI])
+#     AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <oci.h>]], [[OCIInitialize(0,0,0,0,0);]])],[ac_cv_have_oracle="yes"],[ac_cv_have_oracle="no"
+#      LIBS="$saved_libs"])
+#      AC_MSG_RESULT($ac_cv_have_oracle)], 
+#      ac_cv_have_oracle="no")
+#else
+#   ac_cv_have_oracle="no"
+#fi
+#AM_CONDITIONAL(WITH_ORACLE, test "$ac_cv_have_oracle" = "yes")
+#if test "$ac_cv_have_oracle" = "yes"; then
+#  AC_DEFINE(HAVE_ORACLE, [], Defined if Oracle is available)
+#fi
+#ORACLE_LIBS="$LIBS"
+#AC_SUBST(ORACLE_LIBS)
+#LIBS="$saved_libs"
+
 AC_MSG_CHECKING(support for Postgres)
 AC_ARG_ENABLE(postgres,
 [  --enable-postgres       include postgres support if available (default)
@@ -802,6 +768,8 @@ LIBS="$saved_libs"
 AC_MSG_CHECKING([for PAM availability])
 AC_MSG_RESULT($ac_cv_have_pam)
 
+AC_CHECK_LIB(crypt,crypt)
+
 AC_ARG_WITH(config_dir, 
 [  --with-config-dir=DIRECTORY
                            Directory for config files (default SYSCONFDIR/cvsnt)],
@@ -849,20 +817,6 @@ fi],
 fi])
 AC_MSG_RESULT($enable_server)
 AM_CONDITIONAL(INSTALL_SERVER, test "$enable_server" = "yes")
-
-AC_MSG_CHECKING(support for lockserver)
-AC_ARG_ENABLE(lockserver,
-[  --enable-lockserver     compile lockserver daemon (default)
-  --disable-lockserver    don't compile lockserver],
-[if test "$enable_lockserver" = yes; then
-  AC_DEFINE(LOCKSERVER_SUPPORT,[],[Support CVS lock server])
-fi],
-[if test "$ac_cv_search_connect" != no; then
-  AC_DEFINE(LOCKSERVER_SUPPORT,[],[Support CVS lock server])
-  enable_lockserver="yes"
-fi])
-AC_MSG_RESULT($enable_lockserver)
-AM_CONDITIONAL(WITH_LOCKSERVER, test "$enable_lockserver" = "yes")
 
 AC_MSG_CHECKING(support for pserver protocol)
 AC_ARG_ENABLE(pserver,
@@ -929,7 +883,6 @@ if test x$acx_gserver = xyes; then
 fi
 AC_MSG_RESULT($acx_gserver)
 
-
 AC_MSG_CHECKING(support for sserver protocol)
 AC_ARG_ENABLE(sserver,
 [  --enable-sserver        Enable :sserver: protocol (default)
@@ -945,6 +898,22 @@ if test x$acx_sserver = xyes; then
   AC_DEFINE(SSERVER_PROTOCOL_SUPPORT, [], [Support for :sserver:])
 fi
 AC_MSG_RESULT($acx_sserver)
+
+#AC_MSG_CHECKING(support for sync protocol)
+#AC_ARG_ENABLE(sync,
+#[  --enable-sync           Enable server synchronisation protocol (default)
+#  --disable-sync          Disable server synchronisation protocol],
+#  acx_sync=$enableval,
+#[if test "$ac_cv_have_ssl" = yes; then
+#    acx_sync="yes"
+# else
+#    acx_sync="no"
+#fi])
+#AM_CONDITIONAL(SYNC_PROTOCOL_SUPPORT, test $acx_sync = "yes")
+#if test x$acx_sync = xyes; then
+#  AC_DEFINE(SYNC_PROTOCOL_SUPPORT, [], [Support for server synchronisation])
+#fi
+#AC_MSG_RESULT($acx_sync)
 
 AC_MSG_CHECKING(support for sspi protocol)
 AC_ARG_ENABLE(sspi,
@@ -996,7 +965,6 @@ AC_CONFIG_FILES([Makefile \
 	  protocols/Makefile \
 	  triggers/Makefile \
 	  lockservice/Makefile \
-	  zlib/Makefile \
 	  rcs/Makefile \
 	  cvsapi/Makefile \
 	  cvsapi/db/Makefile \
@@ -1004,6 +972,7 @@ AC_CONFIG_FILES([Makefile \
 	  cvstools/Makefile \
 	  xdiff/Makefile \
 	  mdnsclient/Makefile \
+	  run_script/Makefile \
 	  redhat/cvsnt.spec \
 	  osx/Makefile])
 AC_OUTPUT

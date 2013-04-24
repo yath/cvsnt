@@ -389,9 +389,19 @@ bool cvsdelta::diff(const ByteArray& file1, const ByteArray& file2, ByteArray& o
 	 {
 		size_t f2s = file2.size();
 		size_t f2off = (p-&file2[0]);
-		size_t f1s = file1.size();
-		size_t f1off = (c1->base-&file1[0]);
-		match_len = match(c.base,c1->base, &match_start, p-last_match, min(f2s-f2off,f1s-f1off));
+		size_t f1s,f1off;
+		if(c1->new_data)
+		{
+		  f1off = (c1->base-&data_buffer[0]);
+		  f1s = data_buffer.size();
+		}
+		else
+		{
+		  f1off = (c1->base-&file1[0]);
+		  f1s = file1.size();
+		}
+		
+		match_len = match(c.base,c1->base, &match_start, min(p-last_match,f1off), min(f2s-f2off,f1s-f1off));
 	 }
      else
 		match_len = 0;
@@ -408,12 +418,12 @@ bool cvsdelta::diff(const ByteArray& file1, const ByteArray& file2, ByteArray& o
 		/* copy */
 		if(c1->new_data)
 		{
-			assert(((c1->base-matched_minus)-&data_buffer[0])<data_buffer.size());
+			assert(((c1->base-matched_minus)-&data_buffer[0])<=data_buffer.size());
 			control+=write_control(1,(c1->base-matched_minus)-&data_buffer[0],match_len,NULL,control_buffer,data_buffer, 1);
 		}
 		else
 		{
-			assert(((c1->base-matched_minus)-&file1[0])<file1.size());
+			assert(((c1->base-matched_minus)-&file1[0])<=file1.size());
 			control+=write_control(0,(c1->base-matched_minus)-&file1[0],match_len,NULL,control_buffer,data_buffer, 0);
 		}
 

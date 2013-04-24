@@ -7,7 +7,9 @@
 #include "cvs.h"
 
 #define WIN32_LEAN_AND_MEAN
+#include "commctrl.h"
 #include <windows.h>
+#include <shellapi.h>
 #include <lm.h>
 #include <lmcons.h>
 #include <winsock2.h>
@@ -24,27 +26,22 @@
 
 #include "resource.h"
 
+#pragma comment(linker,"/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
 // Missing from win32 status, and ntstatus conflicts!
 #define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
 #define STATUS_NONEXISTENT_EA_ENTRY ((NTSTATUS)0xC0000051L)
 #define STATUS_NO_EAS_ON_FILE ((NTSTATUS)0xC0000052L)
 #define STATUS_EA_CORRUPT_ERROR ((NTSTATUS)0xC0000053L)
 
-#ifndef CVS95
-#include "posixdir/cvsflt/cvsflt.h"
-
 #include "sid.h"
 static MAKE_SID1(sidEveryone, 1, 0);
 
 static BOOL g_bSmall; /* Small dump file */
-#endif
+static BOOL g_bContributeHours; /* Will Contribute Hours */
 
-#ifndef CVS95
-int ci_directory_list_size;
-char **ci_directory_list;
-#endif
-
-int win32_global_codepage = CP_ACP;
+int win32_global_codepage = CP_UTF8;
+int win32_global_codepage_prev = -1; // {Z} - Fix Windows CP 65001 issues
 
 /* MS BUG:  DNLEN hasn't been maintained so when you're on a legacy-free win2k domain
     you can apparently get a domain that's >DNLEN in size */
@@ -68,11 +65,7 @@ int nt_s4u(LPCWSTR wszMachine, LPCWSTR wszUser, HANDLE *phToken);
    detects FAT at least */
 #define GMT_FS(_s) (!_tcsstr(_s,_T("FAT")))
 
-#ifndef CVS95
 ITypeLib *myTypeLib;
-#endif
-
-int bIsWin95, bIsNt4, bIsWin2k, bIsWin2k3;
 
 static const char *current_username=NULL;
 
@@ -131,6 +124,7 @@ static struct { DWORD err; int dos;} errors[] =
         {  ERROR_NOT_ENOUGH_QUOTA,       ENOMEM    }    /* 1816 */
 };
 
+#if 0
 #define IOINFO_L2E          5
 #define IOINFO_ARRAY_ELTS   (1 << IOINFO_L2E)
 
@@ -157,6 +151,7 @@ extern "C" __declspec(dllimport) ioinfo * __pioinfo[];
 #define FAPPEND         0x20    /* file handle opened O_APPEND */
 #define FDEV            0x40    /* file handle refers to device */
 #define FTEXT           0x80    /* file handle is in text mode */
+#endif
 
 static const WORD month_len [12] =
 {
@@ -180,13 +175,10 @@ static const ULONGLONG systemtime_second = 10000000L;
 /* Default domain name */
 static char g_defaultdomain[DNLEN+1];
 
-#ifndef CVS95
 // IsDomainMember patch from John Anderson <panic@semiosix.com>
 int isDomainMember(char *szDomain);
 
 static LONG WINAPI MiniDumper(PEXCEPTION_POINTERS pExceptionInfo);
-
-#endif
 
 static int use_ntsec, use_ntea;
 
@@ -208,35 +200,109 @@ static int tcp_close()
 	return 0;
 }
 
+static BOOL WINAPI FreeDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	TCHAR tmp[64];
+	static int nCountdown;
+	static UINT_PTR nTimer;
+
+	switch(uMsg)
+	{
+	case WM_INITDIALOG:
+		CheckRadioButton(hWnd,IDC_FREEOPT1,IDC_FREEOPT3,IDC_FREEOPT1);
+		SetTimer(hWnd,nTimer,1000,NULL);
+		nCountdown=30;
+		_sntprintf(tmp,sizeof(tmp),_T("OK - %d"),nCountdown);
+		SetDlgItemText(hWnd,IDOK,tmp);
+		break;
+	case WM_NOTIFY:
+		switch (((LPNMHDR)lParam)->code)
+		{
+			case NM_CLICK:
+			case NM_RETURN:
+			switch(LOWORD(wParam))
+			{
+			// http://www.ohloh.net/p/cvsnt
+			case IDC_SYSLINK1:
+				ShellExecute(NULL,_T("open"),_T("http://www.ohloh.net/p/cvsnt"),NULL,NULL,SW_SHOWNORMAL);
+				break;
+			// http://www.gnu.org/philosophy/free-sw.html
+			case IDC_SYSLINK2:
+				ShellExecute(NULL,_T("open"),_T("http://www.gnu.org/philosophy/free-sw.html"),NULL,NULL,SW_SHOWNORMAL);
+				break;
+			// http://store.march-hare.com/s.nl/sc.2/category.2/.f
+			case IDC_SYSLINK3:
+				ShellExecute(NULL,_T("open"),_T("http://store.march-hare.com/s.nl/sc.2/category.2/.f"),NULL,NULL,SW_SHOWNORMAL);
+				break;
+			// http://march-hare.com/cvsnt/en.asp
+			case IDC_SYSLINK4:
+				ShellExecute(NULL,_T("open"),_T("http://march-hare.com/cvsnt/en.asp"),NULL,NULL,SW_SHOWNORMAL);
+				break;
+			// http://march-hare.com/cvspro/?lang=EN#downcmserver
+			case IDC_SYSLINK5:
+				ShellExecute(NULL,_T("open"),_T("http://march-hare.com/cvspro/?lang=EN#downcmserver"),NULL,NULL,SW_SHOWNORMAL);
+				break;
+			// http://march-hare.com/cvspro/?lang=EN#downcvsnt
+			case IDC_SYSLINK6:
+				ShellExecute(NULL,_T("open"),_T("http://march-hare.com/cvspro/?lang=EN#downcvsnt"),NULL,NULL,SW_SHOWNORMAL);
+				break;
+			}
+			default:
+				break;
+		}
+		break;
+	case WM_COMMAND:
+		switch(LOWORD(wParam))
+		{
+			case IDOK:
+			case IDCANCEL:
+				g_bContributeHours=IsDlgButtonChecked(hWnd,IDC_FREEOPT3)?FALSE:TRUE;
+				EndDialog(hWnd,LOWORD(wParam));
+		}
+		break;
+	case WM_TIMER:
+		nCountdown--;
+		if(!nCountdown)
+		{
+			KillTimer(hWnd,nTimer);
+			PostMessage(hWnd,WM_COMMAND,IDOK,(LPARAM)NULL);
+		}
+		_sntprintf(tmp,sizeof(tmp),_T("OK - %d"),nCountdown);
+		SetDlgItemText(hWnd,IDOK,tmp);
+		break;
+	case WM_CLOSE:
+		g_bContributeHours=IsDlgButtonChecked(hWnd,IDC_FREEOPT3)?FALSE:TRUE;
+		break;
+	}
+
+	return FALSE;
+}
+
 void win32init(int serv_active)
 {
-#ifndef CVS95
+	LONGINT lastAdvert=11, advertInterval;
+	INT_PTR dlgres;
+	time_t nextAdvert,now;
+	HWND dlghWnd;
+	INITCOMMONCONTROLSEX icex;
+
+	CLibraryAccess::VerifyTrust(NULL,true); // checks the .exe not the .dll
+	CLibraryAccess::VerifyTrust("cvsapi",true);
+	CLibraryAccess::VerifyTrust("cvstools",true);
 	SetThreadLocale(LOCALE_SYSTEM_DEFAULT);
-#endif
+	g_bContributeHours=FALSE;
+	icex.dwSize=sizeof(icex);
+	icex.dwICC=ICC_STANDARD_CLASSES|ICC_LINK_CLASS;
 	if(serv_active<0)
 	{
-		OSVERSIONINFO osv;
-
-		osv.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-		GetVersionEx(&osv);
-		if (osv.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
-			bIsWin95 = 1;
-		else if(osv.dwMajorVersion==4)
-			bIsNt4=1;
-		else
-		{
-			bIsWin2k=1;
-			if(osv.dwMajorVersion==5 && osv.dwMinorVersion==2)
-				bIsWin2k3=1;
-		}
-
 		_tzset(); // Set the timezone from the system, or 'TZ' if specified.
 
 		SetFileApisToANSI();
 
 		CoInitialize(NULL);
+		InitCommonControlsEx(&icex);
 
-#if !defined(CVS95) && !defined(_DEBUG)
+#if !defined(_DEBUG)
 		SetUnhandledExceptionFilter(MiniDumper);
 #endif
 		tcp_init();
@@ -261,7 +327,6 @@ void win32init(int serv_active)
 			__set_case_sensitive(atoi(buffer));
 #endif
 
-#if !defined(CVS95)
 		*g_defaultdomain='\0';
 		if(serv_active)
 		{
@@ -273,16 +338,11 @@ void win32init(int serv_active)
 			}
 		}
 
-		if(serv_active && !CGlobalSettings::GetGlobalValue("cvsnt","PServer","UnicodeServer",buffer,sizeof(buffer)))
-		{
-			if(atoi(buffer))
-				win32_global_codepage = CP_UTF8;
-		}
+		win32_global_codepage_prev = GetConsoleOutputCP(); // {Z} - Fix Windows CP 65001 issues
 
 		CFileAccess::Win32SetUtf8Mode(win32_global_codepage==CP_UTF8);
+		SetConsoleOutputCP(win32_global_codepage);
 
-//		SetConsoleOutputCP(win32_global_codepage);
-#endif
 		if(serv_active)
 		{
 			if(!*g_defaultdomain)
@@ -297,23 +357,11 @@ void win32init(int serv_active)
 			GetComputerNameA(g_defaultdomain, &dwLen);
 		}
 
-#ifndef CVS95
-		ci_directory_list_size=0;
-		ci_directory_list=NULL;
 
-		if(FsCaseSensitive)
-		{
-			if(!CvsOpenFilter())
-			{
-				__set_case_sensitive(0);
-				TRACE(3,"Couldn't connect to cvs filter driver - switching to case insensitive");
-			}
-		}
-#endif
-
-		/* Cygwin default nsec is on, ntea is off */
-		/* We default ntea for minimum impact at the client side.  The CYGWIN variable
-		will override this for us */
+		/* Cygwin have deprecated ntea, and ntsec somewat sucks.. also they've removed
+		   the CYGWIN variable.. we keep using ntea so we can tunnel the executable
+		   bit from Unix, but if there is an alternative found then we'll just drop cygwin
+		   compat. altogether. */
 		use_ntsec = 0;
 		use_ntea = 1;
 
@@ -348,26 +396,79 @@ void win32init(int serv_active)
 					if(use_ntea) use_ntsec=0;
 				}
 			}
+
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+			if (strcasecmp(CVSNT_SPECIAL_BUILD,"Suite")!=0)
+#endif
+			{
+			  if (CGlobalSettings::GetUserValue("cvsnt","cvsadvert","LastAdvert",lastAdvert))
+				lastAdvert=0;
+			  if (CGlobalSettings::GetUserValue("cvsnt","cvsadvert","AdvertInterval",advertInterval))
+				advertInterval=86400; // 1 day
+			  if ((advertInterval>115200)||(advertInterval<100)) // 1 week max
+				advertInterval=86400; // 1 day
+
+			  time(&now);
+
+			  nextAdvert = lastAdvert + advertInterval;
+			  if (nextAdvert > now + 115200) // 1 day + 8 hours
+				nextAdvert = now;
+
+			  if((nextAdvert <= now))
+			  {
+				HMODULE hModule;
+				TCHAR InstallPath[1024];
+				GetModuleFileName(NULL,InstallPath,sizeof(InstallPath));
+				if(!_tcsicmp(InstallPath+_tcslen(InstallPath)-4,_T(".exe")))
+					_tcscpy(InstallPath+_tcslen(InstallPath)-4,_T(".dll"));
+				else
+					_tcscat(InstallPath,_T(".dll"));
+				hModule = GetModuleHandle(InstallPath);
+				if (hModule==NULL)
+					hModule = GetModuleHandle(_T("cvsnt.dll"));
+				if (hModule!=NULL)
+				{
+					dlghWnd=GetTopWindow(NULL);
+					if (dlghWnd==NULL)
+						dlghWnd=GetForegroundWindow();
+					dlgres = DialogBox(hModule,MAKEINTRESOURCE(IDD_FREEDIALOG),dlghWnd,FreeDlgProc);
+					if (dlgres <= 0)
+					{
+						if (dlgres < 0)
+						{
+							win32_errno=GetLastError();
+							LPVOID buf=NULL;
+							FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM,
+										NULL,win32_errno,0,(LPTSTR)&buf,0,NULL);
+							if (win32_errno!=0)
+								MessageBox(NULL,(LPCWSTR)buf,_T("Error displaying advert"),MB_ICONWARNING);
+							LocalFree((HLOCAL)buf);
+						}
+						else
+							MessageBox(NULL,_T("hWndParent parameter is invalid"),_T("Error displaying advert"),MB_ICONWARNING);
+					}
+					else
+						CGlobalSettings::SetUserValue("cvsnt","cvsadvert","LastAdvert",now);
+				}
+			  }
+			}
 		}
 	}
 }
 
 void wnt_cleanup (void)
 {
-	reset_ci_directory_list();
-
-#ifndef CVS95
-	CvsCloseFilter();
-#endif
-
 	if(!server_active)
 		tcp_close();
 
 	if(current_username)
 		free((void*)current_username);
+
+	if (win32_global_codepage_prev != -1) // {Z} - Fix Windows CP 65001 issues
+		SetConsoleOutputCP(win32_global_codepage_prev);
 }
 
-void validate_filename(const char *path)
+bool validate_filename(const char *path, bool warn)
 {
 	static const char *reserved_names[] = { "CON", "AUX", "COM1", "COM2", "COM3", "COM4", "LPT1", "LPT2", "LPT3", "PRN", "NUL", NULL };
 	const char *p, *q;
@@ -380,13 +481,27 @@ void validate_filename(const char *path)
 	q=strchr(p,'.');
 	if(!q) q=p+strlen(p);
 	l=q-p;
-	if(l<3 || l>4)
-		return;
-	for(r=0; reserved_names[r]; r++)
+	if(l==3 || l==4)
 	{
-		if(l==strlen(reserved_names[r]) && !strnicmp(reserved_names[r],p,l))
-			error(1,0,"Cannot use reserved filename '%s' on NT based machines",p);
+		for(r=0; reserved_names[r]; r++)
+		{
+			if(l==strlen(reserved_names[r]) && !strnicmp(reserved_names[r],p,l))
+			{
+				error(0,0,"Cannot use reserved filename '%s' on NT based machines",p);
+				errno=EBADF;
+				return false;
+			}
+		}
 	}
+
+	if(strpbrk(p,"\"<>|"))
+	{
+		if(warn && !quiet)
+			error(0,0,"Filename '%s' is illegal on this system.",p);
+		errno=EBADF;
+		return false;
+	}
+	return true;
 }
 
 unsigned sleep(unsigned seconds)
@@ -409,14 +524,13 @@ int usleep(unsigned long useconds)
 	return 0;
 }
 
-#ifndef CVS95
 DWORD BreakNameIntoParts(LPCTSTR name, LPWSTR w_name, LPWSTR w_domain, LPWSTR w_pdc)
 {
 	static wchar_t *pw_pdc;
     TCHAR *ptr;
 	wchar_t w_computer[DNLEN+1];
 
-	ptr=_tcschr(name, '\\');
+	ptr=(TCHAR*)_tcschr(name, '\\');
   	if (ptr)
 	{
 #ifdef _UNICODE
@@ -443,10 +557,12 @@ DWORD BreakNameIntoParts(LPCTSTR name, LPWSTR w_name, LPWSTR w_domain, LPWSTR w_
 		DWORD dwLen;
 		typedef DWORD (WINAPI *DsGetDcNameW_t)(LPCWSTR ComputerName,LPCWSTR DomainName,GUID *DomainGuid,LPCWSTR SiteName,ULONG Flags,PDOMAIN_CONTROLLER_INFOW *DomainControllerInfo);
 		DsGetDcNameW_t pDsGetDcNameW;
+		TRACE(3,"Find netapi32.dll with the symbol DsGetDcNameW");
 		pDsGetDcNameW=(DsGetDcNameW_t)GetProcAddress(GetModuleHandle(_T("netapi32")),"DsGetDcNameW");
 
 		w_pdc[0]='\0';
 		dwLen = sizeof(w_computer);
+		TRACE(3,"Call GetComputerNameW");
 		GetComputerNameW(w_computer, &dwLen);
 		if(w_domain[0] && wcscmp(w_domain,w_computer))
 		{
@@ -454,6 +570,7 @@ DWORD BreakNameIntoParts(LPCTSTR name, LPWSTR w_name, LPWSTR w_domain, LPWSTR w_
 			{
 				PDOMAIN_CONTROLLER_INFOW pdi;
 
+				TRACE(3,"Call DsGetDcNameW from netapi32.dll");
 				if(!pDsGetDcNameW(NULL,w_domain,NULL,NULL,DS_IS_FLAT_NAME,&pdi) || !pDsGetDcNameW(NULL,w_domain,NULL,NULL,DS_IS_DNS_NAME,&pdi))
 				{
 					wcscpy(w_pdc,pdi->DomainControllerName);
@@ -462,6 +579,7 @@ DWORD BreakNameIntoParts(LPCTSTR name, LPWSTR w_name, LPWSTR w_domain, LPWSTR w_
 			}
 			else
 			{
+				TRACE(3,"Call NetGetAnyDCName because we could not find netapi32.dll with the symbol DsGetDcNameW");
 				if(!NetGetAnyDCName(NULL,w_domain,(LPBYTE*)&pw_pdc) || !NetGetDCName(NULL,w_domain,(LPBYTE*)&pw_pdc))
 				{
 					wcscpy(w_pdc,pw_pdc);
@@ -474,7 +592,6 @@ DWORD BreakNameIntoParts(LPCTSTR name, LPWSTR w_name, LPWSTR w_domain, LPWSTR w_
 	}
 	return ERROR_SUCCESS;
 }
-#endif
 
 #ifdef SERVER_SUPPORT
 int win32_valid_user(const char *username, const char *password, const char *domain, void **user_token)
@@ -657,19 +774,33 @@ int trys4u(const struct passwd *pw, HANDLE *user_handle)
 	switch(dwErr)
 	{
 		case ERROR_SUCCESS:
+			TRACE(3,"S4U login returned ERROR_SUCCESS",dwErr);
 			return 0;
 		case ERROR_NO_SUCH_DOMAIN:
+			TRACE(3,"S4U login returned ERROR_NO_SUCH_DOMAIN",dwErr);
 			return 4;
 		case ERROR_NO_SUCH_USER:
+			TRACE(3,"S4U login returned ERROR_NO_SUCH_USER",dwErr);
 			return 2;
 		case ERROR_ACCOUNT_DISABLED:
 		case ERROR_PASSWORD_EXPIRED:
 		case ERROR_ACCOUNT_RESTRICTION:
+			if (dwErr==ERROR_ACCOUNT_DISABLED)
+				TRACE(3,"S4U login returned ERROR_ACCOUNT_DISABLED",dwErr);
+			if (dwErr==ERROR_PASSWORD_EXPIRED)
+				TRACE(3,"S4U login returned ERROR_PASSWORD_EXPIRED",dwErr);
+			if (dwErr==ERROR_ACCOUNT_RESTRICTION)
+				TRACE(3,"S4U login returned ERROR_ACCOUNT_RESTRICTION",dwErr);
 			return 3;
 		case ERROR_PRIVILEGE_NOT_HELD:
 		case ERROR_ACCESS_DENIED:
+			if (dwErr==ERROR_PRIVILEGE_NOT_HELD)
+				TRACE(3,"S4U login returned ERROR_PRIVILEGE_NOT_HELD",dwErr);
+			if (dwErr==ERROR_ACCESS_DENIED)
+				TRACE(3,"S4U login returned ERROR_ACCESS_DENIED",dwErr);
 			return 1;
 		default:
+			TRACE(3,"S4U login default error.",dwErr);
 			return -1;
 	}
 }
@@ -743,9 +874,9 @@ int win32switchtouser(const char *username, void *preauth_user_handle)
 	if(!pw)
 		return 2;
 
-	if(bIsWin2k3 && (ret = trys4u(pw,&user_handle))>0)
+	if((ret = trys4u(pw,&user_handle))>0)
 		return ret;
-	if(bIsWin2k && ret && (ret = trysuid(pw,&user_handle))>0)
+	if(ret && (ret = trysuid(pw,&user_handle))>0)
 		return ret;
 	if(ret && (ret = trytoken(pw,&user_handle))>0)
 		return ret;
@@ -847,6 +978,7 @@ int win32_isadmin()
       the object.  Just checking access against the security descriptor alone
       will be sufficient.
    */
+		TRACE(2,"Determine if the current thread is running as a user that is a member of the local admins group (win32).");
 		__try
 		{
 		/* AccessCheck() requires an impersonation token.  We first get a primary
@@ -957,6 +1089,7 @@ int win32_isadmin()
 		DWORD priv;
 		BOOL check_local = FALSE; /* If the domain wasn't specified, try checking for local admin too */
 
+		TRACE(2,"Contact the domain controller to decide whether the user is an adminstrator.");
 #ifdef _UNICODE
 		{
 			wchar_t wn[UNLEN+1];
@@ -969,8 +1102,10 @@ int win32_isadmin()
 			return 0;
 #endif
 
+		TRACE(3,"Call NetUserGetInfo.");
 		if(NetUserGetInfo(w_pdc,w_name,1,(LPBYTE*)&info)!=NERR_Success)
 			return 0;
+		TRACE(3,"Call NetUserGetInfo complete.");
 
 		priv=info->usri1_priv;
 		NetApiBufferFree(info);
@@ -982,6 +1117,7 @@ int win32_isadmin()
 			/* No domain specified.  Check local admin privs for user.  This assumes the local
 			usernames match the domain usernames, which isn't always the best thing to do,
 			however people seem to want it that way. */
+			TRACE(2,"No domain specified.  Check local admin privs for user.");
 			if(NetUserGetInfo(NULL,w_name,1,(LPBYTE*)&info)!=NERR_Success)
 				return 0;
 			priv=info->usri1_priv;
@@ -1150,10 +1286,12 @@ void preparse_filename(char *fn)
 FILE *wnt_fopen(const char *filename, const char *mode)
 {
 	FILE *f;
+
+	if(!validate_filename(filename,*mode=='b'))
+		return NULL;
+
 	uc_name fn = filename;
 	uc_name wm = mode;
-
-	validate_filename(filename);
 
 	f = _tfopen(fn,wm);
 	return f;
@@ -1162,9 +1300,9 @@ FILE *wnt_fopen(const char *filename, const char *mode)
 
 int wnt_open(const char *filename, int mode, int umask /* = 0 */)
 {
+	if(!validate_filename(filename, mode&O_WRONLY))
+		return -1;
 	uc_name fn = filename;
-
-	validate_filename(filename);
 	int f = _topen(fn,mode,umask);
 	return f;
 }
@@ -1172,8 +1310,9 @@ int wnt_open(const char *filename, int mode, int umask /* = 0 */)
 int wnt_access(const char *path, int mode)
 {
 	int ret;
+	if(!validate_filename(path,false))
+		return -1;
 	uc_name fn = path;
-	validate_filename(path);
 	ret = _taccess(fn,mode);
 	return ret;
 }
@@ -1214,7 +1353,7 @@ void _dosmaperr(DWORD dwErr)
 BOOL IsLeapYear ( WORD year )
 {
     return ( ((year & 3u) == 0)
-            && ( (year % 100u == 0)
+            && ( (year % 100u != 0)
                 || (year % 400u == 0) ));
 }
 
@@ -1509,7 +1648,7 @@ static BOOL FileTimeToUnixTime ( const FILETIME* pft, time_t* put, BOOL local_ti
         itime.QuadPart /= systemtime_second;	// itime is now in seconds.
         itime.QuadPart += bias * 60;    // bias is in minutes.
 
-        *put = itime.LowPart;
+        *put = itime.QuadPart;
     }
 
     if (!success)
@@ -1549,8 +1688,7 @@ static BOOL UnixTimeToFileTime ( time_t ut, FILETIME* pft, BOOL local_time )
     int bias = 0;
 
     SystemTimeToFileTime ( &base_st, &base_ft );
-	itime.HighPart=0;
-	itime.LowPart = ut;
+	itime.QuadPart = ut;
 	itime.QuadPart *= systemtime_second;
 	itime.QuadPart += ((ULARGE_INTEGER *)&base_ft)->QuadPart;
 
@@ -1568,7 +1706,6 @@ static BOOL UnixTimeToFileTime ( time_t ut, FILETIME* pft, BOOL local_time )
     return success;
 }
 
-#ifndef CVS95
 static BOOL GetFileSec(LPCTSTR strPath, HANDLE hFile, SECURITY_INFORMATION requestedInformation, PSECURITY_DESCRIPTOR *ppSecurityDescriptor)
 {
 	if(hFile)
@@ -1908,8 +2045,6 @@ static BOOL SetUnixFileModeNtEA(LPCTSTR strPath, mode_t mode)
 	return FALSE;
 }
 
-#endif
-
 static int _statcore(HANDLE hFile, const char *filename, struct stat *buf)
 {
     BY_HANDLE_FILE_INFORMATION bhfi;
@@ -2063,7 +2198,6 @@ static int _statcore(HANDLE hFile, const char *filename, struct stat *buf)
 
 		memset(&bhfi,0,sizeof(bhfi));
 
-#ifndef _CVS95
 		TRACE(3,"Trying GetFileAttributesEx....");
 		if(GetFileAttributesEx(fn,GetFileExInfoStandard,&faa))
 		{
@@ -2076,7 +2210,6 @@ static int _statcore(HANDLE hFile, const char *filename, struct stat *buf)
 			bhfi.nNumberOfLinks=1;
 		}
 		else
-#endif
 		{
 			TRACE(3,"Trying FindFirstFile...");
 			hFind=FindFirstFile(fn,&fd);
@@ -2136,7 +2269,6 @@ static int _statcore(HANDLE hFile, const char *filename, struct stat *buf)
 
 	if(!(bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 	{
-#ifndef CVS95
 		/* We're assuming a reasonable failure mode on FAT32 here */
 		if(use_ntsec)
 			buf->st_mode = GetUnixFileModeNtSec(fn,hFile);
@@ -2146,9 +2278,6 @@ static int _statcore(HANDLE hFile, const char *filename, struct stat *buf)
 			buf->st_mode = 0;
 		if(!buf->st_mode)
 			buf->st_mode = 0644;
-#else
-			buf->st_mode = 0644;
-#endif
 		if ( bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
 			buf->st_mode &= ~(S_IWRITE | S_IWGRP | S_IWOTH);
 		else
@@ -2230,7 +2359,8 @@ static int _statcore(HANDLE hFile, const char *filename, struct stat *buf)
 int wnt_stat(const char *name, struct wnt_stat *buf)
 {
 	TRACE(3,"wnt_stat(%s)",name);
-	validate_filename(name);
+	if(!validate_filename(name,false))
+		return -1;
 	return _statcore(NULL,name,buf);
 }
 
@@ -2243,21 +2373,22 @@ int wnt_fstat (int fildes, struct wnt_stat *buf)
 int wnt_lstat (const char *name, struct wnt_stat *buf)
 {
 	TRACE(3,"wnt_lstat(%s)",name);
-	validate_filename(name);
+	if(!validate_filename(name,false))
+		return -1;
 	return _statcore(NULL,name,buf);
 }
 
 int wnt_chmod (const char *name, mode_t mode)
 {
+	TRACE(3,"wnt_chmod(%s,%04o)",name,mode);
+	if(!validate_filename(name,false))
+		return -1;
+
 	uc_name fn = name;
 
-	TRACE(3,"wnt_chmod(%s,%04o)",name,mode);
-
-	validate_filename(name);
 	if(_tchmod(fn,mode)<0)
 		return -1;
 
-#ifndef CVS95
 	if(!(GetFileAttributes(fn)&FILE_ATTRIBUTE_DIRECTORY))
 	{
 		if(use_ntsec)
@@ -2265,20 +2396,20 @@ int wnt_chmod (const char *name, mode_t mode)
 		else if(use_ntea)
 			SetUnixFileModeNtEA(fn,mode);
 	}
-#endif
 
 	return 0;
 }
 
 int wnt_utime(const char *filename, struct utimbuf *uf)
 {
-	uc_name fn = filename;
 	HANDLE h;
 	int is_gmt_fs;
 	TCHAR szFs[32];
 	FILETIME At,Wt;
 
-	validate_filename(filename);
+	if(!validate_filename(filename,false))
+		return -1;
+	uc_name fn = filename;
 	if(fn[1]!=':')
 	{
 		if((fn[0]=='\\' || fn[0]=='/') && (fn[1]=='\\' || fn[1]=='/'))
@@ -2382,7 +2513,6 @@ void wnt_get_temp_dir(char *tempdir, int tempdir_size)
 }
 
 
-#ifndef CVS95
 static BOOL WINAPI MiniDumpDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	TCHAR tmp[64];
@@ -2448,7 +2578,7 @@ static BOOL SendFileToCvsnt(LPCSTR szPath, LPCSTR szId)
 		if((hNet = InternetOpenA("CVSNT "CVSNT_PRODUCTVERSION_SHORT,INTERNET_OPEN_TYPE_PRECONFIG,NULL,NULL,0))==NULL)
 			break;
 		Func="InternetConnect";
-		if((hConn = InternetConnectA(hNet,"crashdump2503.cvsnt.org",INTERNET_DEFAULT_HTTP_PORT,NULL,NULL,INTERNET_SERVICE_HTTP,0,0))==NULL)
+		if((hConn = InternetConnectA(hNet,"crashdump2504.cvsnt.org",INTERNET_DEFAULT_HTTP_PORT,NULL,NULL,INTERNET_SERVICE_HTTP,0,0))==NULL)
 			break;
 		Func="HttpOpenRequest";
 		if((hInet = HttpOpenRequestA(hConn,"PUT",Buffer,"1.1",NULL,NULL,INTERNET_FLAG_KEEP_CONNECTION|INTERNET_FLAG_NO_UI|INTERNET_FLAG_NO_COOKIES|INTERNET_FLAG_PRAGMA_NOCACHE,0))==NULL)
@@ -2577,7 +2707,6 @@ LONG WINAPI MiniDumper(PEXCEPTION_POINTERS pExceptionInfo)
 	}
 	return retval;
 }
-#endif
 
 int wnt_link(const char *oldpath, const char *newpath)
 {
@@ -2657,47 +2786,6 @@ void wnt_hide_file(const char *fn)
 {
 	SetFileAttributesA(fn,FILE_ATTRIBUTE_HIDDEN);
 }
-
-#ifndef CVS95
-#undef main
-int main(int argc, char **argv);
-
-int wmain(int argc, wchar_t **argv)
-{
-	char **newargv = (char**)xmalloc(sizeof(char*)*(argc+1)),*buf, *p;
-	int n, ret, len;
-
-	OSVERSIONINFO osv;
-
-	osv.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-	GetVersionEx(&osv);
-	if (osv.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
-		bIsWin95 = 1;
-	else if(osv.dwMajorVersion==4)
-		bIsNt4=1;
-	else
-		bIsWin2k=1;
-
-	len=0;
-	for(n=0; n<argc; n++)
-	{
-		if(!wcscmp(argv[n],L"--utf8"))
-			win32_global_codepage=CP_UTF8;
-		len+= WideCharToMultiByte(win32_global_codepage,0,argv[n],-1,NULL,0,NULL,NULL);
-	}
-	buf=p=(char*)xmalloc(len);
-	for(n=0; n<argc; n++)
-	{
-		newargv[n]=p;
-		p+=WideCharToMultiByte(win32_global_codepage,0,argv[n],-1,newargv[n],len,NULL,NULL);
-	}
-	newargv[n]=NULL;
-	ret = main(argc,newargv);
-	xfree(buf);
-	xfree(newargv);
-	return ret;
-}
-#endif
 
 int w32_is_network_share(const char *directory)
 {
@@ -2883,60 +2971,6 @@ void win32_getgroups_end(void **grouplist)
 #endif
 }
 
-void add_to_ci_directory_list(const char *dir)
-{
-#ifndef CVS95
-	if(CvsFilterIsOpen())
-	{
-		TRACE(3,"add_to_ci_directory_list(%s)",dir);
-		ci_directory_list_size++;
-		ci_directory_list = (char**)xrealloc(ci_directory_list,sizeof(char*)*ci_directory_list_size);
-		ci_directory_list[ci_directory_list_size-1]=xstrdup(dir);
-		CvsAddPosixDirectoryA(dir,TRUE);
-	}
-#endif
-}
-
-void remove_from_ci_directory_list(const char *dir)
-{
-#ifndef CVS95
-	int n,j;
-	if(CvsFilterIsOpen())
-	{
-		TRACE(3,"remove_from_ci_directory_list(%s)",dir);
-		for(n=0; n<ci_directory_list_size; n++)
-		{
-			if(!fncmp(ci_directory_list[n],dir))
-			{
-				CvsRemovePosixDirectoryA(dir,TRUE);
-				break;
-			}
-		}
-		for(j=n+1;j<ci_directory_list_size; j++)
-			ci_directory_list[j-1]=ci_directory_list[j];
-		ci_directory_list_size--;
-	}
-#endif
-}
-
-void reset_ci_directory_list()
-{
-#ifndef CVS95
-	int n;
-	if(CvsFilterIsOpen())
-	{
-		TRACE(3,"clear_ci_directory_list()");
-		for(n=0; n<ci_directory_list_size; n++)
-		{
-			CvsRemovePosixDirectoryA(ci_directory_list[n],TRUE);
-			xfree(ci_directory_list[n]);
-		}
-		xfree(ci_directory_list);
-		ci_directory_list_size=0;
-	}
-#endif
-}
-
 /* Make a username on the local domain into its short form.  Needed for
    SSPI which always uses the long form. */
 void win32_sanitize_username(const char **pusername)
@@ -2982,7 +3016,6 @@ uc_name::~uc_name()
 }
 #endif
 
-#ifndef CVS95
 /* This might look easier using ADS but:
 
    ADsSecurity does not fix the ACL ordering problems (so is no better than this code)
@@ -3089,4 +3122,3 @@ int win32_set_edit_acl(const char *filename)
 
 	return 0;
 }
-#endif

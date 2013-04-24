@@ -1,5 +1,4 @@
 #!/bin/sh
-
 # UFC-crypt: ultra fast crypt(3) implementation
 # Copyright (C) 1991, 1992, Free Software Foundation, Inc.
 #

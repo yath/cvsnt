@@ -53,72 +53,75 @@ namespace
 	int GetCachedPassword(const char *key, char *buffer, int buffer_len)
 	{
 		CSocketIO sock;
+#ifdef _WIN32
+		struct _str
+		{
+			int state;
+			char key[256];
+			char rslt[256];
+		};
+		COPYDATASTRUCT cds;
 
-		/* No song and dance.. if there's no server listening, do nothing */
-		if(!sock.create("127.0.0.1","32401",false))
+		HWND hWnd=FindWindow(L"CvsAgent",NULL);
+		if(!hWnd)
 			return -1;
-		if(sock.bind()) // If we can bind, there's no server.  bind is quicker than connect...
-		{
-			sock.close();
-			return -1; // Not listening
-		}
-		else
-		{
-			if(!sock.create("127.0.0.1","32401",false))
-				return -1;
-			if(!sock.connect())
-				return -1;
-			if(sock.send(key,(int)strlen(key))<=0)
-			{
-				CServerIo::trace(1,"Error sending to password agent");
-				return -1;
-			}
-			if(sock.recv(buffer,buffer_len)<=0)
-			{
-				CServerIo::trace(1,"Error receiving from password agent");
-				return -1;
-			}
-			if(buffer[0]==-1) /* No passwd */
-			{
-				CServerIo::trace(2,"No password stored in passwd agent");
-				return -1;
-			}
-			sock.close();
-		}
+		cvs::string name;
+		cvs::sprintf(name,32,"%08x:%08x",GetCurrentProcessId(),GetTickCount());
+		HANDLE hMap = CreateFileMappingA(INVALID_HANDLE_VALUE,NULL,PAGE_READWRITE,0,sizeof(_str),name.c_str());
+		_str* pMap = (_str*)MapViewOfFile(hMap,FILE_MAP_READ|FILE_MAP_WRITE,0,0,sizeof(_str));
+		memset(pMap,0,sizeof(_str));
+		strcpy(pMap->key,key);
+		pMap->state=1;
+		cds.lpData=(PVOID)name.c_str();
+		cds.cbData=(DWORD)name.size()+1;
+		SendMessage(hWnd,WM_COPYDATA,NULL,(LPARAM)&cds);
+		if(pMap->state==0)
+			strncpy(buffer,pMap->rslt,buffer_len);
+		int ret = pMap->state==0?0:-1;
+		UnmapViewOfFile(pMap);
+		CloseHandle(hMap);
+		return ret;
+#else
 		return 0;
+#endif
 	}
 	int SetCachedPassword(const char *key, const char *buffer)
 	{
 		CSocketIO sock;
-
-		/* No song and dance.. if there's no server listening, do nothing */
-		if(!sock.create("127.0.0.1","32401",false))
-			return -1;
-		if(sock.bind()) // If we can bind, there's no server.  bind is quicker than connect...
+#ifdef _WIN32
+		struct _str
 		{
-			sock.close();
-			return -1; // Not listening
+			int state;
+			char key[256];
+			char rslt[256];
+		};
+		COPYDATASTRUCT cds;
+
+		HWND hWnd=FindWindow(L"CvsAgent",NULL);
+		if(!hWnd)
+			return -1;
+		cvs::string name;
+		cvs::sprintf(name,32,"%08x:%08x",GetCurrentProcessId(),GetTickCount());
+		HANDLE hMap = CreateFileMappingA(INVALID_HANDLE_VALUE,NULL,PAGE_READWRITE,0,sizeof(_str),name.c_str());
+		_str* pMap = (_str*)MapViewOfFile(hMap,FILE_MAP_READ|FILE_MAP_WRITE,0,0,sizeof(_str));
+		memset(pMap,0,sizeof(_str));
+		strcpy(pMap->key,key);
+		if(buffer)
+		{
+			strcpy(pMap->rslt,buffer);
+			pMap->state=2;
 		}
 		else
-		{
-			if(!buffer)
-			{
-				if(!sock.create("127.0.0.1","32401",false))
-					return -1;
-				if(!sock.connect())
-					return -1;
-				cvs::string tmp;
-				tmp="*";
-				tmp+=key;
-				if(sock.send(tmp.c_str(),(int)tmp.size())<=0)
-				{
-					CServerIo::trace(1,"Error sending to password agent");
-					return -1;
-				}
-				sock.close();
-			}
-		}
+			pMap->state=3;
+		cds.lpData=(PVOID)name.c_str();
+		cds.cbData=(DWORD)name.size()+1;
+		SendMessage(hWnd,WM_COPYDATA,NULL,(LPARAM)&cds);
+		UnmapViewOfFile(pMap);
+		CloseHandle(hMap);
+		return pMap->state==0?0:-1;
+#else
 		return 0;
+#endif
 	}
 };
 
@@ -146,6 +149,16 @@ int CGlobalSettings::GetUserValue(const char *product, const char *key, const ch
 	if(_GetUserValue(product,key,value,tmp,sizeof(tmp)))
 		return -1;
 	sval = tmp;
+	return 0;
+}
+
+int CGlobalSettings::GetUserValue(const char *product, const char *key, const char *value, LONGINT& lival)
+{
+	char tmp[512];
+	if(_GetUserValue(product,key,value,tmp,sizeof(tmp)))
+		return -1;
+	if(!sscanf(tmp,"%I64d",&lival))
+		lival=0;
 	return 0;
 }
 
@@ -193,6 +206,13 @@ int CGlobalSettings::SetUserValue(const char *product, const char *key, const ch
 	if((!product || !strcmp(product,"cvsnt")) && key && !strcmp(key,"cvspass") && !SetCachedPassword(value,buffer) && buffer)
 		return 0;
 	return _SetUserValue(product,key,value,buffer);
+}
+
+int CGlobalSettings::SetUserValue(const char *product, const char *key, const char *value, LONGINT lival)
+{
+	char tmp[128];
+	sprintf(tmp,"%I64d",lival);
+	return _SetUserValue(product,key,value,tmp);
 }
 
 int CGlobalSettings::_SetUserValue(const char *product, const char *key, const char *value, const char *buffer)
@@ -403,6 +423,16 @@ int CGlobalSettings::GetGlobalValue(const char *product, const char *key, const 
 	return 0;
 }
 
+int CGlobalSettings::GetGlobalValue(const char *product, const char *key, const char *value, LONGINT& lival)
+{
+	char tmp[512];
+	if(GetGlobalValue(product,key,value,tmp,sizeof(tmp)))
+		return -1;
+	if(!sscanf(tmp,"%I64d",&lival))
+		lival=0;
+	return 0;
+}
+
 int CGlobalSettings::GetGlobalValue(const char *product, const char *key, const char *value, char *buffer, int buffer_len)
 {
 	HKEY hKey,hSubKey;
@@ -442,6 +472,13 @@ int CGlobalSettings::GetGlobalValue(const char *product, const char *key, const 
 	    sprintf(buffer,"%u",*(DWORD*)buffer);
 
 	return 0;
+}
+
+int CGlobalSettings::SetGlobalValue(const char *product, const char *key, const char *value, LONGINT lival)
+{
+	char tmp[128];
+	sprintf(tmp,"%I64d",lival);
+	return SetGlobalValue(product,key,value,tmp);
 }
 
 int CGlobalSettings::SetGlobalValue(const char *product, const char *key, const char *value, const char *buffer)
@@ -733,18 +770,28 @@ const char *CGlobalSettings::GetCvsCommand()
 {
 	if(!*cvs_command) /* Only do this once */
 	{
-		if (GetModuleFileNameA(GetModuleHandleA("cvstools.dll"), cvs_command, sizeof(cvs_command)))
+		HMODULE hModule = GetModuleHandleA("cvs.exe");
+		if(!hModule) hModule = GetModuleHandleA("cvsnt.exe");
+		if (hModule && GetModuleFileNameA(hModule, cvs_command, sizeof(cvs_command)))
 		{
-			char *p;
-
-			p = strrchr(cvs_command, '\\');
-			if(p)
-				*p = '\0';
-			else
-				cvs_command[0] = '\0';
+			GetShortPathNameA(cvs_command,cvs_command,sizeof(cvs_command));
 		}
-		GetShortPathNameA(cvs_command,cvs_command,sizeof(cvs_command));
-		strcat(cvs_command,"\\cvs.exe");
+		else
+		{
+			hModule = GetModuleHandleA("cvstools.dll");
+			if (hModule && GetModuleFileNameA(hModule, cvs_command, sizeof(cvs_command)))
+			{
+				char *p;
+
+				p = strrchr(cvs_command, '\\');
+				if(p)
+					*p = '\0';
+				else
+					cvs_command[0] = '\0';
+			}
+			GetShortPathNameA(cvs_command,cvs_command,sizeof(cvs_command));
+			strcat(cvs_command,"\\cvs.exe");
+		}
 
 		if(!CFileAccess::exists(cvs_command))
 		{

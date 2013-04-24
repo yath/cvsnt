@@ -24,6 +24,12 @@
 	\note Derived from plugin.c in GIMP
 */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal. 
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#endif
+
 #ifdef HAVE_CONFIG_H
 extern "C" {
 #include "config.h"

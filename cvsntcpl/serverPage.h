@@ -1,4 +1,3 @@
-#include "afxwin.h"
 #if !defined(AFX_serverPage_H__F52337F0_30FF_11D2_8EED_00A0C94457BF__INCLUDED_)
 #define AFX_serverPage_H__F52337F0_30FF_11D2_8EED_00A0C94457BF__INCLUDED_
 
@@ -9,66 +8,41 @@
 //
 
 #include "TooltipPropertyPage.h"
+#include "afxwin.h"
 /////////////////////////////////////////////////////////////////////////////
 // CserverPage dialog
 
 class CserverPage : public CTooltipPropertyPage
 {
 	DECLARE_DYNCREATE(CserverPage)
+	enum { IDD = IDD_PAGE1 };
 
 // Construction
 public:
 	CserverPage();
 	~CserverPage();
 
-// Dialog Data
-	//{{AFX_DATA(CserverPage)
-	enum { IDD = IDD_PAGE1 };
-	CButton	m_btStart;
-	CButton	m_btStop;
-	CString	m_szVersion;
-	CString	m_szStatus;
-	CString m_szLockStatus;
-	CButton m_btLockStart;
-	CButton m_btLockStop;
-//	CButton m_btSshStart;
-//	CButton m_btSshStop;
-//	CString m_szSshStatus;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generate virtual function overrides
-	//{{AFX_VIRTUAL(CserverPage)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
 protected:
-	SC_HANDLE m_hService;
-	SC_HANDLE m_hLockService;
-//	SC_HANDLE m_hSshService;
-	SC_HANDLE m_hSCManager;
+	CStatic m_stVersion;
+	CStatic m_stRegistration;
+	CStatic m_stHostOs;
+	CStatic m_stUptime;
+	CStatic m_stUserCount;
+	CStatic m_szMaxUsers;
+	CStatic m_stAverageTime;
+	CButton m_cbSendStatistics;
+	CButton m_cbLogo;
 
-	LPCTSTR GetErrorString();
-	void UpdateStatus();
-
-	// Generated message map functions
-	//{{AFX_MSG(CserverPage)
 	virtual BOOL OnInitDialog();
-	afx_msg void OnTimer(UINT nIDEvent);
-	afx_msg void OnStart();
-	afx_msg void OnStop();
-	afx_msg void OnBnClickedStart2();
-	afx_msg void OnBnClickedStop2();
-//	afx_msg void OnBnClickedStart3();
-//	afx_msg void OnBnClickedStop3();
-	//}}AFX_MSG
+	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
+	afx_msg void OnBnClickedLogo();
+
 	DECLARE_MESSAGE_MAP()
 public:
-	afx_msg void OnStnClickedLogo();
-	CButton m_cbLogo;
+	CStatic m_stSessionCount;
+	afx_msg void OnBnClickedButton1();
+	afx_msg void OnBnClickedCheck1();
+	virtual BOOL OnApply();
 };
 
 //{{AFX_INSERT_LOCATION}}

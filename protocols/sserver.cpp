@@ -15,6 +15,12 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -462,23 +468,23 @@ int sserver_auth_protocol_connect(const struct protocol_interface *protocol, con
     /* See above comment about error handling.  */
 
 	/* get version, if sent.  1.0 clients didn't have this handshake so we have to handle that. */
-	server_getline (protocol, &client_version, MAX_PATH);
+	server_getline (protocol, &client_version, PATH_MAX);
 	if(strncmp(client_version,"SSERVER-CLIENT ",15))
 	{
 		sserver_protocol_interface.auth_repository = client_version;
 		client_version = NULL;
 	}
 	else
-    	server_getline (protocol, &sserver_protocol_interface.auth_repository, MAX_PATH);
-    server_getline (protocol, &sserver_protocol_interface.auth_username, MAX_PATH);
-	server_getline (protocol, &sserver_protocol_interface.auth_password, MAX_PATH);
+    	server_getline (protocol, &sserver_protocol_interface.auth_repository, PATH_MAX);
+    server_getline (protocol, &sserver_protocol_interface.auth_username, PATH_MAX);
+	server_getline (protocol, &sserver_protocol_interface.auth_password, PATH_MAX);
 
 	if(client_version) free(client_version);
 	client_version = NULL;
 
     /* ... and make sure the protocol ends on the right foot. */
     /* See above comment about error handling.  */
-    server_getline(protocol, &tmp, MAX_PATH);
+    server_getline(protocol, &tmp, PATH_MAX);
     if (strcmp (tmp,
 		sserver_protocol_interface.verify_only ?
 		"END SSL VERIFICATION REQUEST" : "END SSL AUTH REQUEST")
@@ -667,7 +673,7 @@ static BOOL CALLBACK ConfigDlgProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 {
 	int nSel;
 	char value[64];
-	char certfile[MAX_PATH];
+	char certfile[PATH_MAX];
 
 	switch(uMsg)
 	{

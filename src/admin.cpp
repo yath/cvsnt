@@ -440,7 +440,7 @@ int admin (int argc, char **argv)
 	err = start_recursion (admin_fileproc, (FILESDONEPROC) NULL, (PREDIRENTPROC) NULL, admin_dirproc,
 			   (DIRLEAVEPROC) NULL, (void *)&admin_data,
 			   argc, argv, 0,
-			   W_LOCAL, 0, 0, (char *) NULL, NULL, 1, verify_write);
+			   W_LOCAL, 0, 0, (char *) NULL, NULL, 1, verify_write, NULL);
     Lock_Cleanup ();
 
  return_it:
@@ -721,13 +721,13 @@ static int admin_fileproc (void *callerdat, struct file_info *finfo)
 	        p = strchr (arg, ':');
 		if (p == NULL)
 		{
-		    tag = xstrdup (arg + 2);
+		    tag = arg + 2;
 		    rev = RCS_head (rcs);
 		}
 		else
 		{
 		    *p = '\0';
-		    tag = xstrdup (arg + 2);
+		    tag = arg + 2;
 		    *p++ = ':';
 		    rev = xstrdup (p);
 		}
@@ -751,7 +751,6 @@ static int admin_fileproc (void *callerdat, struct file_info *finfo)
 		}
 		xfree (rev);
 		delta = (RCSVers *) n->data;
-		xfree (delta->state);
 		delta->state = tag;
 		break;
 

@@ -11,6 +11,7 @@
  * argument, prints the log information for all the files in the directory
  * (recursive by default).
  */
+#include "../version.h"
 
 #include "cvs.h"
 #include "timegm.h"
@@ -242,7 +243,7 @@ int cvslog (int argc, char **argv)
 		case 'B':
 		if(log_data.bugid)
 			error(1,0,"Cannot specify multiple -B");
-		if(!RCS_check_bugid(optarg))
+		if(!RCS_check_bugid(optarg,false))
 			error(1,0,"Invalid characters in bug identifier.  Please avoid ,\"'");
 		log_data.bugid=xstrdup(optarg);
 		break;
@@ -562,7 +563,7 @@ static int rlog_proc(int argc, char **argv, const char *xwhere,
 	    char *path;
 
 	    /* if the portion of the module is a path, put the dir part on repos */
-	    if ((cp = strrchr (mfile, '/')) != NULL)
+	    if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 	    {
 		*cp = '\0';
 		(void) strcat (repository, "/");
@@ -617,7 +618,7 @@ static int rlog_proc(int argc, char **argv, const char *xwhere,
     err = start_recursion (log_fileproc, (FILESDONEPROC) NULL, (PREDIRENTPROC) NULL, log_dirproc,
 			   (DIRLEAVEPROC) NULL, (void *) &log_data,
 			   argc - 1, argv + 1, local_specified, which, 0, 1,
-			   where, mapped_repository, 1, verify_read);
+			   where, mapped_repository, 1, verify_read, log_data.revlist?log_data.revlist->first:NULL);
 
 	xfree (mapped_repository);
     return err;
@@ -818,7 +819,7 @@ static void log_parse_list (List **plist, const char *argstring)
 
 	p = getnode ();
 
-	cp = strchr (argstring, ',');
+	cp = (char*)strchr (argstring, ',');
 	if (cp == NULL)
 	    p->key = xstrdup (argstring);
 	else
@@ -1794,6 +1795,15 @@ static void log_version (struct log_data *log_data, struct revlist *revlist, RCS
     {
 	/* FIXME: Technically, the log message could contain a null
            byte.  */
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+	if (strcasecmp(CVSNT_SPECIAL_BUILD,"Suite")==0)
+	{
+	char *advertpos=NULL;
+	// do not display old advertising messages which are committed by 2.5.04+ client and server
+	if ((advertpos=strstr(p->data,"Committed on the Free edition of March Hare Software CVSNT"))!=NULL)
+		*(advertpos)='\0';
+    }
+#endif
 	cvs_output (p->data, 0);
 	if (p->data[strlen (p->data) - 1] != '\n')
 	    cvs_output ("\n", 1);

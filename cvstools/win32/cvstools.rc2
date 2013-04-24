@@ -16,4 +16,3 @@
 #define PROJECTDESCRIPTION "cvsnt hepler application API"
 #define PROJECTFILENAME "cvstools.dll"
 #include "..\windows-NT\VersionInfoCommon.rc2"
-

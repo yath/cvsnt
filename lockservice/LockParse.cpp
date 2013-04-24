@@ -18,6 +18,9 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#if defined( __HP_aCC ) && defined ( __ia64 )
+#include <unistd.h>
+#endif
 #include <time.h>
 #ifdef HAVE_SYS_TIMES_H
 #include <sys/times.h>
@@ -29,10 +32,6 @@
 #include "../cvsapi/cvsapi.h"
 
 #include "LockService.h"
-
-#ifdef _WIN32
-#define vsnprintf _vsnprintf
-#endif
 
 #ifdef HAVE_PTHREAD_H
 #include <pthread.h>
@@ -57,7 +56,7 @@ static size_t global_lockId;
 
 const char *StateString[] = { "Logging in", "Active", "Monitoring", "Closed" };
 enum ClientState { lcLogin, lcActive, lcMonitor, lcClosed };
-enum LockFlags { lfRead = 0x01, lfWrite = 0x02, lfAdvisory = 0x04, lfFull = 0x08, lfClosed = 0x10 };
+enum LockFlags { lfRead = 0x01, lfWrite = 0x02, lfClosed = 0x10 };
 enum MonitorFlags { lcMonitorClient=0x01, lcMonitorLock=0x02, lcMonitorVersion=0x04 };
 
 typedef std::map<std::string,std::string> VersionMapType;
@@ -229,9 +228,9 @@ static char *lock_strchr(const char *s, int ch)
 {
 	if(!*s)
 		return NULL;
-	char *p=strchr(s,ch);
+	const char *p=strchr(s,ch);
 	if(p)
-		return p;
+		return (char*)p;
 	return (char*)s+strlen(s);
 }
 
@@ -244,10 +243,6 @@ const char *FlagToString(unsigned flag)
 		strcat(flg,"Read ");
 	if(flag&lfWrite)
 		strcat(flg,"Write ");
-	if(flag&lfAdvisory)
-		strcat(flg,"Advisory ");
-	if(flag&lfFull)
-		strcat(flg,"Full ");
 	if(flg[0])
 		flg[strlen(flg)-1]='\0'; // Chop trailing space
 	return flg;
@@ -256,9 +251,18 @@ const char *FlagToString(unsigned flag)
 bool OpenLockClient(CSocketIOPtr s)
 {
 	cvs::string host;
+#if defined( __HP_aCC ) && defined ( __ia64 )
+	host.resize(255);
+	if(gethostname(host.data(),255)==-1)
+#else
 	if(!s->gethostname(host))
+#endif
 	{
-		DEBUG("GetNameInfo failed: %s\n",s->error());
+#if defined( __HP_aCC ) && defined ( __ia64 )
+		DEBUG("gethostname (HP) failed: %s\n",strerror(errno));
+#else
+		DEBUG("gethostname failed: %s\n",s->error());
+#endif
 		return false;
 	}
 
@@ -278,7 +282,7 @@ bool OpenLockClient(CSocketIOPtr s)
 	}
 
 
-	s->printf("CVSLock 2.2 Ready\n");
+	s->printf("CVSLock 2.21 Ready\n");
 
 	return true;
 }
@@ -366,7 +370,7 @@ bool CloseLockClient(CSocketIOPtr s)
 // Lock commands:
 //
 // Client <user>'|'<root>['|'<client_host>]
-// Lock [Read] [Write] [Advisory|Full]'|'<path>['|'<branch>]
+// Lock [Read] [Write]'|'<path>['|'<branch>]
 // Unlock <LockId>
 // Version <LockId>|<Branch>
 // Monitor [C][L][V]
@@ -510,10 +514,6 @@ bool DoLock(CSocketIOPtr s,size_t client, char *param)
 			uFlags|=lfRead;
 		else if(!strcmp(flags,"Write"))
 			uFlags|=lfWrite;
-		else if(!strcmp(flags,"Advisory"))
-			uFlags|=lfAdvisory;
-		else if(!strcmp(flags,"Full"))
-			uFlags|=lfFull;
 		else
 		{
 			s->printf("001 FAIL Unknown flag '%s'\n",flags);
@@ -539,7 +539,7 @@ bool DoLock(CSocketIOPtr s,size_t client, char *param)
 	{
 		VersionMapType ver;
 		size_t newId = ++global_lockId;
-		if(((uFlags&lfFull) && (uFlags&lfRead)) || (uFlags&lfWrite))
+		if(((uFlags&lfRead)) || (uFlags&lfWrite))
 		{
 			TransactionListType::const_iterator i = std::find(TransactionList.begin(), TransactionList.end(), path);
 			if(i!=TransactionList.end())
@@ -824,30 +824,16 @@ bool request_lock(size_t client, const char *path, unsigned flags, size_t& lock_
 
 		if((locklen==pathlen && !strcmp(path,i->second.path.c_str())))
 		{
-			// Locks are as follows:
-			// max. 1 advisory write lock, any number of concurrent advisory read locks.
-			// max. 1 full write lock cannot be shared with any read locks
-			// any number of advisory read locks (provided it doesn't clash with a full write)
-			// any number of full read locks (provided it doesn't clash with a full write)
-
-			// As a special concession allow the same user to add multiple locks
-
-			if(flags&lfWrite) /* Trying to add write lock */
+			if(flags&lfWrite) 
 			{
-				/* Only one write lock (full or advisory) on any object */
-				if(i->second.flags&lfWrite && i->second.owner!=client)
-					break;
-				/* If there is a full read lock on any object, can't write at the moment */
-				if(((i->second.flags&(lfRead|lfFull))==(lfRead|lfFull)) && i->second.owner!=client)
+				/* Mixed Write lock only possible with the same client */
+				if(i->second.owner!=client)
 					break;
 			}
 			else /* read lock */
 			{
-				/* If there is a full or advisory write lock on this object then fail */
-				/* Because of the access patterns of CVS, we can't allow advisory write locks to allow
-				   read.  This sucks, but without large amounts of farting around with the structure
-				   there's nothing that can be done for now. */
-				if(((i->second.flags&(/*lfFull|*/lfWrite))==(/*lfFull|*/lfWrite)) && i->second.owner!=client)
+				/* If there is a write lock on this object then fail */
+				if((i->second.flags&lfWrite) && i->second.owner!=client)
 					break;
 			}
 		}

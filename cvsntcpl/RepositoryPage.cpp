@@ -142,9 +142,9 @@ BOOL CRepositoryPage::OnApply()
 
 bool CRepositoryPage::GetRootList()
 {
-	TCHAR buf[MAX_PATH],buf2[MAX_PATH],buf3[512];
+	TCHAR buf[MAX_PATH],buf2[MAX_PATH],buf3[512],buf4[512],buf5[512],buf6[512];
 	std::wstring prefix;
-	DWORD bufLen,dwVal,dwVal2;
+	DWORD bufLen,dwVal,dwVal2,dwVal3,dwVal4;
 	DWORD dwType;
 	CString tmp;
 	int drive;
@@ -237,6 +237,56 @@ bool CRepositoryPage::GetRootList()
 		else if(dwType!=REG_DWORD)
 			continue;
 
+		tmp.Format(_T("Repository%dReadWrite"),n);
+		bufLen=sizeof(dwVal);
+		if(RegQueryValueEx(g_hServerKey,tmp,NULL,&dwType,(BYTE*)&dwVal3,&bufLen))
+		{
+			dwVal3=1;
+			bModified = true;
+		}
+		else if(dwType!=REG_DWORD)
+			continue;
+
+		tmp.Format(_T("Repository%dType"),n);
+		bufLen=sizeof(dwVal);
+		if(RegQueryValueEx(g_hServerKey,tmp,NULL,&dwType,(BYTE*)&dwVal4,&bufLen))
+		{
+			dwVal4=1;
+			bModified = true;
+		}
+		else if(dwType!=REG_DWORD)
+			continue;
+
+		tmp.Format(_T("Repository%dRemoteServer"),n);
+		bufLen=sizeof(buf4);
+		if(RegQueryValueEx(g_hServerKey,tmp,NULL,&dwType,(BYTE*)buf4,&bufLen))
+		{
+			buf4[0]='\0';
+			bModified = true;
+		}
+		else if(dwType!=REG_SZ)
+			continue;
+
+		tmp.Format(_T("Repository%dRemoteRepository"),n);
+		bufLen=sizeof(buf5);
+		if(RegQueryValueEx(g_hServerKey,tmp,NULL,&dwType,(BYTE*)buf5,&bufLen))
+		{
+			buf5[0]='\0';
+			bModified = true;
+		}
+		else if(dwType!=REG_SZ)
+			continue;
+
+		tmp.Format(_T("Repository%dRemotePassphrase"),n);
+		bufLen=sizeof(buf6);
+		if(RegQueryValueEx(g_hServerKey,tmp,NULL,&dwType,(BYTE*)buf6,&bufLen))
+		{
+			buf6[0]='\0';
+			bModified = true;
+		}
+		else if(dwType!=REG_SZ)
+			continue;
+
 		RootStruct r;
 		r.root = buf;
 		r.name = buf2;
@@ -244,7 +294,12 @@ bool CRepositoryPage::GetRootList()
 		r.publish = dwVal?true:false;
 		r.isdefault = dwVal2?true:false;
 		r.online = dwVal2?true:false;
+		r.readwrite = dwVal3?true:false;
+		r.type = (int)dwVal4;
 		r.valid = true;
+		r.remote_server = buf4;
+		r.remote_repository = buf5;
+		r.remote_passphrase = buf6;
 
 		m_Roots.push_back(r);
 	}
@@ -279,8 +334,8 @@ void CRepositoryPage::DrawRootList()
 
 void CRepositoryPage::RebuildRootList()
 {
-	std::wstring path,alias,desc,name;
-	DWORD pub,def,onl;
+	std::wstring path,alias,desc,name,rem_serv,rem_repos,rem_pass;
+	DWORD pub,def,onl,rw,ty;
 	TCHAR tmp[64];
 	int j;
 	size_t n;
@@ -309,6 +364,11 @@ void CRepositoryPage::RebuildRootList()
 		pub=m_Roots[n].publish?1:0;
 		def=m_Roots[n].isdefault?1:0;
 		onl=m_Roots[n].online?1:0;
+		rw=m_Roots[n].readwrite?1:0;
+		ty=m_Roots[n].type;
+		rem_serv=m_Roots[n].remote_server;
+		rem_repos=m_Roots[n].remote_repository;
+		rem_pass=m_Roots[n].remote_passphrase;
 		if(m_Roots[n].valid)
 		{
 			_sntprintf(tmp,sizeof(tmp),_T("Repository%d"),j);
@@ -323,6 +383,16 @@ void CRepositoryPage::RebuildRootList()
 			RegSetValueEx(g_hServerKey,tmp,NULL,REG_DWORD,(BYTE*)&def,sizeof(DWORD));
 			_sntprintf(tmp,sizeof(tmp),_T("Repository%dOnline"),j);
 			RegSetValueEx(g_hServerKey,tmp,NULL,REG_DWORD,(BYTE*)&onl,sizeof(DWORD));
+			_sntprintf(tmp,sizeof(tmp),_T("Repository%dReadWrite"),j);
+			RegSetValueEx(g_hServerKey,tmp,NULL,REG_DWORD,(BYTE*)&rw,sizeof(DWORD));
+			_sntprintf(tmp,sizeof(tmp),_T("Repository%dType"),j);
+			RegSetValueEx(g_hServerKey,tmp,NULL,REG_DWORD,(BYTE*)&ty,sizeof(DWORD));
+			_sntprintf(tmp,sizeof(tmp),_T("Repository%dRemoteServer"),j);
+			RegSetValueEx(g_hServerKey,tmp,NULL,REG_SZ,(BYTE*)rem_serv.c_str(),(rem_serv.length()+1)*sizeof(TCHAR));
+			_sntprintf(tmp,sizeof(tmp),_T("Repository%dRemoteRepository"),j);
+			RegSetValueEx(g_hServerKey,tmp,NULL,REG_SZ,(BYTE*)rem_repos.c_str(),(rem_repos.length()+1)*sizeof(TCHAR));
+			_sntprintf(tmp,sizeof(tmp),_T("Repository%dRemotePassphrase"),j);
+			RegSetValueEx(g_hServerKey,tmp,NULL,REG_SZ,(BYTE*)rem_pass.c_str(),(rem_pass.length()+1)*sizeof(TCHAR));
 			j++;
 		}
 	}
@@ -337,6 +407,7 @@ void CRepositoryPage::RebuildRootList()
 
 void CRepositoryPage::OnAddroot() 
 {
+	CCrypt cr;
 	CNewRootDialog dlg;
 	if(m_szInstallPath.GetLength())
 		dlg.m_szInstallPath=m_szInstallPath+"\\";
@@ -347,14 +418,19 @@ void CRepositoryPage::OnAddroot()
 		r.name=dlg.m_szName;
 		r.root=dlg.m_szRoot;
 		r.description=dlg.m_szDescription;
-		r.publish=dlg.m_bPublish?true:false;
-		r.online=dlg.m_bOnline?true:false;
+		r.publish=dlg.m_bPublish;
+		r.online=dlg.m_bOnline;
+		r.readwrite=dlg.m_bReadWrite;
+		r.type=dlg.m_nType;
+		r.remote_server=dlg.m_szRemoteServer;
+		r.remote_repository=dlg.m_szRemoteRepository;
+		r.remote_passphrase=cvs::wide(cr.crypt(cvs::narrow(dlg.m_szRemotePassphrase)));
 		if(dlg.m_bDefault)
 		{
 			for(size_t n=0; n<m_Roots.size(); n++)
 				m_Roots[n].isdefault = false;
 		}
-		r.isdefault=dlg.m_bDefault?true:false;
+		r.isdefault=dlg.m_bDefault;
 		m_Roots.push_back(r);
 
 		DrawRootList();
@@ -375,6 +451,7 @@ void CRepositoryPage::OnDeleteroot()
 
 void CRepositoryPage::OnEditroot()
 {
+	CCrypt cr;
 	int nSel = GetListSelection(m_listRoot);
 
 	if(nSel<0) return;
@@ -386,22 +463,33 @@ void CRepositoryPage::OnEditroot()
 	dlg.m_szName = r.name.c_str();
 	dlg.m_szRoot = r.root.c_str();
 	dlg.m_szDescription = r.description.c_str();
-	dlg.m_bPublish = r.publish?TRUE:FALSE;
-	dlg.m_bDefault = r.isdefault?TRUE:FALSE;
-	dlg.m_bOnline = r.online?TRUE:FALSE;
+	dlg.m_bPublish = r.publish;
+	dlg.m_bDefault = r.isdefault;
+	dlg.m_bOnline = r.online;
+	dlg.m_bReadWrite = r.readwrite;
+	dlg.m_nType = r.type;
+	dlg.m_szRemoteServer = r.remote_server.c_str();
+	dlg.m_szRemoteRepository = r.remote_repository.c_str();
+	dlg.m_szRemotePassphrase = L"!!passphrase!!";
 	if(dlg.DoModal()==IDOK)
 	{
 		r.name=dlg.m_szName;
 		r.root=dlg.m_szRoot;
 		r.description=dlg.m_szDescription;
-		r.publish=dlg.m_bPublish?true:false;
-		r.online=dlg.m_bOnline?true:false;
+		r.publish=dlg.m_bPublish;
+		r.online=dlg.m_bOnline;
+		r.readwrite=dlg.m_bReadWrite;
+		r.type=dlg.m_nType;
+		r.remote_server=dlg.m_szRemoteServer;
+		r.remote_repository=dlg.m_szRemoteRepository;
+		if(dlg.m_szRemotePassphrase!=L"!!passphrase!!")
+			r.remote_passphrase=cvs::wide(cr.crypt(cvs::narrow(dlg.m_szRemotePassphrase)));
 		if(dlg.m_bDefault)
 		{
 			for(size_t n=0; n<m_Roots.size(); n++)
 				m_Roots[n].isdefault = false;
 		}
-		r.isdefault=dlg.m_bDefault?true:false;
+		r.isdefault=dlg.m_bDefault;
 		DrawRootList();
 		SetModified();
 	}

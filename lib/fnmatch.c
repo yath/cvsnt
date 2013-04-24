@@ -30,9 +30,16 @@
  * SUCH DAMAGE.
  */
 
+#include <config.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <string.h>
+#ifdef HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
+#ifdef HAVE_INTTYPES_H
+#include <inttypes.h>
+#endif
 
 #include "fnmatch.h"
 

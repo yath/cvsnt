@@ -5,6 +5,7 @@
  * You may distribute under the terms of the GNU General Public License as
  * specified in the README file that comes with the CVS source distribution.
  */
+#include "../version.h"
 
 #include "cvs.h"
 #include "getline.h"
@@ -29,7 +30,7 @@ int reread_log_after_verify = 0; /* Default to old behaviour */
 struct rcsinfo_param_t
 {
 	const char *directory;
-	const char **message;
+	const char *message;
 };
 
 struct verifymsg_param_t
@@ -268,8 +269,8 @@ again:
 		TRACE(3,"run rcsinfo trigger");
 		if(!run_trigger(&args,rcsinfo_proc) && args.message)
 		{
-			fprintf(fp,"%s",*args.message);
-			if ((*args.message)[0] == '\0' || (*args.message)[strlen(*args.message) - 1] != '\n')
+			fprintf(fp,"%s",args.message);
+			if (args.message[0] == '\0' || args.message[strlen(args.message) - 1] != '\n')
 				fprintf (fp, "\n");
 		}
 	}
@@ -309,6 +310,17 @@ again:
 	}
 
 	fprintf (fp,"%s----------------------------------------------------------------------\n",CVSEDITPREFIX);
+#ifdef _WIN32
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+	if (strcasecmp(CVSNT_SPECIAL_BUILD,"Suite")!=0)
+#endif
+	{
+	fprintf (fp,"%s     Committed on the Free edition of March Hare Software CVSNT Server\n",CVSEDITPREFIX);
+	fprintf (fp,"%s     Upgrade to CVS Suite for more features and support:\n",CVSEDITPREFIX);
+	fprintf (fp,"%s           http://march-hare.com/cvsnt/\n",CVSEDITPREFIX);
+	fprintf (fp,"%s----------------------------------------------------------------------\n",CVSEDITPREFIX);
+    }
+#endif
 	fprintf (fp,"%sEnter Log.  Lines beginning with `%.*s' are removed automatically\n%s\n",
 				CVSEDITPREFIX, CVSEDITPREFIXLEN, CVSEDITPREFIX,CVSEDITPREFIX);
 	if (dir != NULL && *dir)
@@ -430,6 +442,7 @@ int do_verify (char **message, const char *repository)
     char *fname = NULL;
     int retcode = 0;
     int len;
+	char boughtsuite[100];
 
     if (current_parsed_root->isremote)
 	/* The verification will happen on the server.  */
@@ -490,6 +503,27 @@ int do_verify (char **message, const char *repository)
 				if (fclose (fp) == EOF)
 	    				error (1, errno, "Couldn't close %s", fname);
 			}
+#ifdef _WIN32
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+	if (strcasecmp(CVSNT_SPECIAL_BUILD,"Suite")!=0)
+#endif
+	{
+			if (message!=NULL)
+			{
+				if (strstr(*message,"Committed on the Free edition of March Hare Software CVSNT")==NULL)
+				{
+				    if(CGlobalSettings::GetGlobalValue("cvsnt","PServer","HaveBoughtSuite",boughtsuite,sizeof(boughtsuite)))
+						strcpy(boughtsuite,"no");
+					if (strcasecmp(boughtsuite,"yes"))
+					{
+						len=strlen(*message);
+						*message=(char *)xrealloc(*message,len+400);
+						strcat(*message,"\nCommitted on the Free edition of March Hare Software CVSNT Server.\nUpgrade to CVS Suite for more features and support:\nhttp://march-hare.com/cvsnt/");
+					}
+				}
+			}
+    }
+#endif
 		}
 
 		/* Delete the temp file  */
@@ -514,7 +548,7 @@ static int rcsinfo_proc(void *params, const trigger_interface *cb)
 	TRACE(1,"rcsinfo_proc(%s)",PATCH_NULL(args->directory));
 	if(cb->get_template)
 	{
-		ret = cb->get_template(cb,args->directory,args->message);
+		ret = cb->get_template(cb,args->directory,&args->message);
 	}
 	return ret;
 }

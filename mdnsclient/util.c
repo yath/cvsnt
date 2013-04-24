@@ -18,6 +18,12 @@
   USA.
 ***/
 
+#ifdef _WIN32
+// Microsoft braindamage reversal. 
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#endif
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif

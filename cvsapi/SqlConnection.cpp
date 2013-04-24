@@ -21,116 +21,50 @@
 #include "ServerIO.h"
 #include "SqlConnection.h"
 #include "LibraryAccess.h"
+#include "DirectoryAccess.h"
 
-#ifdef _WIN32
-#define STATIC_DB /* We can use late binding in Win32 to be more efficient */
-#else
-#undef STATIC_DB
-#endif
-
-extern "C" CSqlConnection *SQLite_Alloc();
-extern "C" CSqlConnection *MySql_Alloc();
-extern "C" CSqlConnection *Postgres_Alloc();
-extern "C" CSqlConnection *Odbc_Alloc();
-extern "C" CSqlConnection *Mssql_Alloc();
-extern "C" CSqlConnection *Firebird_Alloc();
-extern "C" CSqlConnection *Db2_Alloc();
-
-CSqlConnection* CSqlConnection::Alloc(SqlConnectionType type, const char *dir)
+CSqlConnection* CSqlConnection::CreateConnection(const char *db, const char *dir)
 {
-#ifdef STATIC_DB
-	switch(type)
-	{
-#ifdef HAVE_SQLITE
-	case sqtSqlite:
-		CServerIo::trace(3,"Connecting to SQLite");
-		return SQLite_Alloc();
-#endif
-#ifdef HAVE_MYSQL
-	case sqtMysql:
-		CServerIo::trace(3,"Connecting to MySql");
-		return MySql_Alloc();
-#endif
-#ifdef HAVE_POSTGRES
-	case sqtPostgres:
-		CServerIo::trace(3,"Connecting to Postgres");
-		return Postgres_Alloc();
-#endif
-#ifdef HAVE_ODBC
-	case sqtOdbc:
-		CServerIo::trace(3,"Connecting to Odbc");
-		return Odbc_Alloc();
-#endif
-#ifdef HAVE_MSSQL
-	case sqtMssql:
-		CServerIo::trace(3,"Connecting to MS-Sql");
-		return Mssql_Alloc();
-#endif
-#ifdef HAVE_FIREBIRD
-	case sqtFirebird:
-		CServerIo::trace(3,"Connecting to Firebird");
-		return Firebird_Alloc();
-#endif
-#ifdef HAVE_DB2
-	case sqtDb2:
-		CServerIo::trace(3,"Connecting to DB2");
-		return Db2_Alloc();
-#endif
-	default:
-		return NULL;
-	}
-#else /* not STATIC_DB */
 	CLibraryAccess la;
 	CSqlConnection* (*pNewSqlConnection)() = NULL;
 
-	switch(type)
-	{
-	case sqtSqlite:
-		CServerIo::trace(3,"Connecting to SQLite");
-		if(!la.Load("sqlite"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewSqlConnection = (CSqlConnection*(*)())la.GetProc("SQLite_Alloc");
-		break;
-	case sqtMysql:
-		CServerIo::trace(3,"Connecting to MySql");
-		if(!la.Load("mysql"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewSqlConnection = (CSqlConnection*(*)())la.GetProc("MySql_Alloc");
-		break;
-	case sqtPostgres:
-		CServerIo::trace(3,"Connecting to Postgres");
-		if(!la.Load("postgres"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewSqlConnection = (CSqlConnection*(*)())la.GetProc("Postgres_Alloc");
-		break;
-	case sqtOdbc:
-		CServerIo::trace(3,"Connecting to Odbc");
-		if(!la.Load("odbc"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewSqlConnection = (CSqlConnection*(*)())la.GetProc("Odbc_Alloc");
-		break;
-	case sqtMssql:
-		return NULL; // Win32 only (which is normally static)
-	case sqtFirebird:
-		CServerIo::trace(3,"Connecting to Firebird");
-		if(!la.Load("firebird"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewSqlConnection = (CSqlConnection*(*)())la.GetProc("Firebird_Alloc");
-		break;
-	case sqtDb2:
-		CServerIo::trace(3,"Connecting to DB2");
-		if(!la.Load("db2"SHARED_LIBRARY_EXTENSION,dir))
-			return false;
-		pNewSqlConnection = (CSqlConnection*(*)())la.GetProc("Db2_Alloc");
-		break;
-	default:
-		return NULL;
-	}
+	cvs::string name;
+
+	name = db;
+	name += SHARED_LIBRARY_EXTENSION;
+
+	CServerIo::trace(3,"Connecting to %s",db);
+	if(!la.Load(name.c_str(),dir))
+		return false;
+	pNewSqlConnection = (CSqlConnection*(*)())la.GetProc("CreateConnection");
+
 	if(!pNewSqlConnection)
 		return NULL;
 	CSqlConnection *conn = pNewSqlConnection();
-	la.Detach(); // Add a reference so the library never unloads
+	la.Detach();
 	return conn;
-#endif
+}
+
+bool CSqlConnection::GetConnectionList(connectionList_t& list, const char *library_dir)
+{
+	CDirectoryAccess dir;
+	DirectoryAccessInfo inf;
+
+	if(!dir.open(library_dir,"*"SHARED_LIBRARY_EXTENSION))
+		return false;
+
+	list.clear();
+	while(dir.next(inf))
+	{
+		if(inf.isdir)
+			continue;
+		cvs::string fn = inf.filename.c_str();
+		fn.resize(fn.size()-sizeof(SHARED_LIBRARY_EXTENSION)+1);
+		list.resize(list.size()+1);
+		list[list.size()-1].first = fn; // DLL Name
+		list[list.size()-1].second = fn; // Title - to be implemented later
+	}
+	dir.close();
+	return true;
 }
 

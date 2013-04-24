@@ -43,7 +43,7 @@ encodeAppleSingle( const char * inFile, const char * outFile, long wantedEntries
 #define AS_MAGIC_NUM	0x00051600	/* Magic start of the file */
 
 #define AS_DEFAULT_CREATOR 'MPS '
-#define AS_DEFAULT_TYPE '????'
+#define AS_DEFAULT_TYPE '\?\?\?\?'
 
 /* entryIDs */
 #define AS_DATA         1 /* data fork */

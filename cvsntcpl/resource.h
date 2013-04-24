@@ -39,10 +39,16 @@
 #define IDC_REMOTEINIT                  1036
 #define IDD_PAGE7                       1037
 #define IDC_ENABLEZEROCONF              1038
+#define IDD_PAGE4                       1038
 #define IDC_ATOMICCHECKOUTS             1039
+#define IDD_DIALOG1                     1040
+#define IDC_GLOBALSCRIPT                1041
 #define IDC_EDIT1                       2002
 #define IDC_CHANGETEMP                  2003
+#define IDC_REPOSITORY                  2003
 #define IDC_PSERVERPORT                 2004
+#define IDC_EDIT3                       2004
+#define IDC_PASSPHRASE                  2004
 #define IDC_LOCKSERVERPORT              2005
 #define IDC_PRIVATEKEY                  2006
 #define IDC_SPIN1                       2007
@@ -79,17 +85,43 @@
 #define IDC_ZEROCONF                    2038
 #define IDC_CHECK1                      2039
 #define IDC_REPLICATION                 2039
+#define IDC_READWRITE                   2039
 #define IDC_ONLINE                      2040
 #define IDC_REPLICATIONPORT             2040
 #define IDC_REPLICATIONPORT_TEXT        2041
+#define IDC_TYPE                        2042
+#define IDC_SERVER                      2043
+#define IDC_REMOTEGROUP                 2044
+#define IDC_SERVERTEXT                  2045
+#define IDC_REPOSITORYTEXT              2046
+#define IDC_PASSPHRASETEXT              2047
+#define IDC_CVSNTVERSION                2048
+#define IDC_REGISTRATION                2049
+#define IDC_HOSTOS                      2050
+#define IDC_UPTIME                      2051
+#define IDC_USERS                       2052
+#define IDC_SIMULTANEOUSUSERS           2053
+#define IDC_TIMEPERUSER                 2054
+#define IDC_SESSIONCOUNT                2055
+#define IDC_MESSAGE                     2056
+#define IDD_FREEDIALOG                  2057
+#define IDC_SYSLINK1                    2058
+#define IDC_SYSLINK2                    2059
+#define IDC_SYSLINK3                    2060
+#define IDC_SYSLINK4                    2061
+#define IDC_SYSLINK5                    2062
+#define IDC_SYSLINK6                    2063
+#define IDC_FREEOPT1                    2064
+#define IDC_FREEOPT2                    2065
+#define IDC_FREEOPT3                    2066
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        1038
+#define _APS_NEXT_RESOURCE_VALUE        1042
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         2042
+#define _APS_NEXT_CONTROL_VALUE         2067
 #define _APS_NEXT_SYMED_VALUE           1000
 #endif
 #endif

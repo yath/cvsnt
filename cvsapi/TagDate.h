@@ -1,5 +1,5 @@
 /*
-	CVSNT Generic API
+    CVSNT Generic API
     Copyright (C) 2004 Tony Hoyle and March-Hare Software Ltd
 
     This library is free software; you can redistribute it and/or
@@ -64,7 +64,7 @@ protected:
 	time_t m_date;
 	cvs::string m_dateText;
 
-	void GenerateDateText();
+	CVSAPI_EXPORT void GenerateDateText();
 };
 
 class CTagDate

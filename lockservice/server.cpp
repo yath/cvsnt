@@ -95,10 +95,23 @@ static void *thread_proc(void* param)
 static void _mdns_thread_proc(void* param)
 {
 	int nResp;
-	CMdnsHelperBase::mdnsType eResp = CMdnsHelperBase::mdnsDefault;
+	const char *pResp = NULL;
+	char szResp[64];
 	char serverName[256];
 
-  	if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderType",nResp))
+	if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderName",szResp,sizeof(szResp)))
+	{
+		pResp = szResp;
+		if(!strcmp(pResp,"none"))
+		{
+			if(g_bTestMode)
+				printf("mdns disabled\n");
+			return;
+		}
+		if(!strcmp(pResp,"default"))
+			pResp = NULL;
+	} // Old responder type
+  	else if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderType",nResp))
 	{
 		switch(nResp)
 		{
@@ -107,31 +120,29 @@ static void _mdns_thread_proc(void* param)
 				printf("mdns disabled\n");
 			return;
 		case 1:
-			eResp = CMdnsHelperBase::mdnsMini;
-			if(g_bTestMode)
-				printf("Using internal mdns Responder\n");
+			pResp = "mini";
 			break;
 		case 2:
-			eResp = CMdnsHelperBase::mdnsApple;
-			if(g_bTestMode)
-				printf("Using Apple mdns Responder\n");
+			pResp = "apple";
 			break;
 		case 3:
-			eResp = CMdnsHelperBase::mdnsHowl;
-			if(g_bTestMode)
-				printf("Using Howl mdns Responder\n");
+			pResp = "howl";
 			break;
 		default:
-			eResp = CMdnsHelperBase::mdnsMini;
-			if(g_bTestMode)
-				printf("Using internal mdns Responder\n");
+			pResp = "mini";
 			break;
 		}
+	}
+
+	if(!pResp)
+	{
+		if(g_bTestMode)
+			printf("Using default mdns Responder\n");
 	}
 	else
 	{
 		if(g_bTestMode)
-			printf("Using default mdns Responder\n");
+			printf("Using %s mdns Responder\n",pResp);
 	}
 
 	if(CGlobalSettings::GetGlobalValue("cvsnt","PServer","ServerName",serverName,sizeof(serverName)))
@@ -145,7 +156,7 @@ static void _mdns_thread_proc(void* param)
 			strcpy(serverName,"unknown");
 	}
 
-	CMdnsHelperBase *mdns = CMdnsHelperBase::Alloc(eResp,CGlobalSettings::GetLibraryDirectory(CGlobalSettings::GLDMdns));
+	CMdnsHelperBase *mdns = CMdnsHelperBase::CreateHelper(pResp,CGlobalSettings::GetLibraryDirectory(CGlobalSettings::GLDMdns));
 
 	if(mdns && !mdns->open())
 	{
@@ -222,14 +233,19 @@ void run_server(int port, int seq, int local_only)
 	CSocketIO listen_sock;
     char szLockServer[64];
 	int nResp;
+	char szResp[64];
 
 	m_port = port;
 
 #ifdef HAVE_MDNS
-    if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderType",nResp))
+	use_mdns = true;
+	if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderName",szResp,sizeof(szResp)))
+	{
+		if(!strcmp(szResp,"none"))
+			use_mdns = false;
+	} // Old responder type
+    else if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderType",nResp))
 		use_mdns = nResp?true:false;
-	else
-		use_mdns = true;
 #endif
 
 	sprintf(szLockServer,"%d",m_port);
@@ -238,12 +254,30 @@ void run_server(int port, int seq, int local_only)
 	{
 		printf("Initialising socket...\n");
 	}
+#if defined( __HP_aCC ) && defined ( __ia64 )
+	if(!listen_sock.create("127.0.0.1",szLockServer,local_only?true:false))
+#else
 	if(!listen_sock.create(NULL,szLockServer,local_only?true:false))
+#endif
 	{
 		if(g_bTestMode)
-			printf("Couldn't create listening socket... %s",listen_sock.error());
+		{
+			printf("Couldn't create listening socket... %s\n",listen_sock.error());
+#if defined( __HP_aCC )
+			printf("HP: Try and listen on 127.0.0.1 instead\n");
+#endif
+		}
+#if defined( __HP_aCC ) 
+		CServerIo::log(CServerIo::logError,"HP: Try and listen on 127.0.0.1 instead");
+		if(!listen_sock.create("127.0.0.1",szLockServer,local_only?true:false))
+		{
+		printf("Couldn't create listening socket there either... %s\n",listen_sock.error());
+#endif
 		CServerIo::log(CServerIo::logError,"Failed to create listening socket: %s",listen_sock.error());
 		return;
+#if defined( __HP_aCC ) 
+		}
+#endif
 	}
 
 #ifdef _WIN32

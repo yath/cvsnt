@@ -36,6 +36,7 @@ enum
 	elemPort	 = 0x0008,
 	elemTunnel	 = 0x0010,
 
+	flagSystem = 0x4000,
 	flagAlwaysEncrypted = 0x8000
 };
 
@@ -74,6 +75,10 @@ struct protocol_interface
 	char *auth_username;
 	char *auth_password;
 	char *auth_repository;
+	char *auth_proxyname; /* For proxies, override the local repository name */
+	char *auth_optional_1;
+	char *auth_optional_2;
+	char *auth_optional_3;
 };
 
 enum proto_type

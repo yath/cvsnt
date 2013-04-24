@@ -16,6 +16,13 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 #ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
+
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define _WIN32_WINNT 0x0400
 #include <windows.h>
@@ -190,7 +197,7 @@ namespace
 		return ret;
 	}
 
-	int COM_postcommand(const struct trigger_interface_t* cb, const char *directory)
+	int COM_postcommand(const struct trigger_interface_t* cb, const char *directory, int return_code)
 	{
 		CTriggerLibrary::trigger_info_t *inf = (CTriggerLibrary::trigger_info_t*)cb->plugin.__cvsnt_reserved;
 		CTriggerLibrary::InfoStruct *i = &inf->is;
@@ -340,7 +347,7 @@ const trigger_interface *CTriggerLibrary::LoadTrigger(const char *library, const
 		/* COM filter */
 		CLSID id;
 		wchar_t str[128];
-		char *p = strchr(library,'}');
+		const char *p = strchr(library,'}');
 		if(!p)
 			return 0;
 
@@ -413,15 +420,7 @@ const trigger_interface *CTriggerLibrary::LoadTrigger(const char *library, const
 		cvs::filename fn;
 
 		if(!lib.Load(library,CGlobalSettings::GetLibraryDirectory(CGlobalSettings::GLDTriggers)))
-		{
-#ifdef _WIN32
-			DWORD dwErr = GetLastError();
-			CServerIo::trace(3,"Unable to load %s: error 0x%08x",dwErr);
-#else
-			CServerIo::trace(3,"Unable to load %s: error %d",errno);
-#endif
 			return NULL;
-		}
 
 		get_plugin_interface_t pCvsInfo = (get_plugin_interface_t)lib.GetProc("get_plugin_interface");
 		if(!pCvsInfo)
@@ -476,6 +475,7 @@ const trigger_interface *CTriggerLibrary::LoadTrigger(const char *library, const
 	{
 		if(cb->init)
 		{
+			CServerIo::trace(3,"call library init with physical_repository=%s.",physical_repository);
 			if(cb->init(cb, command, date, hostname, username, virtual_repository, physical_repository, sessionid, editor, count_uservar, uservar, userval, client_version, character_set))
 			{
 				trigger_info_t *inf = (trigger_info_t *)cb->plugin.__cvsnt_reserved;

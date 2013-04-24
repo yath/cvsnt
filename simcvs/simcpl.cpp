@@ -17,13 +17,14 @@
 */
 #define WIN32_LEAN_AND_MEAN
 #define STRICT
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <cpl.h>
+#include <tchar.h>
 
-extern "C" BOOL WINAPI _DllMainCRTStartup(HANDLE hDll, DWORD dwReason, LPVOID lpReserved)
-{
-	return TRUE;
-}
+#define PATH_SIZE 10240
 
 extern "C" LONG WINAPI CPlApplet(HWND hwndCPl, UINT uMsg, LPARAM lParam1, LPARAM lParam2)
 {
@@ -34,34 +35,64 @@ extern "C" LONG WINAPI CPlApplet(HWND hwndCPl, UINT uMsg, LPARAM lParam1, LPARAM
 
 	if(uMsg == CPL_INIT)
 	{
-		HKEY hKey;
-		static TCHAR szCvs[1024],szPath[1024];
+		HKEY hKeyLocal,hKeyGlobal;
+		TCHAR InstallPath[1024],SearchPath[2048],Env[10240];
 		DWORD dwLen,dwType;
 
-		if(RegOpenKeyEx(HKEY_LOCAL_MACHINE,L"SOFTWARE\\CVS\\Pserver",0,KEY_QUERY_VALUE,&hKey))
-			return 0;
+		if(RegOpenKeyEx(HKEY_LOCAL_MACHINE,L"Software\\CVS\\PServer",0,KEY_QUERY_VALUE,&hKeyGlobal))
+			hKeyGlobal = NULL;
 
-		dwLen=sizeof(szCvs);
-		if(RegQueryValueEx(hKey,L"InstallPath",NULL,&dwType,(LPBYTE)szCvs,&dwLen))
+		if(RegOpenKeyEx(HKEY_CURRENT_USER,L"Software\\Cvsnt\\PServer",0,KEY_QUERY_VALUE,&hKeyLocal))
+			hKeyLocal = NULL;
+
+		dwLen=sizeof(InstallPath);
+		if(RegQueryValueEx(hKeyGlobal,L"InstallPath",NULL,&dwType,(LPBYTE)InstallPath,&dwLen) &&
+			RegQueryValueEx(hKeyLocal,L"InstallPath",NULL,&dwType,(LPBYTE)InstallPath,&dwLen))
 		{
-			RegCloseKey(hKey);
-			return 0;
+			InstallPath[0]='\0';
 		}
-		RegCloseKey(hKey);
+
+		dwLen=sizeof(SearchPath);
+		if(RegQueryValueEx(hKeyGlobal,L"SearchPath",NULL,&dwType,(LPBYTE)SearchPath,&dwLen) &&
+			RegQueryValueEx(hKeyLocal,L"SearchPath",NULL,&dwType,(LPBYTE)SearchPath,&dwLen))
+		{
+			SearchPath[0]='\0';
+		}
+		RegCloseKey(hKeyGlobal);
+		RegCloseKey(hKeyLocal);
 		
-		// LOAD_WITH_ALTERED_SEARCH_PATH is buggy, and SetDllDirectory is XP only
-		GetCurrentDirectory(sizeof(szPath),szPath);
-		SetCurrentDirectory(szCvs);
-		hCpl = LoadLibrary(L"cvsnt.cpl");
-		SetCurrentDirectory(szPath);
+		_tcscpy(Env,InstallPath);
+		_tcscat(Env,_T(";"));
+		_tcscat(Env,SearchPath);
+		_tcscat(Env,_T(";"));
+
+		GetEnvironmentVariable(_T("Path"),Env+_tcslen(Env),sizeof(Env));
+		SetEnvironmentVariable(_T("Path"),Env);
+
+		_tcscpy(InstallPath,_T("cvsntcpl.cpl"));
+		//GetModuleFileName(NULL,InstallPath,sizeof(InstallPath));
+		if(!_tcsicmp(InstallPath+_tcslen(InstallPath)-4,_T(".cpl")))
+			_tcscpy(InstallPath+_tcslen(InstallPath)-4,_T(".dll"));
+		else
+			_tcscat(InstallPath,_T(".dll"));
+
+		hCpl = LoadLibraryEx(InstallPath,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
 
 		if(!hCpl)
-			return 0;
+		{
+			swprintf(Env,1024,L"Couldn't load control panel %s",InstallPath);
+			MessageBox(NULL,Env,L"Control Panel",MB_ICONSTOP|MB_OK);
+			return -1;
+		}
 
 		pCPlApplet=(LONG (WINAPI*)(HWND, UINT, LPARAM, LPARAM))GetProcAddress(hCpl,"CPlApplet");
 
 		if(!pCPlApplet)
-			return 0;
+		{
+			swprintf(Env,1024,L"Couldn't find CPLApplet in control panel %s",InstallPath);
+			MessageBox(NULL,Env,L"Control Panel",MB_ICONSTOP|MB_OK);
+			return -1;
+		}
 	}
 
 	if(uMsg == CPL_NEWINQUIRE && (info.idIcon || info.idInfo || info.idName))

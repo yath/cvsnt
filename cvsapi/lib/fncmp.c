@@ -17,6 +17,7 @@
 */
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "api_system.h"
 #include "fncmp.h"

@@ -25,8 +25,8 @@
 extern "C" {
 #endif
 
-void mac_decode_file (char *infile, char *outfile, int binary);
-void mac_encode_file (char *infile, char *outfile, int binary);
+void mac_decode_file (const char *infile, char *outfile, int binary);
+void mac_encode_file (const char *infile, char *outfile, int binary);
 
 #ifdef __cplusplus
 }

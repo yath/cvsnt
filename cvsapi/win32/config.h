@@ -9,9 +9,6 @@
 /* Define if connect is supported */
 #define HAVE_CONNECT
 
-/* Define if crypt is supported */
-#define HAVE_CRYPT
-
 /* Define to 1 if you have the `daemon' function. */
 #undef HAVE_DAEMON
 
@@ -468,9 +465,6 @@
 /* Define as `fork' if `vfork' does not work. */
 #undef vfork
 
-/* Define if using PCRE */
-#define HAVE_PCRE
-
 /* Define if using sqlite */
 #define HAVE_SQLITE3_H
 
@@ -480,8 +474,14 @@
 #define HAVE_POSTGRES
 #define HAVE_ODBC
 #define HAVE_DB2
-#define HAVE_HOWL_H
 #define HAVE_DNS_SD_H
 #define HAVE_MSSQL
 #define HAVE_LIBICONV_OPEN
 #define HAVE_MDNS
+
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif

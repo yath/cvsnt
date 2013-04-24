@@ -1,14 +1,20 @@
 -- DB2 specific configuration script
 
+Create Table %PREFIX%SchemaVersion (Version Integer);
+
+Insert Into %PREFIX%SchemaVersion (Version) Values (3);
+
 Create Table %PREFIX%SessionLog (Id Integer Generated Always As Identity Primary Key,
 	Command varchar(32),
-	Date Timestamp,
+	StartTime Timestamp,
+	EndTime Timestamp,
 	Hostname varchar(256),
 	Username varchar(256),
 	SessionId varchar(32),
 	VirtRepos varchar(256),
 	PhysRepos varchar(256),
-	Client varchar(64));
+	Client varchar(64),
+	FinalReturnCode Integer);
 
 Create Table %PREFIX%CommitLog (Id Integer Generated Always As Identity Primary Key,
 	SessionId Integer,

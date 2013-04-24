@@ -125,7 +125,7 @@ int chowner (int argc, char **argv)
 		err = start_recursion ((FILEPROC) NULL, (FILESDONEPROC) NULL,
 					(PREDIRENTPROC) NULL, chown_dirproc, (DIRLEAVEPROC) NULL, NULL,
 					argc, argv, local,
-					W_LOCAL, 0, 1, (char *) NULL, NULL, 1, verify_control);
+					W_LOCAL, 0, 1, (char *) NULL, NULL, 1, verify_control, NULL);
 	}
    return (err);
 }
@@ -166,7 +166,7 @@ static int rchown_proc(int argc, char **argv, const char *xwhere,
 	    char *path;
 
 	    /* if the portion of the module is a path, put the dir part on repos */
-	    if ((cp = strrchr (mfile, '/')) != NULL)
+	    if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 	    {
 		*cp = '\0';
 		(void) strcat (repository, "/");
@@ -212,7 +212,7 @@ static int rchown_proc(int argc, char **argv, const char *xwhere,
     err = start_recursion (NULL, (FILESDONEPROC) NULL, (PREDIRENTPROC) NULL, chown_dirproc,
 			   (DIRLEAVEPROC) NULL, NULL,
 			   argc - 1, argv + 1, local_specified, W_REPOS, 0, 1,
-			   where, mapped_repository, 1, verify_control);
+			   where, mapped_repository, 1, verify_control, NULL);
 
 	xfree (mapped_repository);
     return err;

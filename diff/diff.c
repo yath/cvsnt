@@ -27,6 +27,8 @@ GNU General Public License for more details.
 #include <io.h>
 #endif
 
+#define TRACE callbacks->cvs_trace
+
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -601,9 +603,11 @@ int diff_run (int argc, char *argv[], const char *out, const struct diff_callbac
 	  break;
 	case 143:
 		/* Set file encoding */
+		TRACE(3, "diff() - set encoding to \"%s\"",optarg);
 		encoding.encoding = strdup(optarg);
 		break;
 	case 144:
+		TRACE(3, "diff() - set BOM");
 		encoding.bom=1;
 		break;
 	default:
@@ -789,6 +793,7 @@ static char const * const option_help[] = {
 "-I RE  --ignore-matching-lines=RE  Ignore changes whose lines all match RE.",
 "--binary-input   Read data in binary mode.",
 "--binary-output  Read write data in binary mode.",
+"--bom  file(s) have a byte order mark.",
 "--encoding=NUM  Read and write as unicode type.",
 "-a  --text  Treat all files as text.\n",
 "-c  -C NUM  --context[=NUM]  Output NUM (default 2) lines of copied context.",
@@ -1251,6 +1256,8 @@ initialize_main (argcp, argvp)
   recursive = 0;
   no_discards = 0;
   binary_input = binary_output = 0;
+  encoding.encoding = NULL;
+  encoding.bom = 0;
   no_diff_means_no_output = 0;
   always_text_flag = 0;
   horizon_lines = 0;

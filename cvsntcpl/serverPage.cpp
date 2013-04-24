@@ -1,5 +1,5 @@
 /*	cvsnt control panel
-    Copyright (C) 2004-5 Tony Hoyle and March-Hare Software Ltd
+    Copyright (C) 2004-7 Tony Hoyle and March-Hare Software Ltd
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -20,10 +20,7 @@
 #include "stdafx.h"
 #include "cvsnt.h"
 #include "serverPage.h"
-#include "NewRootDialog.h"
-
-#define ServiceName _T("CVSNT")
-#define ServiceName2 _T("CVSLOCK")
+#include "UsageDialog.h"
 
 /////////////////////////////////////////////////////////////////////////////
 // CserverPage property page
@@ -31,14 +28,7 @@
 IMPLEMENT_DYNCREATE(CserverPage, CTooltipPropertyPage)
 
 CserverPage::CserverPage() : CTooltipPropertyPage(CserverPage::IDD)
-//, m_szSshStatus(_T(""))
 {
-	m_szVersion = "CVSNT " CVSNT_PRODUCTVERSION_STRING;
-	//{{AFX_DATA_INIT(CserverPage)
-	m_szStatus = _T("");
-	m_szLockStatus =_T("");
-	 //}}AFX_DATA_INIT
-	m_hService=m_hLockService=m_hSCManager=NULL;
 }
 
 CserverPage::~CserverPage()
@@ -48,28 +38,23 @@ CserverPage::~CserverPage()
 void CserverPage::DoDataExchange(CDataExchange* pDX)
 {
 	CTooltipPropertyPage::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CserverPage)
-	DDX_Control(pDX, IDC_START, m_btStart);
-	DDX_Control(pDX, IDC_STOP, m_btStop);
-	DDX_Text(pDX, IDC_VERSION, m_szVersion);
-	DDX_Text(pDX, IDC_STATUS, m_szStatus);
-	DDX_Text(pDX, IDC_STATUS2, m_szLockStatus);
-	DDX_Control(pDX, IDC_START2, m_btLockStart);
-	DDX_Control(pDX, IDC_STOP2, m_btLockStop);
-	//}}AFX_DATA_MAP
+	DDX_Control(pDX, IDC_CVSNTVERSION, m_stVersion);
+	DDX_Control(pDX, IDC_REGISTRATION, m_stRegistration);
+	DDX_Control(pDX, IDC_HOSTOS, m_stHostOs);
+	DDX_Control(pDX, IDC_UPTIME, m_stUptime);
+	DDX_Control(pDX, IDC_USERS, m_stUserCount);
+	DDX_Control(pDX, IDC_SIMULTANEOUSUSERS, m_szMaxUsers);
+	DDX_Control(pDX, IDC_TIMEPERUSER, m_stAverageTime);
+	DDX_Control(pDX, IDC_CHECK1, m_cbSendStatistics);
 	DDX_Control(pDX, IDC_LOGO, m_cbLogo);
+	DDX_Control(pDX, IDC_SESSIONCOUNT, m_stSessionCount);
 }
 
 
 BEGIN_MESSAGE_MAP(CserverPage, CTooltipPropertyPage)
-	//{{AFX_MSG_MAP(CserverPage)
-	ON_WM_TIMER()
-	ON_BN_CLICKED(IDC_START, OnStart)
-	ON_BN_CLICKED(IDC_STOP, OnStop)
-	ON_BN_CLICKED(IDC_START2, OnBnClickedStart2)
-	ON_BN_CLICKED(IDC_STOP2, OnBnClickedStop2)
-	//}}AFX_MSG_MAP
-	ON_STN_CLICKED(IDC_LOGO, OnStnClickedLogo)
+	ON_BN_CLICKED(IDC_LOGO, OnBnClickedLogo)
+	ON_BN_CLICKED(IDC_BUTTON1, OnBnClickedButton1)
+	ON_BN_CLICKED(IDC_CHECK1, OnBnClickedCheck1)
 END_MESSAGE_MAP()
 
 /////////////////////////////////////////////////////////////////////////////
@@ -78,41 +63,6 @@ END_MESSAGE_MAP()
 BOOL CserverPage::OnInitDialog() 
 {
 	CTooltipPropertyPage::OnInitDialog();
-	CString tmp;
-
-	m_hSCManager=OpenSCManager(NULL,NULL,g_bPrivileged?GENERIC_EXECUTE:GENERIC_READ);
-	if(!m_hSCManager)
-	{
-		CString tmp;
-		DWORD e=GetLastError();
-
-		if(e==5)
-		{
-			tmp.Format(_T("Couldn't open service control manager - Permission Denied"));
-			AfxMessageBox(tmp,MB_ICONSTOP);
-			GetParent()->PostMessage(WM_CLOSE);
-		}
-		else
-		{
-			tmp.Format(_T("Couldn't open service control manager - error %d"),GetLastError());
-			AfxMessageBox(tmp,MB_ICONSTOP);
-			GetParent()->PostMessage(WM_CLOSE);
-		}
-	}
-	
-	if(g_bPrivileged)
-	{
-		m_hService=OpenService(m_hSCManager,ServiceName,SERVICE_QUERY_STATUS|SERVICE_START|SERVICE_STOP);
-		m_hLockService=OpenService(m_hSCManager,ServiceName2,SERVICE_QUERY_STATUS|SERVICE_START|SERVICE_STOP);
-	}
-	else
-	{
-		m_hService=OpenService(m_hSCManager,ServiceName,SERVICE_QUERY_STATUS);
-		m_hLockService=OpenService(m_hSCManager,ServiceName2,SERVICE_QUERY_STATUS);
-	}
-
-	UpdateStatus();
-	SetTimer(0,1000,NULL);
 
 	CBitmap *pBitmap = new CBitmap;
 	pBitmap->LoadBitmap(IDB_BITMAP1);
@@ -120,168 +70,147 @@ BOOL CserverPage::OnInitDialog()
 	pBitmap->Detach();
 	delete pBitmap;
 
+	m_stVersion.SetWindowText(CVSNT_PRODUCTVERSION_STRING_T);
+	char os[256],sp[256];
+	int major,minor;
+	GetOsVersion(os,sp,major,minor);
+	sprintf(os+strlen(os)," %s [%d.%d]",sp,major,minor);
+	m_stHostOs.SetWindowText(cvs::wide(os));
+
+	union { __time64_t t; BYTE data[8]; } servtime;
+	DWORD dwLen=sizeof(servtime.data),dwType;
+	cvs::string uptime,tmp;
+	if(!RegQueryValueEx(g_hServerKey,_T("StartTime"),NULL,&dwType,servtime.data,&dwLen) && dwType==REG_BINARY)
+	{
+		__time64_t then = servtime.t,now;
+		_time64(&now);
+		if(then>now) uptime="??";
+		else
+		{
+			unsigned elapsed = (unsigned)(now-then);
+			if(elapsed>43200)
+			{
+				cvs::sprintf(tmp,32,"%u days, ",elapsed/43200);
+				elapsed-=(elapsed/43200)*43200;
+				uptime+=tmp;
+			}
+			if(elapsed>3600 || uptime.size())
+			{
+				cvs::sprintf(tmp,32,"%u hours, ",elapsed/3600);
+				elapsed-=(elapsed/3600)*3600;
+				uptime+=tmp;
+			}
+			cvs::sprintf(tmp,32,"%u minutes",elapsed/60);
+			uptime+=tmp;
+		}
+	}
+	else
+		uptime="??";
+
+	m_stUptime.SetWindowText(cvs::wide(uptime.c_str()));
+
+	DWORD dwMaxUsers;
+	dwLen=sizeof(dwMaxUsers);
+	if(!RegQueryValueEx(g_hServerKey,_T("MaxUsers"),NULL,&dwType,(LPBYTE)&dwMaxUsers,&dwLen) && dwType==REG_DWORD)
+		cvs::sprintf(tmp,32,"%u",dwMaxUsers);
+	else
+		tmp="??";
+		
+	m_szMaxUsers.SetWindowText(cvs::wide(tmp.c_str()));
+
+	DWORD dwAverageTime;
+	dwLen=sizeof(dwAverageTime);
+	if(!RegQueryValueEx(g_hServerKey,_T("AverageTime"),NULL,&dwType,(LPBYTE)&dwAverageTime,&dwLen) && dwType==REG_DWORD)
+		cvs::sprintf(tmp,32,"%u.%02u seconds",dwAverageTime/1000,(dwAverageTime%1000)/10);
+	else
+		tmp="??";
+		
+	m_stAverageTime.SetWindowText(cvs::wide(tmp.c_str()));
+
+	DWORD dwSessionCount;
+	dwLen=sizeof(dwSessionCount);
+	if(!RegQueryValueEx(g_hServerKey,_T("SessionCount"),NULL,&dwType,(LPBYTE)&dwSessionCount,&dwLen) && dwType==REG_DWORD)
+		cvs::sprintf(tmp,32,"%u",dwSessionCount);
+	else
+		tmp="??";
+		
+	m_stSessionCount.SetWindowText(cvs::wide(tmp.c_str()));
+
+	DWORD dwUserCount;
+	dwLen=sizeof(dwUserCount);
+	if(!RegQueryValueEx(g_hServerKey,_T("UserCount"),NULL,&dwType,(LPBYTE)&dwUserCount,&dwLen) && dwType==REG_DWORD)
+		cvs::sprintf(tmp,32,"%u",dwUserCount);
+	else
+		tmp="??";
+		
+	m_stUserCount.SetWindowText(cvs::wide(tmp.c_str()));
+
+	tmp.resize(256);
+	dwLen=tmp.size();
+	if(!g_hInstallerKey || RegQueryValueExA(g_hInstallerKey,"serversuite",NULL,&dwType,(LPBYTE)tmp.data(),&dwLen) || dwType!=REG_SZ)
+	{
+		dwLen=tmp.size();
+		if(!g_hInstallerKey || RegQueryValueExA(g_hInstallerKey,"server",NULL,&dwType,(LPBYTE)tmp.data(),&dwLen) || dwType!=REG_SZ)
+		{
+			dwLen=tmp.size();
+			if(!g_hInstallerKey || RegQueryValueExA(g_hInstallerKey,"servertrial",NULL,&dwType,(LPBYTE)tmp.data(),&dwLen) || dwType!=REG_SZ)
+				tmp="??";
+			else
+				tmp.resize(dwLen);
+		}
+		else
+			tmp.resize(dwLen);
+	}
+	else
+		tmp.resize(dwLen);
+
+	m_stRegistration.SetWindowText(cvs::wide(tmp.c_str()));
+
+	DWORD dwSendStatistics;
+	dwLen=sizeof(dwSendStatistics);
+	if(RegQueryValueEx(g_hServerKey,_T("SendStatistics"),NULL,&dwType,(LPBYTE)&dwSendStatistics,&dwLen))
+	{
+		PostMessage(WM_COMMAND,IDC_BUTTON1);
+		dwSendStatistics=1;
+	}
+
+	m_cbSendStatistics.SetCheck(dwSendStatistics?1:0);
+	if(!g_bPrivileged) m_cbSendStatistics.EnableWindow(FALSE);
+
 	return TRUE; 
 }
 
-void CserverPage::UpdateStatus()
-{
-	SERVICE_STATUS stat = {0};
-
-	if(!m_hService)
-	{
-		m_szStatus="Service not installed";
-		m_btStart.EnableWindow(FALSE);
-		m_btStop.EnableWindow(FALSE);
-	}
-	else
-	{
-		QueryServiceStatus(m_hService,&stat);
-		switch(stat.dwCurrentState)
-		{
-			case SERVICE_STOPPED:
-				m_szStatus="Stopped";
-				m_btStart.EnableWindow(g_bPrivileged?TRUE:FALSE);
-				m_btStop.EnableWindow(FALSE);
-				break;
-			case SERVICE_START_PENDING:
-				m_szStatus="Starting";
-				m_btStart.EnableWindow(FALSE);
-				m_btStop.EnableWindow(FALSE);
-				break;
-			case SERVICE_STOP_PENDING:
-				m_szStatus="Stopping";
-				m_btStart.EnableWindow(FALSE);
-				m_btStop.EnableWindow(FALSE);
-				break;
-			case SERVICE_RUNNING:
-				m_szStatus="Running";
-				m_btStart.EnableWindow(FALSE);
-				m_btStop.EnableWindow(g_bPrivileged?TRUE:FALSE);
-				break;
-			default:
-				m_szStatus="Unknown state";
-				m_btStart.EnableWindow(FALSE);
-				m_btStop.EnableWindow(FALSE);
-				break;
-		}
-	}
-
-	if(!m_hLockService)
-	{
-		m_szLockStatus="Service not installed";
-		m_btLockStart.EnableWindow(FALSE);
-		m_btLockStop.EnableWindow(FALSE);
-	}
-	else
-	{
-		QueryServiceStatus(m_hLockService,&stat);
-		switch(stat.dwCurrentState)
-		{
-			case SERVICE_STOPPED:
-				m_szLockStatus="Stopped";
-				m_btLockStart.EnableWindow(g_bPrivileged?TRUE:FALSE);
-				m_btLockStop.EnableWindow(FALSE);
-				break;
-			case SERVICE_START_PENDING:
-				m_szLockStatus="Starting";
-				m_btLockStart.EnableWindow(FALSE);
-				m_btLockStop.EnableWindow(FALSE);
-				break;
-			case SERVICE_STOP_PENDING:
-				m_szLockStatus="Stopping";
-				m_btLockStart.EnableWindow(FALSE);
-				m_btLockStop.EnableWindow(FALSE);
-				break;
-			case SERVICE_RUNNING:
-				m_szLockStatus="Running";
-				m_btLockStart.EnableWindow(FALSE);
-				m_btLockStop.EnableWindow(g_bPrivileged?TRUE:FALSE);
-				break;
-			default:
-				m_szLockStatus="Unknown state";
-				m_btLockStart.EnableWindow(FALSE);
-				m_btLockStop.EnableWindow(FALSE);
-				break;
-		}
-	}
-
-	UpdateData(FALSE);
-}
-
-void CserverPage::OnTimer(UINT nIDEvent) 
-{
-	UpdateStatus();
-}
-
-void CserverPage::OnStart() 
-{
-	m_btStart.EnableWindow(FALSE);
-	if(!StartService(m_hService,0,NULL))
-	{
-		CString tmp;
-		tmp.Format(_T("Couldn't start service: %s"),GetErrorString());
-		AfxMessageBox(tmp,MB_ICONSTOP);
-	}
-	UpdateStatus();
-}
-
-void CserverPage::OnStop() 
-{
-	SERVICE_STATUS stat = {0};
-
-	m_btStop.EnableWindow(FALSE);
-	if(!ControlService(m_hService,SERVICE_CONTROL_STOP,&stat))
-	{
-		CString tmp;
-		tmp.Format(_T("Couldn't stop service: %s"),GetErrorString());
-		AfxMessageBox(tmp,MB_ICONSTOP);
-	}
-	UpdateStatus();
-}
-
-LPCTSTR CserverPage::GetErrorString()
-{
-	static TCHAR ErrBuf[1024];
-
-	FormatMessage(
-    FORMAT_MESSAGE_FROM_SYSTEM |
-	FORMAT_MESSAGE_IGNORE_INSERTS,
-    NULL,
-    GetLastError(),
-    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-    (LPTSTR) ErrBuf,
-    sizeof(ErrBuf),
-    NULL );
-	return ErrBuf;
-};
-
-void CserverPage::OnBnClickedStart2()
-{
-	m_btLockStart.EnableWindow(FALSE);
-	if(!StartService(m_hLockService,0,NULL))
-	{
-		CString tmp;
-		tmp.Format(_T("Couldn't start service: %s"),GetErrorString());
-		AfxMessageBox(tmp,MB_ICONSTOP);
-	}
-	UpdateStatus();
-}
-
-void CserverPage::OnBnClickedStop2()
-{
-	SERVICE_STATUS stat = {0};
-
-	m_btLockStop.EnableWindow(FALSE);
-	if(!ControlService(m_hLockService,SERVICE_CONTROL_STOP,&stat))
-	{
-		CString tmp;
-		tmp.Format(_T("Couldn't stop service: %s"),GetErrorString());
-		AfxMessageBox(tmp,MB_ICONSTOP);
-	}
-	UpdateStatus();
-}
-
-void CserverPage::OnStnClickedLogo()
+void CserverPage::OnBnClickedLogo()
 {
 	ShellExecute(NULL,_T("open"),_T("http://www.march-hare.com/cvspro"),NULL,NULL,SW_SHOWNORMAL);
+}
+
+void CserverPage::OnBnClickedButton1()
+{
+	CUsageDialog dlg;
+	int nRet = dlg.DoModal();
+	if(g_bPrivileged)
+	{
+		if(nRet==IDOK)
+			m_cbSendStatistics.SetCheck(1);
+		else
+			m_cbSendStatistics.SetCheck(0);
+		SetModified();
+	}
+}
+
+void CserverPage::OnBnClickedCheck1()
+{
+	SetModified();
+}
+
+BOOL CserverPage::OnApply()
+{
+	if(g_bPrivileged)
+	{
+		DWORD dwSendStatistics = m_cbSendStatistics.GetCheck();
+		RegSetValueEx(g_hServerKey,_T("SendStatistics"),NULL,REG_DWORD,(LPBYTE)&dwSendStatistics,sizeof(dwSendStatistics));
+	}
+
+	return CTooltipPropertyPage::OnApply();
 }

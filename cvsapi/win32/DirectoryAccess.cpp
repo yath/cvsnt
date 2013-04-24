@@ -16,12 +16,13 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 /* Win32 specific */
+#include <config.h>
+#include "../lib/api_system.h"
+
 #define WIN32_LEAN_AND_MEAN
 #define STRICT
 #include <windows.h>
 
-#include <config.h>
-#include "../lib/api_system.h"
 #include "../cvs_string.h"
 #include "../DirectoryAccess.h"
 #include "../FileAccess.h"

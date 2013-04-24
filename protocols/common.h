@@ -19,16 +19,8 @@
 #define __COMMON__H
 
 #include <config.h>
-
-#ifndef MAX_PATH
- #ifdef PATH_MAX
-  #define MAX_PATH PATH_MAX
- #elif defined(_MAX_PATH)
-  #define MAX_PATH _MAX_PATH
- #else
-  #define MAX_PATH 1024
- #endif
-#endif
+#include <cvsapi.h>
+#include <cvstools.h>
 
 #ifndef HAVE_GETADDRINFO
 #include "socket.h"
@@ -45,8 +37,6 @@
 #else
 # define PATCH_NULL(x) x
 #endif
-
-#include <cvstools.h>
 
 void set_current_server(const struct server_interface *_cs);
 const struct server_interface *current_server();

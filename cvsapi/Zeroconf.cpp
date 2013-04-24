@@ -118,7 +118,7 @@ void CZeroconf::_service_ipv6_func(const char *name, const unsigned char address
 	m_name_lookup[name].ipv6_set = true;
 }
 
-CZeroconf::CZeroconf(CMdnsHelperBase::mdnsType type, const char *library_dir)
+CZeroconf::CZeroconf(const char *type, const char *library_dir)
 {
 	m_mdns_type = type;
 	m_library_dir = library_dir;
@@ -148,7 +148,7 @@ bool CZeroconf::BrowseForService(const char *service, unsigned flags)
 
 	CSocketIO::init();
 
-	CMdnsHelperBase *mdns = CMdnsHelperBase::Alloc(m_mdns_type, m_library_dir);
+	CMdnsHelperBase *mdns = CMdnsHelperBase::CreateHelper(m_mdns_type, m_library_dir);
 
 	if(!mdns)
 		return false;
@@ -203,7 +203,7 @@ bool CZeroconf::BrowseForService(const char *service, unsigned flags)
 						ntohs(*(short*)&addr.ipv6[12]), ntohs(*(short*)&addr.ipv6[14]));
 
 					struct addrinfo *addr = NULL;
-					if(getaddrinfo(szAddress.c_str(),szPort.c_str(),&hints,&addr))
+					if(getaddrinfo(cvs::idn(szAddress.c_str()),szPort.c_str(),&hints,&addr))
 					{
 						CServerIo::trace(3,"getaddrinfo(%s) failed: %s",szAddress.c_str(),gai_strerror(sock_errno));
 					}
@@ -231,7 +231,7 @@ bool CZeroconf::BrowseForService(const char *service, unsigned flags)
 				{
 					cvs::sprintf(szAddress,32,"%u.%u.%u.%u",addr.ipv4[0],addr.ipv4[1],addr.ipv4[2],addr.ipv4[3]);
 					struct addrinfo *addr = NULL;
-					if(getaddrinfo(szAddress.c_str(),szPort.c_str(),&hints,&addr))
+					if(getaddrinfo(cvs::idn(szAddress.c_str()),szPort.c_str(),&hints,&addr))
 					{
 						CServerIo::trace(3,"getaddrinfo(%s) failed: %s",szAddress.c_str(),gai_strerror(sock_errno));
 					}

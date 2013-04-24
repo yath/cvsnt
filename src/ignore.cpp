@@ -37,7 +37,8 @@ const char *ign_default = ". .. core RCSLOG tags TAGS RCS SCCS .make.state "
 			  ".nse_depinfo #* .#* cvslog.* ,* CVS CVS.adm .del-* "
 			  "*.a *.olb *.o *.obj *.so *.Z *~ *.old *.elc *.ln "
 			  "*.bak *.BAK *.orig *.rej *.exe *.dll *.pdb *.lib "
-			  "*.ncb *.ilk *.exp *.suo .DS_Store _$* *$ *.lo *.class ~*";
+			  "*.ncb *.ilk *.exp *.suo .DS_Store _$* *$ *.lo "
+			  "*.pch *.idb *.class ~*";
 
 #define IGN_GROW 16			/* grow the list by 16 elements at a
 					 * time */

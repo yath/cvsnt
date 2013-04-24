@@ -18,6 +18,12 @@
 #ifndef GLOBAL_SETTINGS__H
 #define GLOBAL_SETTINGS__H
 
+#ifdef _WIN32
+typedef __int64 LONGINT;
+#else
+typedef long long LONGINT;
+#endif
+
 class CGlobalSettings
 {
 public:
@@ -37,8 +43,10 @@ public:
 	CVSTOOLS_EXPORT static int GetUserValue(const char *product, const char *key, const char *value, char *buffer, int buffer_len);
 	CVSTOOLS_EXPORT static int GetUserValue(const char *product, const char *key, const char *value, cvs::string& sval);
 	CVSTOOLS_EXPORT static int GetUserValue(const char *product, const char *key, const char *value, int& ival);
+	CVSTOOLS_EXPORT static int GetUserValue(const char *product, const char *key, const char *value, LONGINT& lival);
 	CVSTOOLS_EXPORT static int SetUserValue(const char *product, const char *key, const char *value, const char *buffer);
 	CVSTOOLS_EXPORT static int SetUserValue(const char *product, const char *key, const char *value, int ival);
+	CVSTOOLS_EXPORT static int SetUserValue(const char *product, const char *key, const char *value, LONGINT lival);
 	CVSTOOLS_EXPORT static int EnumUserValues(const char *product, const char *key, int value_num, char *value, int value_len, char *buffer, int buffer_len);
 	CVSTOOLS_EXPORT static int EnumUserKeys(const char *product, const char *key, int value_num, char *value, int value_len);
 	CVSTOOLS_EXPORT static int DeleteUserValue(const char *product, const char *key, const char *value)
@@ -48,8 +56,10 @@ public:
 	CVSTOOLS_EXPORT static int GetGlobalValue(const char *product, const char *key, const char *value, char *buffer, int buffer_len);
 	CVSTOOLS_EXPORT static int GetGlobalValue(const char *product, const char *key, const char *value, cvs::string& sval);
 	CVSTOOLS_EXPORT static int GetGlobalValue(const char *product, const char *key, const char *value, int& ival);
+	CVSTOOLS_EXPORT static int GetGlobalValue(const char *product, const char *key, const char *value, LONGINT& lival);
 	CVSTOOLS_EXPORT static int SetGlobalValue(const char *product, const char *key, const char *value, const char *buffer);
 	CVSTOOLS_EXPORT static int SetGlobalValue(const char *product, const char *key, const char *value, int ival);
+	CVSTOOLS_EXPORT static int SetGlobalValue(const char *product, const char *key, const char *value, LONGINT lival);
 	CVSTOOLS_EXPORT static int EnumGlobalValues(const char *product, const char *key, int value_num, char *value, int value_len, char *buffer, int buffer_len);
 	CVSTOOLS_EXPORT static int EnumGlobalKeys(const char *product, const char *key, int value_num, char *value, int value_len);
 	CVSTOOLS_EXPORT static int DeleteGlobalValue(const char *product, const char *key, const char *value)

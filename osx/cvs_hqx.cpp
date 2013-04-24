@@ -258,7 +258,7 @@ static encodingPolicy determineEncodingPolicy(OSType ftype, CFStringRef extensio
 static void getDefaultEncodingPolicy(encodingPolicy *policy)
 {
 	// get the default encoder
-	static char *envRes = CProtocolLibrary::GetEnvironment("MAC_DEFAULT_RESOURCE_ENCODING");
+	static const char *envRes = CProtocolLibrary::GetEnvironment("MAC_DEFAULT_RESOURCE_ENCODING");
 	if(envRes == 0L)
 		envRes = CProtocolLibrary::GetEnvironment("CVS_DEFAULT_RESOURCE_ENCODING");
 	if(envRes == 0L)
@@ -788,7 +788,7 @@ static const unsigned char *convert_iso(int convert_from, int iso)
 }
 
 void
-mac_convert_file (char *infile, int encode, char *outfile, int binary)
+mac_convert_file (const char *infile, int encode, char *outfile, int binary)
 {
     FILE *infd, *outfd;
     char buf[8192];

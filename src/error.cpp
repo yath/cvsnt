@@ -113,7 +113,7 @@ void error (int status, int errnum, const char *message, ...)
 
 	VA_START (args, message);
 	p = message;
-	while ((q = strchr (p, '%')) != NULL)
+	while ((q = (char*)strchr (p, '%')) != NULL)
 	{
 	    static const char msg[] =
 		"\ninternal error: bad % in error()\n";

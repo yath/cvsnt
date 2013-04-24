@@ -103,18 +103,10 @@ extern "C" {
 
 /* Define if you want CVS to be able to serve repositories to remote
    clients.  */
-#if defined(CVS95)
-#undef SERVER_SUPPORT
-#else
 #define SERVER_SUPPORT
-#endif
 
 /* Define if creating an NT version */
-#ifndef CVS95
 #define WINNT_VERSION
-#else
-#undef WINNT_VERSION
-#endif
 
 /* Define if you have the connect function.  */
 #define HAVE_CONNECT
@@ -178,6 +170,38 @@ extern "C" {
 /* Define if you have the <dirent.h> header file.  */
 /* No, but we have the <direct.h> header file...  */
 #undef HAVE_DIRENT_H
+
+/* Define target_cpu */
+#undef CVSNT_TARGET_CPU
+#ifdef _M_ALPHA
+#define CVSNT_TARGET_CPU "alpha"
+#endif
+#ifdef _M_IX86
+#define CVSNT_TARGET_CPU "x86"
+#endif
+#ifdef _M_IA64
+#define CVSNT_TARGET_CPU "ia64"
+#endif
+#ifdef _M_MPPC
+#define CVSNT_TARGET_CPU "macpower"
+#endif
+#ifdef _M_MRX000
+#define CVSNT_TARGET_CPU "mips"
+#endif
+#ifdef _M_PPC
+#define CVSNT_TARGET_CPU "powerpc"
+#endif
+#ifdef _M_X64
+#define CVSNT_TARGET_CPU "x86_64"
+#endif
+
+/* Define target_vendor */
+#undef CVSNT_TARGET_VENDOR
+#define CVSNT_TARGET_VENDOR "microsoft"
+
+/* Define target_os */
+#undef CVSNT_TARGET_OS
+#define CVSNT_TARGET_OS "windows"
 
 /* Define if you have the <errno.h> header file.  */
 #define HAVE_ERRNO_H
@@ -294,7 +318,7 @@ unsigned int sleep (unsigned int);
 #define same_file(s,t) (-1)
 
 /* This is where old bits go to die under Windows NT.  */
-#define DEVNULL "nul"
+#define DEVNULL "nul:"
 
 /* Don't use an rsh subprocess to connect to the server, because
    the rsh does inappropriate translations on the data (CR-LF/LF).  */
@@ -352,9 +376,6 @@ extern char *sock_strerror (int errnum);
 #define SIZEOF_CHAR sizeof(char)
 #define SIZEOF_SHORT sizeof(short)
 
-// We always use PCRE on Win32
-#define HAVE_PCRE
-
 // Disable 'signed/unsigned mismatch'
 #pragma warning (disable:4018)
 
@@ -367,7 +388,6 @@ extern char *sock_strerror (int errnum);
 #define strcasecmp stricmp
 #define strncasecmp strnicmp
 #define snprintf _snprintf
-#define vsnprintf _vsnprintf
 
 #define HAVE_GSSAPI_GSSAPI_H
 #define HAVE_GSSAPI_GSSAPI_GENERIC_H
@@ -438,9 +458,6 @@ void win32setblock(int h, int block);
 #define getenv getenv
 #define strerror strerror
 
-/* crypt() functionality */
-char *crypt(const char *key,const char *salt);
-
 /* Override so we can delete read-only files */
 #define CVS_UNLINK wnt_unlink
 int wnt_unlink(const char *file);
@@ -460,7 +477,6 @@ void win32_perror(int quit, const char *prefix, ...); // Print last error from p
 
 #include <sys/types.h>
 
-#ifndef _CVS95
 /* 64bit file offset */
 #define off_t _loff_t
 typedef __int64 _loff_t;
@@ -470,11 +486,6 @@ off_t wnt_ftell64(FILE *fp);
 
 #define CVS_FSEEK wnt_fseek64
 #define CVS_FTELL wnt_ftell64
-#else /* _CVS95 */
-/* 32bit files */
-#define CVS_FSEEK fseek
-#define CVS_FTELL ftell
-#endif
 
 struct wnt_stat {
         _dev_t st_dev;
@@ -533,10 +544,6 @@ int w32_is_network_share(const char *directory);
 
 extern int bIsWin95, bIsNt4, bIsWin2k;
 
-/* Add/remove case insensitive directories */
-void add_to_ci_directory_list(const char *dir);
-void remove_from_ci_directory_list(const char *dir);
-void reset_ci_directory_list();
 void win32_sanitize_username(const char **pusername);
 
 void wnt_hide_file(const char *fn);
@@ -545,22 +552,12 @@ void wnt_get_temp_dir(char *tempdir, int tempdir_size);
 
 extern int win32_global_codepage;
 
-#ifdef _DEBUG
-#ifndef CVS95
-//  #define UTF8
-#endif
-#endif
-
 #endif /* not PROTOCOL_DLL */
 
 #ifdef __cplusplus
 }
 #endif
 
-#ifndef CVS95 /* Win9x will never support these.. */
-
 int win32_set_edit_acl(const char *filename);
-
-#endif
 
 #endif

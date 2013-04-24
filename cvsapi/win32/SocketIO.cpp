@@ -16,6 +16,9 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 /* WIN32 specific */
+#include <config.h>
+#include "../lib/api_system.h"
+
 #define STRICT
 #define WIN32_LEAN_AND_MEAN
 #define FD_SETSIZE 1024
@@ -24,11 +27,14 @@
 #include <ws2tcpip.h>
 #include <stdarg.h>
 
-#include <config.h>
-#include "../lib/api_system.h"
-
 #include "../ServerIo.h"
 #include "../SocketIO.h"
+
+// Only defined by the Win2008 SDK and later
+#ifndef IPV6_V6ONLY
+#define IPV6_V6ONLY 27
+#endif
+
 
 CSocketIO::CSocketIO()
 {
@@ -87,7 +93,14 @@ bool CSocketIO::create(const char *address, const char *port, bool loopback /* =
 	hint.ai_protocol=tcp?IPPROTO_TCP:IPPROTO_UDP;
 	hint.ai_flags=loopback?0:AI_PASSIVE;
 	m_pAddrInfo=NULL;
-	int err=getaddrinfo(address,port,&hint,&m_pAddrInfo);
+	// if NULL address is passed to cvs::idn it will crash (deep in utf82ucs2)
+	// for some reason VS.NET 2008 still calls cvs::idn in this case:
+	//   (!address)?NULL:(cvs::idn(address))
+	int err;
+	if (!address)
+		err=getaddrinfo(NULL,port,&hint,&m_pAddrInfo);
+	else
+		err=getaddrinfo(cvs::idn(address),port,&hint,&m_pAddrInfo);
 	if(err)
 	{
 		CServerIo::trace(3,"Socket creation failed: %s",gai_strerrorA(WSAGetLastError()));
@@ -97,6 +110,17 @@ bool CSocketIO::create(const char *address, const char *port, bool loopback /* =
 	for(addr = m_pAddrInfo; addr; addr=addr->ai_next)
 	{
 		sock = WSASocket(addr->ai_family, addr->ai_socktype, addr->ai_protocol,NULL,0,0);
+
+		// On Win32 you must never set SO_REUSEADDR because its semantics are completely different
+		// from the BSD standard - it silently allows multiple apps to bind to the same port,
+		// but states the subsequent behaviour is 'undefined'.
+
+		// Note that we don't care if it succeeds (it'll fail on windows <Vista), because
+		// the end result is the same.
+		int on = 1;
+		if(addr->ai_family==PF_INET6)
+			::setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&on, sizeof(on));
+
 		m_sockets.push_back(sock);
 	}
 	m_tcp = tcp;
@@ -151,8 +175,10 @@ bool CSocketIO::bind()
 {
 	addrinfo *addr;
 	size_t n;
-	bool bound = false;
 
+	// We don't need the multi-bind checks on Win32
+	// On Windows prior to Vista ipv6 was a separate stack, so you don't get collissions
+	// Windows after vista supports IPV6_V6ONLY
 	for(n=0,addr = m_pAddrInfo; addr; addr=addr->ai_next,n++)
 	{
 		if(m_sockets[n]!=-1)
@@ -162,11 +188,17 @@ bool CSocketIO::bind()
 			{
 				if(m_tcp)
 					::listen(m_sockets[n],SOMAXCONN);
-				bound=true;
+			}
+			else
+			{
+				CServerIo::trace( 3, "Socket bind failed: errno %d on socket %d (AF %d)", errno, m_sockets[n], addr->ai_family);
+				closesocket(m_sockets[n]);
+				m_sockets[n]=-1;
+				return false;
 			}
 		}
 	}
-	return bound;
+	return true;
 }
 
 int CSocketIO::recv(char *buf, int len)
@@ -208,7 +240,7 @@ int CSocketIO::recv(char *buf, int len)
 	if((len-oldlen)<=m_buflen)
 	{
 		memcpy(buf+oldlen,m_buffer,len-oldlen);
-		m_bufpos+=len;
+		m_bufpos+=(len-oldlen);
 		return len;
 	}
 	memcpy(buf+oldlen,m_buffer,m_buflen);

@@ -18,8 +18,19 @@
 #ifndef CVSTOOLS__H
 #define CVSTOOLS__H
 
+#ifndef CVSAPI__H
 #include <cvsapi.h>
+#endif
 #include "export.h"
+
+#ifndef PATCH_NULL
+#ifdef	sun
+/* solaris has a poor implementation of vsnprintf() which is not able to handle null pointers for %s */
+# define PATCH_NULL(x) ((x)?(x):"<NULL>")
+#else
+# define PATCH_NULL(x) x
+#endif
+#endif
 
 #include "GlobalSettings.h"
 #include "ProtocolLibrary.h"
@@ -29,9 +40,11 @@
 #include "ServerInfo.h"
 #include "RootSplitter.h"
 #include "ServerConnection.h"
+#include "EntriesParser.h"
 
 #ifdef _WIN32
 #include "win32/CvsCommonDialogs.h"
+#include "win32/InfoPanel.h"
 #endif
 
 #endif

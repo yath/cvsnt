@@ -23,28 +23,8 @@
 extern int isDomainMember();
 #endif
 
-extern char *crypt (const char *, const char *);
-
-#define ascii_to_bin(c) ((c)>='a'?(c-59):(c)>='A'?((c)-53):(c)-'.')
-#define bin_to_ascii(c) ((c)>=38?((c)-38+'a'):(c)>=12?((c)-12+'A'):(c)+'.')
-
 static passwd_entry *passwd_list = NULL;
 static int passwd_list_size = 0;
-
-char *crypt_password(char *typed_password)
-{
-	time_t tm;
-	char salt[2];
-
-	if(typed_password)
-	{
-		time(&tm);
-		salt[0] = bin_to_ascii(tm & 0x3f);
-		salt[1] = bin_to_ascii((tm >> 5) & 0x3f);
-		strcpy(typed_password,crypt(typed_password, salt));
-	}
-	return typed_password;
-}
 
 void free_passwd_list()
 {
@@ -204,6 +184,7 @@ int passwd (int argc, char **argv)
 {
     int    c;
     int    err = 0;
+	bool md5 = true;
 	char   typed_password[128]={0}, typed_password2[128]={0};
     const char   *username, *user;
 	passwd_entry *passnode;
@@ -211,6 +192,7 @@ int passwd (int argc, char **argv)
 	char *password_domain = NULL;
 	int adduser=0,deluser=0,disableuser=0,realuser=0,remove_realuser=0,use_domain=0;
 	int arg_specified = 0;
+	CCrypt cr;
 
     if (argc == -1)
 	usage (passwd_usage);
@@ -271,6 +253,9 @@ int passwd (int argc, char **argv)
 	if (!supported_request ("passwd"))
 	    error (1, 0, "server does not support passwd");
 
+	if (!supported_request ("passwd-md5"))
+	    md5=false;
+
 	if(!user && adduser)
 	{
 		error(1,0,"You cannot add yourself");
@@ -310,7 +295,7 @@ int passwd (int argc, char **argv)
 		}
 		memset (typed_password2, 0, strlen (typed_password2));
 		if(strlen(typed_password))
-			crypt_password(typed_password);
+			strcpy(typed_password,cr.crypt(typed_password, md5));
 	}
 
 	if (adduser)
@@ -397,7 +382,7 @@ int passwd (int argc, char **argv)
 			}
 			memset (typed_password2, 0, strlen (typed_password2));
 			if(strlen(typed_password))
-				crypt_password(typed_password);
+				strcpy(typed_password,cr.crypt(typed_password, md5));
 		}
 	} 
 #ifdef SERVER_SUPPORT

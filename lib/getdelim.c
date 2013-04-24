@@ -58,7 +58,7 @@ int getdelim(char **lineptr, size_t *n, int delim, FILE *stream)
   if (!*lineptr)
     {
       *n = MIN_CHUNK;
-      *lineptr = (char*)malloc (*n);
+      *lineptr = (char*)malloc ((*n)+10);
       if (!*lineptr)
 	{
 	  errno = ENOMEM;
@@ -91,7 +91,7 @@ int getdelim(char **lineptr, size_t *n, int delim, FILE *stream)
 	    *n += MIN_CHUNK;
 
 	  nchars_avail = *n + *lineptr - read_pos;
-	  *lineptr = (char*)realloc (*lineptr, *n);
+	  *lineptr = (char*)realloc (*lineptr, (*n)+10);
 	  if (!*lineptr)
 	    {
 	      errno = ENOMEM;

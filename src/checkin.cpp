@@ -60,9 +60,11 @@ int Checkin (int type, struct file_info *finfo, char *rcs, char *rev, char *tag,
 		strcpy(cp,cp+2);
 	}
 
+    CXmlNodePtr node;
     switch (RCS_checkin (finfo->rcs, finfo->file, message, rev, options, RCS_FLAGS_KEEPFILE, merge_from_tag1, merge_from_tag2, callback, NULL, bugid, &variable_list))
     {
 	case 0:			/* everything normal */
+		TRACE(3,"The checkin succeeded.");
 	    /* The checkin succeeded.  If checking the file out again
                would not cause any changes, we are done.  Otherwise,
                we need to check out the file, which will change the
@@ -78,7 +80,9 @@ int Checkin (int type, struct file_info *finfo, char *rcs, char *rev, char *tag,
                call RCS_checkout here, compare the resulting files
                using xcmp, and rename if necessary.  I think this
                should be fixed in RCS_cmp_file.  */
+		TRACE(3,"RCS_get_kflags called in Checkin");
 		RCS_get_kflags(options, true, kf);
+		TRACE(3,"RCS_cmp_file called in Checkin");
 		if(callback || (kf.flags&(KFLAG_PRESERVE|KFLAG_BINARY))
 			|| RCS_cmp_file (finfo->rcs, rev, options, finfo->file, 0) == 0)
 	    {
@@ -103,15 +107,46 @@ int Checkin (int type, struct file_info *finfo, char *rcs, char *rev, char *tag,
 	     * If we want read-only files, muck the permissions here, before
 	     * getting the file time-stamp.
 	     */
-	    if (!(commit_keep_edits && edit_revision) && (!cvswrite || fileattr_find(NULL,"file[@name=F'%s']/watched", finfo->file) || (kf.flags&KFLAG_RESERVED_EDIT)))
+	    node = fileattr_getroot();
+	    node->xpathVariable("file",finfo->file);
+	    if (!(commit_keep_edits && edit_revision) && (!cvswrite || (node->Lookup("file[cvs:filename(@name,$file)]/watched") && node->XPathResultNext()) || (kf.flags&KFLAG_RESERVED_EDIT)))
 			xchmod (finfo->file, 0);
 
 	    /* Re-register with the new data.  */
 	    vers = Version_TS (finfo, NULL, tag, NULL, 1, set_time, 0);
 	    history_write (type, NULL, vers->vn_rcs,
 			   finfo->file, finfo->repository,bugid,message);
-	    Register (finfo->entries, finfo->file, vers->vn_rcs, vers->ts_user,
-		      vers->options, vers->tag, vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, edit_revision, edit_tag, edit_bugid); 
+
+		{
+			CMD5Calc *md5 = NULL;
+#ifdef SERVER_SUPPORT
+			if(server_active)
+			{
+				char buf[BUFSIZ*10];
+				FILE *cf = CVS_FOPEN(finfo->file,"r");
+				if(!cf)
+				{
+					error(1,errno,"Unable to reopen %s for checksum");
+				}
+				CVS_FSEEK(cf,0,SEEK_END);
+				if(CVS_FTELL(cf)>=server_checksum_threshold)
+				{
+					size_t l;
+
+					CVS_FSEEK(cf,0,SEEK_SET);
+					md5 = new CMD5Calc;
+					while((l=fread(buf,1,sizeof(buf),cf))>0)
+						md5->Update(buf,l);
+				}
+				fclose(cf);
+			}
+#endif
+			Register (finfo->entries, finfo->file, vers->vn_rcs, vers->ts_user,
+				vers->options, vers->tag, vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, edit_revision, edit_tag, edit_bugid, md5?md5->Final():NULL); 
+
+			if(md5)
+				delete md5;
+		}
 	    break;
 
 	case -1:			/* fork failed */

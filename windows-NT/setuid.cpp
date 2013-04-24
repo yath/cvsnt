@@ -1,7 +1,5 @@
 #include "cvs.h"
 
-#define WIN32_LEAN_AND_MEAN
-#define _WIN32_WINNT 0x0400
 #include <windows.h>
 #include <shlwapi.h>
 #define SECURITY_WIN32

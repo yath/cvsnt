@@ -17,15 +17,18 @@
 */
 /* Unix specific */
 #include <config.h>
+#include "../../lib/system.h"
 #include "../lib/api_system.h"
 
 #include <stdio.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "cvs_string.h"
 #include "FileAccess.h"
+#include "ServerIO.h"
 
 CFileAccess::CFileAccess()
 {
@@ -126,7 +129,7 @@ size_t CFileAccess::read(void *buf, size_t length)
 	if(!m_file)
 		return 0;
 
-	return fread(buf,length,1,m_file);
+	return fread(buf,1,length,m_file);
 }
 
 size_t CFileAccess::write(const void *buf, size_t length)
@@ -134,7 +137,47 @@ size_t CFileAccess::write(const void *buf, size_t length)
 	if(!m_file)
 		return 0;
 
-	return fwrite(buf,length,1,m_file);
+	return fwrite(buf,1,length,m_file);
+}
+
+/*
+ * Make a path to the argument directory, printing a message if something
+ * goes wrong.
+ */
+/*
+ * Make a path to the argument directory, printing a message if something
+ * goes wrong.
+ */
+void make_directories (const char *name)
+{
+    char *cp;
+    char *dir;
+
+    if (CVS_MKDIR (name, 0777) == 0 || errno == EEXIST)
+		return;
+    if (errno != ENOENT)
+    {
+		CServerIo::error (0, errno, "cannot make path to %s", name);
+		return;
+    }
+    dir = strdup(name);
+    for(cp=dir+strlen(dir);cp>dir && !ISDIRSEP(*cp); --cp)
+	;
+    if(cp==dir)
+    {
+	free(dir);
+	return;
+    }
+    *cp = '\0';
+    make_directories (dir);
+    *cp++ = '/';
+    if (*cp == '\0')
+    {
+	free(dir);
+	return;
+    }
+    free(dir);
+    CVS_MKDIR (name, 0777);
 }
 
 loff_t CFileAccess::length()

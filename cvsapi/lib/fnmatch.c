@@ -34,6 +34,7 @@
 #include "api_system.h"
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #ifdef HAVE_STDDEF_H
 #include <stddef.h>

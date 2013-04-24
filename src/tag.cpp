@@ -56,6 +56,8 @@ static const char **pretag_version_list;
 static int pretag_list_count,pretag_list_size;
 static const char *message;
 
+extern int lock_for_write;
+
 struct pretag_params_t
 {
 	const char *message;
@@ -277,6 +279,7 @@ int cvstag (int argc, char **argv)
         return get_responses_and_close ();
     }
 
+	lock_for_write = 1;
     if (is_rtag)
     {
 	DBM *db;
@@ -299,6 +302,7 @@ int cvstag (int argc, char **argv)
 	err = rtag_proc (argc + 1, argv - 1, NULL, NULL, NULL, 0, 0, NULL,
 			 NULL);
     }
+	lock_for_write = 0;
 
     Lock_Cleanup ();
     return (err);
@@ -336,7 +340,7 @@ static int rtag_proc(int argc, char **argv, const char *xwhere,
 	    char *path;
 
 	    /* if the portion of the module is a path, put the dir part on repos */
-	    if ((cp = strrchr (mfile, '/')) != NULL)
+	    if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 	    {
 		*cp = '\0';
 		(void) strcat (repository, "/");
@@ -405,7 +409,7 @@ static int rtag_proc(int argc, char **argv, const char *xwhere,
     err = start_recursion (check_fileproc, check_filesdoneproc,
                            (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL,
                            argc - 1, argv + 1, local, which, 0, 1,
-                           where, repository, 1, verify_tag);
+                           where, repository, 1, verify_tag, numtag);
     
     if (err)
     {
@@ -427,7 +431,7 @@ static int rtag_proc(int argc, char **argv, const char *xwhere,
     err = start_recursion (is_rtag ? rtag_fileproc : tag_fileproc,
 			   (FILESDONEPROC) NULL, (PREDIRENTPROC) NULL, tag_dirproc,
 			   (DIRLEAVEPROC) NULL, NULL, argc - 1, argv + 1,
-			   local, which, 0, 0, where, repository, 1, verify_tag);
+			   local, which, 0, 0, where, repository, 1, verify_tag, numtag);
 	xfree(current_date);
     dellist (&mtlist);
     if (where != NULL)
@@ -511,9 +515,13 @@ static int check_fileproc (void *callerdat, struct file_info *finfo)
     if (!is_rtag && numtag == NULL && date == NULL)
 	p->data = xstrdup (vers->vn_user);
     else
+	{
+	TRACE(3,"check_fileproc(0) rcs get version rcsfile=\"%s\" symtag=\"%s\"",
+					PATCH_NULL(vers->srcfile->path),
+					PATCH_NULL(numtag) );
 	p->data = RCS_getversion (vers->srcfile, numtag, date,
 				  force_tag_match, NULL);
-
+	}
     if (p->data != NULL)
     {
         int addit = 1;
@@ -662,6 +670,7 @@ static int rtag_fileproc (void *callerdat, struct file_info *finfo)
     char *version, *rev;
     int retcode = 0;
 
+    TRACE(3,"rtag_fileproc");
     /* find the parsed RCS data */
     if ((rcsfile = finfo->rcs) == NULL)
 		return 1;
@@ -693,10 +702,15 @@ static int rtag_fileproc (void *callerdat, struct file_info *finfo)
 			*strrchr(version,'.')='\0';
 	}
 	else
+	{
+		TRACE(3,"rtag_fileproc(0) rcs get version rcsfile=\"%s\" numtag=\"%s\", force=%d",
+					PATCH_NULL(rcsfile->path),
+					PATCH_NULL(numtag), force_tag_match );
 		version = RCS_getversion(rcsfile,
 								numtag,
 								date,
 								force_tag_match, (int *) NULL);
+	}
 	if (version == NULL)
 	{
 		/* Clean up any old tags */
@@ -727,6 +741,10 @@ static int rtag_fileproc (void *callerdat, struct file_info *finfo)
 		retcode = RCS_settag(rcsfile, symtag, numtag, current_date);
 		if (retcode == 0)
 		{
+			TRACE(3,"rtag_fileproc(1) rewrite rcsfile symtag=\"%s\", rev=\"%s\", date=\"%s\"",
+					PATCH_NULL(symtag),
+					PATCH_NULL(numtag),
+					PATCH_NULL(current_date) );
 			RCS_rewrite (rcsfile, NULL, NULL, 0);
 			tag_set_ok = 1;
 		}
@@ -747,6 +765,9 @@ static int rtag_fileproc (void *callerdat, struct file_info *finfo)
 	if(floating_branch)
 		sprintf(strrchr(version,'.'),".0");
     rev = (!alias_branch && branch_mode) ? RCS_magicrev (rcsfile, version) : version;
+	TRACE(3,"rtag_fileproc(4) rcs get version rcsfile=\"%s\" symtag=\"%s\", force=%d",
+					PATCH_NULL(rcsfile->path),
+					PATCH_NULL(symtag), 1 );
 	oversion = RCS_getversion (rcsfile, symtag, (char *) NULL, 1,
 				   (int *) NULL);
 	if (oversion != NULL)
@@ -783,6 +804,10 @@ static int rtag_fileproc (void *callerdat, struct file_info *finfo)
 	retcode = RCS_settag(rcsfile, symtag, rev, current_date);
 	if (retcode == 0)
 	{
+		TRACE(3,"rtag_fileproc(2) rewrite rcsfile symtag=\"%s\", rev=\"%s\", date=\"%s\"",
+					PATCH_NULL(symtag),
+					PATCH_NULL(rev),
+					PATCH_NULL(current_date) );
 	    RCS_rewrite (rcsfile, NULL, NULL, 0);
 		tag_set_ok = 1;
 	}
@@ -803,6 +828,7 @@ static int rtag_fileproc (void *callerdat, struct file_info *finfo)
     if (branch_mode)
 		xfree (rev);
     xfree (version);
+    TRACE(3,"rtag_fileproc return 0");
     return (0);
 }
 
@@ -822,6 +848,7 @@ static int rtag_delete (RCSNode *rcsfile)
     char *version;
     int retcode;
 
+	TRACE(3,"rtag_delete()");
     if (numtag)
     {
 	version = RCS_getversion (rcsfile, numtag, (char *) NULL, 1,
@@ -862,6 +889,7 @@ static int rtag_delete (RCSNode *rcsfile)
 		   fn_root(rcsfile->path));
 	return (1);
     }
+	TRACE(3,"rtag_delete(2) rewrite rcsfile");
     RCS_rewrite (rcsfile, NULL, NULL, 0);
     return (0);
 }
@@ -880,14 +908,19 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
     Vers_TS *vers;
     int retcode = 0;
 
+    TRACE(3,"tag_fileproc");
     vers = Version_TS (finfo, NULL, NULL, NULL, 0, 0, 0);
 
+    TRACE(3,"tag_fileproc - Version_TS complete");
     if ((numtag != NULL) || (date != NULL))
     {
+	    TRACE(3,"tag_fileproc - ((numtag != NULL) || (date != NULL)");
 		if(numtag && !date && alias_branch)
 		{
+		    TRACE(3,"tag_fileproc - numtag && !date && alias_branch");
 			if(!isdigit(numtag[0]) && RCS_isfloating(vers->srcfile,numtag))
 			{
+			    TRACE(3,"tag_fileproc - !isdigit(numtag[0]) && RCS_isfloating(vers->srcfile,numtag)");
 				cvs_output ("W ", 2);
 				cvs_output (fn_root(vers->srcfile->path), 0);
 				cvs_output (" : ", 0);
@@ -898,25 +931,68 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
 				freevers_ts (&vers);
 				return 0;
 			}
+			TRACE(3,"tag_fileproc() - RCS_tag2rev(%s,%s)",PATCH_NULL(vers->srcfile->path),PATCH_NULL(numtag));
 			nversion = RCS_tag2rev(vers->srcfile,numtag);
 			if(!strcmp(numtag,"HEAD")) // for HEAD
+			{
+				TRACE(3,"tag_fileproc() - numtag is HEAD");
 				*strrchr(nversion,'.')='\0';
+			}
 		}
 		else
+		{
+			int userevone=0;
+
+
+
+
+			int force_tag_match_now=force_tag_match;
+			int this_is_repoversion=0;
+			TRACE(3,"tag_fileproc() - RCS_getversion(%s,%s,%s,force=%d)",
+						PATCH_NULL(vers->srcfile->path),
+						PATCH_NULL(numtag),
+						PATCH_NULL(date),
+						force_tag_match);
+			if ((numtag!=NULL) && (userevone!=0) && (strstr(vers->srcfile->path, RCSREPOVERSION)!=NULL))
+			{
+				force_tag_match_now=1;
+				this_is_repoversion=1;
+			}
 			nversion = RCS_getversion(vers->srcfile,
 									numtag,
 									date,
-									force_tag_match,
+									force_tag_match_now,
 					(int *) NULL);
+ 			if ((this_is_repoversion) && (userevone!=0) && (nversion == NULL))
+ 			{
+ 				TRACE(3,"tag_fileproc() - use version 1.1 in this case");
+ 				nversion = RCS_getversion(vers->srcfile,
+ 									"1.1",
+ 									date,
+  									force_tag_match,
+  					(int *) NULL);
+ 			}
+ 			TRACE(3,"tag_fileproc() - nversion \"%s\"",PATCH_NULL(nversion));
+		}
         if (nversion == NULL)
         {
 	    freevers_ts (&vers);
             return (0);
         }
     }
+	else
+		TRACE(3,"tag_fileproc() - numtag == NULL && date == NULL");
+
     if (delete_flag)
     {
+		TRACE(3,"tag_fileproc() - delete_flag");
 
+	TRACE(3,"* If -d is specified, \"force_tag_match\" is set, so that this call to");
+	TRACE(3,"* RCS_getversion() will return a NULL version string if the symbolic");
+	TRACE(3,"* tag does not exist in the RCS file.");
+	TRACE(3,"* ");
+	TRACE(3,"* This is done here because it's MUCH faster than just blindly calling");
+	TRACE(3,"* \"rcs\" to remove the tag... trust me.");
 	/*
 	 * If -d is specified, "force_tag_match" is set, so that this call to
 	 * RCS_getversion() will return a NULL version string if the symbolic
@@ -926,10 +1002,14 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
 	 * "rcs" to remove the tag... trust me.
 	 */
 
+	TRACE(3,"tag_fileproc(0) rcs get version rcsfile=\"%s\" symtag=\"%s\"",
+					PATCH_NULL(vers->srcfile->path),
+					PATCH_NULL(symtag) );
 	version = RCS_getversion (vers->srcfile, symtag, (char *) NULL, 1,
 				  (int *) NULL);
 	if (version == NULL || vers->srcfile == NULL)
 	{
+		TRACE(3,"tag_fileproc(0) rcs get version returned NULL version or scrfile NULL");
 	    freevers_ts (&vers);
 	    return (0);
 	}
@@ -952,6 +1032,7 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
 	}
     }
 
+    TRACE(3,"tag_fileproc - RCS_deltag");
 	if ((retcode = RCS_deltag(vers->srcfile, symtag)) != 0) 
 	{
 	    if (!quiet)
@@ -961,6 +1042,9 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
 	    freevers_ts (&vers);
 	    return (1);
 	}
+	TRACE(3,"tag_fileproc(1) rewrite rcsfile=\"%s\" symtag=\"%s\"",
+					PATCH_NULL(vers->srcfile->path),
+					PATCH_NULL(symtag) );
 	RCS_rewrite (vers->srcfile, NULL, NULL, 0);
 
 	/* warm fuzzies */
@@ -972,6 +1056,7 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
 	}
 
 	freevers_ts (&vers);
+	TRACE(3,"tag_fileproc - return 0 (#1)");
 	return (0);
     }
 
@@ -979,24 +1064,37 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
      * If we are adding a tag, we need to know which version we have checked
      * out and we'll tag that version.
      */
+	TRACE(3,"* If we are adding a tag, we need to know which version we have checked" );
+	TRACE(3,"* out and we'll tag that version." );
     if (nversion == NULL)
     {
+		TRACE(3,"tag_fileproc() - nversion == NULL" );
 		if(!strcmp(finfo->file,RCSREPOVERSION))
+		{
+			TRACE(3,"tag_fileproc() - use vers->vn_rcs" );
 			version = vers->vn_rcs;
+		}
 		else
+		{
+			TRACE(3,"tag_fileproc() - use vers->vn_user" );
 			version = vers->vn_user;
+		}
     }
     else
     {
+		TRACE(3,"tag_fileproc() - nversion != NULL" );
         version = nversion;
     }
+	TRACE(3,"tag_fileproc() - version = \"%s\".", PATCH_NULL(version) );
     if (version == NULL)
     {
+	TRACE(3,"tag_fileproc - nversion still == NULL");
 	freevers_ts (&vers);
 	return (0);
     }
     else if (strcmp (version, "0") == 0)
     {
+	TRACE(3,"tag_fileproc - uncommitted file");
 	if (!quiet)
 	    error (0, 0, "couldn't tag added but un-commited file `%s'", finfo->file);
 	freevers_ts (&vers);
@@ -1004,6 +1102,7 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
     }
     else if (version[0] == '-')
     {
+	TRACE(3,"tag_fileproc - removed but un-committed file");
 	if (!quiet)
 	    error (0, 0, "skipping removed but un-commited file `%s'", finfo->file);
 	freevers_ts (&vers);
@@ -1011,6 +1110,7 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
     }
     else if (vers->srcfile == NULL)
     {
+	TRACE(3,"tag_fileproc - cannot file file ! (renamed?)");
 	if (!quiet)
 	    error (0, 0, "cannot find revision control file for `%s'", finfo->file);
 	freevers_ts (&vers);
@@ -1027,12 +1127,18 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
      */
 	if(floating_branch)
 		sprintf(strrchr(version,'.'),".0");
+	TRACE(3,"tag_fileproc - RCS_magicrev");
     rev = (!alias_branch && branch_mode) ? RCS_magicrev (vers->srcfile, version) : version;
+	TRACE(3,"tag_fileproc(4) rcs get version rcsfile=\"%s\" symtag=\"%s\"",
+					PATCH_NULL(vers->srcfile->path),
+					PATCH_NULL(symtag) );
     oversion = RCS_getversion (vers->srcfile, symtag, (char *) NULL, 1,
 			       (int *) NULL);
     if (oversion != NULL)
     {
+	TRACE(3,"tag_fileproc - oversion != NULL");
 	int isbranch = RCS_nodeisbranch (finfo->rcs, symtag);
+	TRACE(3,"tag_fileproc() - isbranch=%d",isbranch);
 
 	/*
 	 * if versions the same and neither old or new are branches don't have 
@@ -1049,6 +1155,7 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
 
 	if (!force_tag_move || (isbranch && !move_branch_tag))
 	{
+		TRACE(3,"tag_fileproc - !force_tag_move || (isbranch && !move_branch_tag)");
 	    /* we're NOT going to move the tag */
 	    cvs_output ("W ", 2);
 	    cvs_output (fn_root(finfo->fullname), 0);
@@ -1072,6 +1179,7 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
 	xfree (oversion);
     }
 
+	TRACE(3,"tag_fileproc - finally RCS_settag");
     if ((retcode = RCS_settag(vers->srcfile, symtag, rev, current_date)) != 0)
     {
 	error (1, retcode == -1 ? errno : 0,
@@ -1084,8 +1192,14 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
     }
 	else
 		tag_set_ok = 1;
+	TRACE(3,"tag_fileproc - finally RCS_settag ok");
     if (branch_mode)
 	xfree (rev);
+	TRACE(3,"tag_fileproc(2) rewrite rcsfile=\"%s\" symtag=\"%s\", rev=\"%s\", date=\"%s\"",
+					PATCH_NULL(vers->srcfile->path),
+					PATCH_NULL(symtag),
+					PATCH_NULL(rev),
+					PATCH_NULL(current_date) );
     RCS_rewrite (vers->srcfile, NULL, NULL, 0);
 
     /* more warm fuzzies */
@@ -1101,6 +1215,7 @@ static int tag_fileproc (void *callerdat, struct file_info *finfo)
         xfree (nversion);
     }
     freevers_ts (&vers);
+    TRACE(3,"tag_fileproc return 0");
     return (0);
 }
 
@@ -1113,6 +1228,7 @@ static Dtype tag_dirproc (void *callerdat, char *dir, char *repos, char *update_
 	if(hint!=R_PROCESS)
 		return hint;
 
+    TRACE(3,"tag_dirproc");
     if (ignore_directory (update_dir))
     {
 	/* print the warm fuzzy message */
@@ -1127,15 +1243,18 @@ static Dtype tag_dirproc (void *callerdat, char *dir, char *repos, char *update_
 	{
 		struct file_info finfo;
 
+	    TRACE(3,"tag_dirproc - get_directory_finfo()");
 		if(!get_directory_finfo(repos,dir,update_dir,&finfo))
 		{
 			if(is_rtag)
 				rtag_fileproc(NULL,&finfo);
 			else
 				tag_fileproc(NULL,&finfo);
+		    TRACE(3,"tag_dirproc - get_directory_finfo() done, now dellist");
 			dellist(&finfo.entries);
 		}
 	}
+    TRACE(3,"tag_dirproc return");
     return (R_PROCESS);
 }
 
@@ -1183,8 +1302,10 @@ val_direntproc (void *callerdat, char *dir, char *repository, char *update_dir, 
        about to be created.  */
 	struct val_args *the_val_args = (struct val_args *)callerdat;
 
+    TRACE(3,"val_direntproc");
 	if(the_val_args->found)
 		return R_SKIP_ALL;
+    TRACE(3,"return val_direntproc");
 	return hint;
 }
 
@@ -1227,6 +1348,7 @@ void tag_check_valid (const char *name, int argc, char **argv, int local, int af
     if (strcmp (name, TAG_BASE) == 0
 	|| strcmp (name, TAG_HEAD) == 0)
 	return;
+
 
     /* FIXME: This routine doesn't seem to do any locking whatsoever
        (and it is called from places which don't have locks in place).
@@ -1272,6 +1394,13 @@ void tag_check_valid (const char *name, int argc, char **argv, int local, int af
 	/* FIXME: should check errors somehow (add dbm_error to myndbm.c?).  */
     }
 
+    // val-tags sucks.  If someone mistypes a tag what does it matter?
+    // we can catch it at the end and warn them.  Scanning the entire
+    // repository for a flippin' tag is just stupid.
+    TRACE(3,"Tag %s not found in val-tags, but we don't care any more.", mytag);
+    xfree(valtags_filename);
+    return;
+
     /* We didn't find the tag in val-tags, so look through all the RCS files
        to see whether it exists there.  Yes, this is expensive, but there
        is no other way to cope with a tag which might have been created
@@ -1304,7 +1433,7 @@ void tag_check_valid (const char *name, int argc, char **argv, int local, int af
 			   (PREDIRENTPROC) NULL, val_direntproc, (DIRLEAVEPROC) NULL,
 			   (void *)&the_val_args,
 			   argc, argv, local, which, aflag,
-			   1, NULL, NULL, 1, NULL);
+			   1, NULL, NULL, 1, NULL,NULL);
     if (repository != NULL && repository[0] != '\0')
     {
 	if (restore_cwd (&cwd, NULL))

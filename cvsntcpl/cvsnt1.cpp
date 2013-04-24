@@ -27,9 +27,12 @@
 #include "CompatibiltyPage.h"
 #include "AdvancedPage.h"
 #include "ProtocolsPage.h"
+#include "AboutPage.h"
+#include "AdvertDialog.h"
 
 bool g_bPrivileged;
 HKEY g_hServerKey;
+HKEY g_hInstallerKey;
 
 /* All this is from the new SDK... remove once it's mainstream */
 
@@ -61,6 +64,10 @@ protected:
 			if(CGlobalSettings::isAdmin())
 				btAdmin.EnableWindow(FALSE);
 		}
+
+		CAdvertDialog dlg;
+		dlg.DoModal();
+
 		return bRet;
 	}
 
@@ -69,7 +76,11 @@ protected:
 		// This isn't documented but seems to work in the beta2.
 		TCHAR fn[MAX_PATH],cmd[MAX_PATH*2];
 		GetModuleFileName(AfxGetApp()->m_hInstance,fn,MAX_PATH);
-		_sntprintf(cmd,sizeof(cmd)/sizeof(cmd[0]),_T("shell32.dll,Control_RunDLL %s"),fn);
+		TCHAR *find_underscore;
+		find_underscore=_tcsstr(fn,_T("_cvsnt.cpl"));
+		if (find_underscore!=NULL)
+			_tcscpy(_T("cvsnt.cpl\0"),find_underscore);
+		_sntprintf(cmd,sizeof(cmd)/sizeof(cmd[0]),_T("shell32.dll,Control_RunDLL \"%s\""),fn);
 		if(ShellExecute(m_hWnd,_T("open"),_T("RunLegacyCPLElevated.exe"),cmd,NULL,SW_SHOWNORMAL)>(HINSTANCE)32)
 			PostMessage(WM_COMMAND,IDCANCEL);
 	}
@@ -102,8 +113,6 @@ BOOL CcvsntCPL::DoubleClick(UINT uAppNum, LONG lData)
 	WSAStartup(MAKEWORD(2,0),&wsa);
 	CString tmp;
 
-	CActivateManifest dummy;
-
 	if(CGlobalSettings::isAdmin())
 	{
 		if(RegCreateKeyEx(HKEY_LOCAL_MACHINE,_T("Software\\CVS\\Pserver"),NULL,_T(""),REG_OPTION_NON_VOLATILE,KEY_ALL_ACCESS,NULL,&g_hServerKey,NULL))
@@ -125,7 +134,10 @@ BOOL CcvsntCPL::DoubleClick(UINT uAppNum, LONG lData)
 		g_bPrivileged=false;
 	}
 
-	CCplPropertySheet sheet(g_bPrivileged?_T("CVSNT"):_T("CVSNT (Read Only)"));
+	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE,_T("Software\\March Hare Software Ltd\\Keys"),0,KEY_READ,&g_hInstallerKey))
+		g_hInstallerKey=NULL;
+
+	CCplPropertySheet sheet(g_bPrivileged?_T("CVSNT Low Performance Server - Community Edition"):_T("CVSNT Low Performance Server (Read Only) - Community Edition"));
 
 	sheet.m_psh.hIcon = AfxGetApp()->LoadIcon(IDI_ICON1);
 	sheet.m_psh.dwFlags |= PSH_USEHICON;
@@ -136,6 +148,7 @@ BOOL CcvsntCPL::DoubleClick(UINT uAppNum, LONG lData)
 	sheet.AddPage(new CCompatibiltyPage);
 	sheet.AddPage(new CProtocolsPage);
 	sheet.AddPage(new CAdvancedPage);
+	sheet.AddPage(new CAboutPage);
 	sheet.DoModal();
 
 	RegCloseKey(g_hServerKey);

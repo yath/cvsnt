@@ -51,12 +51,6 @@
 
 #define CVSROOT_SHADOW		"CVSROOT/shadow"
 
-static bool g_verbose;
-cvs::filename g_repos;
-cvs::string g_command;
-std::map<cvs::filename, int> module_list;
-std::map<cvs::string, int> tag_list;
-
 #ifdef _WIN32
 HMODULE g_hInst;
 
@@ -70,6 +64,14 @@ BOOL CALLBACK DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 int win32config(const struct plugin_interface *ui, void *wnd);
 #endif
+
+namespace {
+
+static bool g_verbose;
+cvs::filename g_repos;
+cvs::string g_command;
+std::map<cvs::filename, int> module_list;
+std::map<cvs::string, int> tag_list;
 
 int init(const struct trigger_interface_t* cb, const char *command, const char *date, const char *hostname, const char *username, const char *virtual_repository, const char *physical_repository, const char *sessionid, const char *editor, int count_uservar, const char **uservar, const char **userval, const char *client_version, const char *character_set)
 {
@@ -168,7 +170,7 @@ static int errorProc(const char *str, size_t len, void * /*param*/)
 	return 0;
 }
 
-int postcommand(const struct trigger_interface_t* cb, const char *directory)
+int postcommand(const struct trigger_interface_t* cb, const char *directory, int return_code)
 {
 	cvs::filename fn;
 	CFileAccess acc;
@@ -202,6 +204,7 @@ int postcommand(const struct trigger_interface_t* cb, const char *directory)
 		}
 
 		bool found = false;
+		cvs::string match;
 		for(std::map<cvs::filename,int>::const_iterator i = module_list.begin(); i!=module_list.end(); ++i)
 		{
 			CServerIo::trace(3,"Regexp match: %s - %s",tok[0],i->first.c_str());
@@ -210,6 +213,7 @@ int postcommand(const struct trigger_interface_t* cb, const char *directory)
 			{
 				CServerIo::trace(3,"Match found!");
 				found=true;
+				match = i->first.c_str();
 				break;
 			}
 		}
@@ -241,7 +245,7 @@ int postcommand(const struct trigger_interface_t* cb, const char *directory)
 		rf.addArg(tok[2]);
 		rf.addArg("-r");
 		rf.addArg(tok[1]);
-		rf.addArg(tok[0]);
+		rf.addArg(match.c_str());
 		if(!rf.run(NULL))
 		{
 			CServerIo::error("Unable to run cvs checkout");
@@ -285,6 +289,8 @@ int rcsdiff(const struct trigger_interface_t *cb, const char *file, const char *
 {
 	return 0;
 }
+
+} // anonymous namespace
 
 static int init(const struct plugin_interface *plugin);
 static int destroy(const struct plugin_interface *plugin);

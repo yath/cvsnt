@@ -64,12 +64,23 @@ char versionString[] = PACKAGE_STRING;
  * a bit complex.  A new scheme for handling string/buffer fields
  * in the structures probably needs to be designed
  */
+/* The special handling for zero length items is necessary so the offset
+ * does not point past end of message if the last item of the message
+ * has zero length (otherwise server responds with "The parameter is
+ * incorrect."). However if the item length is zero it doesn't matter
+ * where exactly the offset points to, I think. We just set it to zero.
+ */
 #define AddBytes(ptr, header, buf, count) \
 { \
   ptr->header.len = ptr->header.maxlen = UI16LE(count); \
+  if (buf && count) \
+  { \
   ptr->header.offset = UI32LE((ptr->buffer - ((uint8*)ptr)) + ptr->bufIndex); \
   memcpy(ptr->buffer+ptr->bufIndex, buf, count); \
   ptr->bufIndex += count; \
+  } \
+  else \
+  ptr->header.offset = UI32LE(0); \
 }
 
 #define AddString(ptr, header, string) \

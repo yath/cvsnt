@@ -17,10 +17,15 @@
 // lockservice.cpp : Defines the entry point for the console application.
 //
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <tchar.h>
 #include <process.h>
 #include <config.h>
-#include "../cvsservice/ServiceMsg.h"
 #include "resource.h"
 #include <cvstools.h>
 
@@ -49,7 +54,7 @@ bool g_bTestMode = false;
 static int lockserver_port = 2402;
 static int local_only = 1;
 
-int main(int argc, char* argv[])
+CVSNT_EXPORT int main(int argc, char* argv[])
 {
     SC_HANDLE  hSCManager = NULL, hService = NULL;
     char szImagePath[MAX_PATH];

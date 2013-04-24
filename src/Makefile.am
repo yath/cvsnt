@@ -12,20 +12,9 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Publ.cpp License for more details.
 
-if WITH_ZLIB
-  zlib_inc = 
-  zlib_lib = @ZLIB_LIBS@
-else
-  zlib_inc = -I$(top_srcdir)/zlib
-  zlib_lib = ../zlib/libz.a 
-endif
-
-if WITH_PCRE
-  pcre_lib = @PCRE_LIBS@
-else
-  pcre_lib = ../pcre/.libs/libpcreposix.a ../pcre/.libs/libpcre.a
-endif
-
+zlib_inc =
+zlib_lib = @ZLIB_LIBS@
+	
 if WITH_PAM
   pam_lib = @PAM_LIBS@
 else
@@ -52,9 +41,7 @@ else
   ssl_lib =
 endif
 
-libdl_lib = $(LIBLTDL)
-
-AM_CPPFLAGS = -I$(top_srcdir)/lib -I$(top_srcdir)/cvsapi -I$(top_srcdir)/cvstools -I$(top_srcdir)/diff -I$(top_srcdir)/cvsapi $(zlib_inc) $(includeopt) $(INCLTDL) $(mac_hfs_inc)
+AM_CPPFLAGS = -I$(top_srcdir)/lib -I$(top_srcdir)/cvsapi -I$(top_srcdir)/cvstools -I$(top_srcdir)/diff -I$(top_srcdir)/cvsapi $(zlib_inc) $(includeopt) $(mac_hfs_inc)
 
 bin_PROGRAMS = cvsnt
 
@@ -118,6 +105,7 @@ cvsnt_SOURCES = \
 	status.cpp \
 	stripslash.cpp \
 	subr.cpp \
+	switch.cpp \
 	tag.cpp \
 	update.cpp \
 	version.cpp \
@@ -151,28 +139,8 @@ cvsnt_LDADD = \
 	../cvsapi/libcvsapi.la \
 	../cvstools/libcvstools.la \
 	$(zlib_lib) \
-	$(pcre_lib) \
-	$(libdl_lib) \
 	$(pam_lib) \
 	$(mac_hfs_lib)
-
-# extra clean targets
-# wish this could be distclean-hdr-local but it's not part of automake
-DISTCLEANFILES = options.h-SAVED check.log check.plog
-
-# General
-EXTRA_DIST = \
-	.cvsignore \
-	ChangeLog-9194 \
-	ChangeLog-9395 \
-	ChangeLog-96 \
-	ChangeLog-97 
-
-## MAINTAINER Targets
-
-# for backwards compatibility with the old makefiles
-.PHONY: realclean
-realclean: maintainer-clean
 
 uninstall-local:
 	rm -f $(DESTDIR)$(bindir)/cvs

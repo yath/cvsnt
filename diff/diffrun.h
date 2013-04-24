@@ -50,6 +50,7 @@ struct diff_callbacks
      and the next two are parameters.  The default is to print a
      message on stderr.  */
   void (*error)(char const *, char const *, char const *);
+  void (*cvs_trace)(int level, const char *fmt,...);
 
   FILE *(*fopen)(const char *fn, const char *mode);
   int (*open)(const char *fn, int mode, ...);

@@ -47,7 +47,6 @@ extern "C" {
 #define asctime wnt_asctime
 #define TIME_T_SPRINTF "I64"
 
-#define vsnprintf _vsnprintf
 #define vsnwprintf _vsnwprintf
 #define snprintf _snprintf
 #define snwprintf _snwprintf
@@ -58,6 +57,12 @@ extern "C" {
 	#define CVSAPI_EXPORT __declspec(dllimport)
 #elif !defined(CVSAPI_EXPORT)
 	#define CVSAPI_EXPORT
+#endif
+
+#ifdef __cplusplus
+#define CVSNT_EXPORT extern "C" __declspec(dllexport)
+#else
+#define CVSNT_EXPORT __declspec(dllexport)
 #endif
 
 #ifndef PATH_MAX
@@ -90,7 +95,7 @@ CVSAPI_EXPORT char *wnt_ctime(const time_t *t);
 #define UTF8_CLIENT 1
 
 /* We use the apple responder by default */
-#define MDNS_DEFAULT mdnsApple
+#define MDNS_DEFAULT "apple"
 
 #endif /* __APPLE__ */
 
@@ -167,11 +172,21 @@ CVSAPI_EXPORT char *wnt_ctime(const time_t *t);
 #endif
 
 #ifndef MDNS_DEFAULT
-#define MDNS_DEFAULT mdnsMini
+//#ifdef HAVE_AvAHI
+//#define MDNS_DEFAULT "avahi"
+#if defined HAVE_DNS_SD
+#define MDNS_DEFAULT "apple"
+#else
+#define MDNS_DEFAULT "mini"
+#endif
 #endif
 
 #ifndef TIME_T_SPRINTF
 #define TIME_T_SPRINTF "l"
+#endif
+
+#ifndef CVSNT_EXPORT
+#define CVSNT_EXPORT
 #endif
 
 /* Default is to search for libtool (.la) extenstions - this should work on all platforms except win32 */

@@ -97,7 +97,7 @@ static const char *const keywords_contents[] = {
     "# The first entry on a line is a regular expression which is tested\n",
     "# against the directory that the change is being made to, relative to the\n",
     "# $CVSROOT.  Subsequent lines contain keyword definitions, indented by a space\n",
-	"# to separate them from module definitions\n.",
+	"# to separate them from module definitions.\n",
     "#\n",
     "# If the repository name does not match any of the definitions in this\n",
     "# file, the \"ALL\" section is used, if it is specified.\n",
@@ -1425,17 +1425,22 @@ int init (int argc, char **argv)
 
 	fileattr_startdir(adm);
 	fileattr_modified();
-	CXmlNode *curdir = fileattr_create(NULL,"directory");
-	CXmlNode *acl = curdir->NewNode("owner",CVS_Username);
-	acl = curdir->NewNode("acl",NULL);
-	acl->NewAttribute("user",CVS_Username);
-	acl->NewNode("all",NULL);
-	acl = curdir->NewNode("acl",NULL);
-	acl->NewAttribute("user","admin");
-	acl->NewNode("all",NULL);
-	acl = curdir->NewNode("acl",NULL);
-	CXmlNode *node = acl->NewNode("all",NULL);
-	node->NewAttribute("deny","1");
+	CXmlNodePtr curdir = fileattr_getroot();
+	curdir->NewNode("directory");
+	curdir->NewNode("owner",CVS_Username,false);
+	curdir->NewNode("acl");
+	curdir->NewAttribute("user","owner");
+	curdir->NewNode("all",NULL,false);
+	curdir->GetParent();
+	curdir->NewNode("acl");
+	curdir->NewAttribute("user","admin");
+	curdir->NewNode("all",NULL,false);
+	curdir->GetParent();
+	curdir->NewNode("acl");
+	curdir->NewNode("all");
+	curdir->NewAttribute("deny","1");
+	curdir->GetParent();
+	curdir->GetParent();
 	fileattr_write();
 	fileattr_free();
 

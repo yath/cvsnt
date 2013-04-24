@@ -232,7 +232,7 @@ static int patch_proc (int argc, char **argv, const char *xwhere,
     int which;
     char *repository;
     char *where;
-	const char *message;
+//	const char *message;
 
     repository = (char*)xmalloc (strlen (current_parsed_root->directory) + strlen (argv[0])
 			  + (mfile == NULL ? 0 : strlen (mfile) + 1) + 2);
@@ -248,7 +248,7 @@ static int patch_proc (int argc, char **argv, const char *xwhere,
 	char *path;
 
 	/* if the portion of the module is a path, put the dir part on repos */
-	if ((cp = strrchr (mfile, '/')) != NULL)
+	if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 	{
 	    *cp = '\0';
 	    (void) strcat (repository, "/");
@@ -299,19 +299,11 @@ static int patch_proc (int argc, char **argv, const char *xwhere,
 	rev2_validated = 1;
     }
 
-    if (! verify_read(repository,NULL,NULL,&message,NULL))
-    {
-       error (0, 0, "User %s cannot read %s", CVS_Username, fn_root(repository));
-		if(message)
-			error (0, 0, "%s", message);
-       return (1);
-    }
-
     /* start the recursion processor */
     err = start_recursion (patch_fileproc, (FILESDONEPROC) NULL, (PREDIRENTPROC) NULL, patch_dirproc,
 			   (DIRLEAVEPROC) NULL, NULL,
 			   argc - 1, argv + 1, local,
-			   which, 0, 1, where, repository, 1, verify_read);
+			   which, 0, 1, where, repository, 1, verify_read, rev1);
     xfree (where);
     xfree (repository);
 

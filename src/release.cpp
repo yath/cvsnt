@@ -211,7 +211,7 @@ int release (int argc, char **argv)
 			start_recursion (release_fileproc, (FILESDONEPROC) NULL,
 				 (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL,
 				 (void *) NULL, 0, NULL, 0, W_LOCAL,
-				 0, 0, (char *) NULL, NULL, 0, NULL);
+				 0, 0, (char *) NULL, NULL, 0, NULL, NULL);
 
 	
 			tmp=(char*)xmalloc(strlen(thisarg)+1024);
@@ -226,7 +226,10 @@ int release (int argc, char **argv)
 			if(!yes_flag)
 				c=yesno_prompt(tmp,"Modified files",0);
 			else
+			{
 				printf("%sy\n",tmp);
+				c='y';
+			}
 
 			xfree(tmp);
 			if (c!='y')			/* "No" */
@@ -282,14 +285,14 @@ int release (int argc, char **argv)
 				start_recursion (release_delete_fileproc, (FILESDONEPROC) NULL,
 						(PREDIRENTPROC) NULL, (DIRENTPROC) NULL, release_delete_dirleaveproc,
 						(void *) NULL, 1, &thisarg, 0, W_LOCAL,
-						0, 0, (char *) NULL, NULL, 0, NULL);
+						0, 0, (char *) NULL, NULL, 0, NULL, NULL);
 			}
 			else if(export_flag)
 			{
 				start_recursion (NULL, (FILESDONEPROC) NULL,
 						(PREDIRENTPROC) NULL, (DIRENTPROC) NULL, release_export_dirleaveproc,
 						(void *) NULL, 1, &thisarg, 0, W_LOCAL,
-						0, 0, (char *) NULL, NULL, 0, NULL);
+						0, 0, (char *) NULL, NULL, 0, NULL, NULL);
 			}
 		}
 

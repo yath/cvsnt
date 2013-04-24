@@ -21,10 +21,12 @@
 /*
 CSqlRecordset::CSqlRecordset()
 {
+	 CServerIo::trace(1,"Instantiate CSqlRecordset");
 }
 
 CSqlRecordset::~CSqlRecordset()
 {
+	 CServerIo::trace(1,"Destroy CSqlRecordset");
 }
 */
 

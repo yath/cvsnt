@@ -32,7 +32,7 @@
 int acl_mode = 1;
 
 typedef std::map<cvs::username, int> valid_groups_t;
-typedef std::map<cvs::filename, CXmlNode*> directory_cache_t;
+typedef std::map<cvs::filename, CXmlNodePtr> directory_cache_t;
 static valid_groups_t valid_groups;
 static directory_cache_t directory_cache;
 
@@ -44,8 +44,6 @@ int perms_close()
 	xfree(perms_cache);
 	valid_groups.clear();
 
-	for(directory_cache_t::iterator i = directory_cache.begin(); i!=directory_cache.end(); i++)
-		delete i->second;
 	directory_cache.clear();
 
 	return 0;
@@ -68,7 +66,7 @@ static void get_valid_groups()
     char   *group;
     FILE   *fp;
     char   *linebuf = NULL;
-    size_t linebuf_len;
+    size_t linebuf_len = 1024;
 
     if (!valid_groups.empty())
 		return;
@@ -77,6 +75,10 @@ static void get_valid_groups()
 			+ strlen (CVSROOTADM)
 			+ strlen (CVSROOTADM_GROUP)
 			+ 10);
+
+	// must use malloc/free since this is what lib/getdelim does
+	// otherwise on windows we'll try and accidentally free it with the Win32 native memory functions
+	linebuf = (char*)malloc (linebuf_len + 100);
 
     strcpy (filename, current_parsed_root->directory);
     strcat (filename, "/" CVSROOTADM "/");
@@ -95,25 +97,32 @@ static void get_valid_groups()
 				continue;
 
 			name = cvs_strtok(names, ", \t");
-			while (name != NULL)
+			for(;name != NULL; name = cvs_strtok(NULL, ", \t"))
 			{
 				if(!strcasecmp(name,"admin"))
+				{
 					error(0,0,"The group 'admin' is automatically assigned to repository administrators");
+				}
+				if(!strcasecmp(name,"owner"))
+				{
+					error(0,0,"The group 'owner' is automatically assigned to directory owners");
+					continue;
+				}
 				if (!usercmp (CVS_Username, name))
 				{
 					add_valid_group(group);
 					break;
 				}
-				name = cvs_strtok(NULL, ", \t");
 			}
 
-			if( linebuf != NULL )
-			{
-				xfree (linebuf);
-				linebuf = NULL;
-			}
+			memset(linebuf,0,linebuf_len);
 		}
 
+		if( linebuf != NULL )
+		{
+			free (linebuf);
+			linebuf = NULL;
+		}
 		if (ferror (fp))
 			error (1, errno, "cannot read %s", filename);
 		if (fclose (fp) < 0)
@@ -150,23 +159,23 @@ static void get_valid_groups()
 #endif
 }
 
-static int verify_valid_name(const char *name)
+static bool verify_valid_name(const char *name)
 {
 	TRACE(3,"verify_valid_name(%s)",name);
 	if(CVS_Username && !usercmp(name,CVS_Username))
-		return 1;
+		return true;
 	return valid_groups.find(name)!=valid_groups.end();
 }
 
-int verify_admin ()
+bool verify_admin ()
 {
 	char   *filename;
 	FILE   *fp;
 	char   *linebuf = NULL;
-	size_t linebuf_len;
+	size_t linebuf_len = 1024;
 	char   *name;
-	static int is_the_admin = 0;
-	static int admin_valid = 0;
+	static bool is_the_admin = false;
+	static bool admin_valid = false;
 
 	if(admin_valid)
 		return is_the_admin;
@@ -174,7 +183,11 @@ int verify_admin ()
 	filename = (char*)xmalloc (strlen (current_parsed_root->directory)
 		  + strlen ("/CVSROOT")
 		  + strlen ("/admin")
-		  + 1);
+		  + 100);
+
+	// must use malloc/free since this is what lib/getdelim does
+	// otherwise on windows we'll try and accidentally free it with the Win32 native memory functions
+	linebuf = (char*)malloc (linebuf_len + 100);
 
 	strcpy (filename, current_parsed_root->directory);
 	strcat (filename, "/CVSROOT");
@@ -192,11 +205,12 @@ int verify_admin ()
 			if (!usercmp (CVS_Username, name))
 			{
 				is_the_admin = 1;
-				xfree(linebuf);
 				break;
 			}
-			xfree (linebuf);
+			memset(linebuf,0,linebuf_len);
 		}
+		free (linebuf);
+		linebuf=NULL;
 		if (ferror (fp))
 			error (1, errno, "cannot read %s", filename);
 		if (fclose (fp) < 0)
@@ -208,7 +222,12 @@ int verify_admin ()
 	{
 #ifdef WIN32
 		if(win32_isadmin())
+		{
 			is_the_admin = 1;
+			TRACE(3,"Yes - is admin (WIN32).");
+		}
+		else
+			TRACE(3,"No - is NOT admin (WIN32).");
 #else
 #ifdef CVS_ADMIN_GROUP
 	{
@@ -219,14 +238,19 @@ int verify_admin ()
 	  gr = getgrnam(CVS_ADMIN_GROUP);
 	  if(gr)
 	  {
+	    TRACE(2,"Determine if the current thread is running as a user that is a member of the group \"%s\" == %d (unix).",CVS_ADMIN_GROUP,(int)gr->gr_gid);
 	    ngroups = getgroups(NGROUPS_MAX,groups);
 	    for(n=0; n<ngroups; n++)
 	    {
+	      TRACE(3,"Check group %d",(int)groups[n]);
 	      if(groups[n]==gr->gr_gid)
 	      {
 	        is_the_admin = 1;
+			TRACE(3,"Yes - is admin (UNIX).");
 	        break;
 	      }
+	      else
+			TRACE(3,"No - is NOT admin (UNIX).");
 	    }
 	  }
 	}
@@ -240,140 +264,158 @@ int verify_admin ()
 
 static int cache_directory_permissions(const char *dir)
 {
-	char *d=xstrdup(dir),*p;
+	char *d=xstrdup(dir),*p=NULL;
 	TRACE(3,"cache_directory_permissions(%s)",dir);
 	do
 	{
 		if(directory_cache.find(d)==directory_cache.end())
 		{
-			CXmlNode *node=NULL;
+			CXmlNodePtr node=NULL;
 			_fileattr_read(node, d);
 			if(node)
-				directory_cache[d]=node;
+			{
+				TRACE(3,"cache_directory_permissions() - cache directory(%s,%s)",PATCH_NULL(node->GetName()),PATCH_NULL(node->GetValue()));
+				directory_cache[d]=node->DuplicateNode();
+			}
 			else
+			{
+				TRACE(3,"cache_directory_permissions() - do not cache directory");
 				directory_cache[d]=NULL;
+			}
 		}
+		TRACE(3,"cache_directory_permissions() fncmp(d=\"%s\",current_parsed_root->directory)",PATCH_NULL(d),PATCH_NULL(current_parsed_root->directory));
 		if(fncmp(d,current_parsed_root->directory))
 		{
 			p=(char*)last_component(d);
+			TRACE(3,"cache_directory_permissions() last_component=%s",PATCH_NULL(p));
 			*(--p)='\0';
 		}
 		else
 			break;
 	} while (1);
-	xfree(d);
+	if (d!=NULL)
+	{
+		TRACE(3,"cache_directory_permissions() free(%s)",PATCH_NULL(d));
+		xfree(d);
+	}
+	TRACE(3,"cache_directory_permissions() return");
 	return 0;
 }
 
-static int verify_owner (const char *dir)
+static bool verify_owner_acl(CXmlNodePtr acl)
 {
-	TRACE(3,"verify_owner(%s)",dir);
+	CXmlNodePtr n = acl->Clone();
+    if(n->Lookup("/directory/owner"))
+	{
+		if(n->XPathResultNext())
+			return verify_valid_name(n->GetValue());
+	}
+    return false;
+}
 
-	if(verify_admin())
-		return 1;
+static int verify_owner_dir(const char *dir)
+{
+	TRACE(3,"verify_owner_dir(%s)",dir);
 
 	get_valid_groups();
 
 	cache_directory_permissions(dir);
 	if(directory_cache.find(dir)!=directory_cache.end() && directory_cache[dir])
-	{
-		CXmlNode *n = directory_cache[dir]->Lookup("directory/owner");
-		if(n)
-			return verify_valid_name(n->GetValue());
-
-	}
+		return verify_owner_acl(directory_cache[dir]);
+	TRACE(3,"verify_owner_dir() return");
 	return 0;
 }
 
-static void verify_acl(CXmlNode *acl, const char *action, const char *tag, const char *merge, int& user_state, int& group_state, bool first_iteration, const char **message)
+static void verify_acl(CXmlNodePtr acl, const char *action, const char *tag, const char *merge, int& user_state, int& group_state, bool first_iteration, const char **message)
 {
 	TRACE(3,"verify_acl(%s,%s,%s)",action,PATCH_NULL(tag),PATCH_NULL(merge));
 	int max_priority = -1;
-	while(acl)
-	{
-		CXmlNode *acl_branch = acl->Lookup("@branch");
-		CXmlNode *acl_merge = acl->Lookup("@merge");
-		CXmlNode *acl_user = acl->Lookup("@user");
-		CXmlNode *acl_message = acl->Lookup("message");
-		CXmlNode *acl_priority = acl->Lookup("@priority");
-		const char *val_branch = acl_branch?acl_branch->GetValue():"_default_";
-		const char *val_merge = acl_merge?acl_merge->GetValue():NULL;
-		const char *val_user = acl_user?acl_user->GetValue():NULL;
-		const char *val_message = acl_message?acl_message->GetValue():NULL;
-		int val_priority = acl_priority?atoi(acl_priority->GetValue()):0;
 
-		if(((!acl_user || verify_valid_name(val_user))) &&
-			(!acl_branch || (tag && !strcmp(tag,val_branch))) &&
-			(!acl_merge || (merge && !strcmp(merge,val_merge))))
+	if(!acl)
+		return;
+
+	do
+	{
+		const char *val_branch = acl->GetAttrValue("branch");
+		const char *val_merge = acl->GetAttrValue("merge");
+		const char *val_user = acl->GetAttrValue("user");
+		const char *val_message = acl->GetAttrValue("message");
+		const char *_val_priority = acl->GetAttrValue("priority");
+		int val_priority=_val_priority?atoi(_val_priority):0;
+
+		if(((!val_user || (!strcmp(val_user,"owner") && verify_owner_acl(acl)) || verify_valid_name(val_user))) &&
+			(!val_branch || (tag && !strcmp(tag,val_branch))) &&
+			(!val_merge || (merge && !strcmp(merge,val_merge))))
 		{
-			bool isUser = acl_user && CVS_Username && !usercmp(CVS_Username,val_user);
+			bool isUser = val_user && CVS_Username && !usercmp(CVS_Username,val_user);
+			if(val_user && !strcmp(val_user,"owner")) isUser|=verify_owner_acl(acl);
 
 			TRACE(3,"matched ACL user=%s, branch=%s, merge=%s",val_user?val_user:"",val_branch,val_merge?val_merge:"");
 
 			if(!val_priority)
 			{
 				if(isUser) val_priority=10;
-				else if(acl_user) val_priority=6; // No need to call verify_valid_name
-				if(acl_branch && !strcmp(tag,val_branch)) val_priority+=4;
-				if(merge && acl_merge && !strcmp(merge,val_merge)) val_priority+=5;
+				else if(val_user) val_priority=6; // No need to call verify_valid_name
+				if(val_branch && !strcmp(tag,val_branch)) val_priority+=4;
+				if(merge && val_merge && !strcmp(merge,val_merge)) val_priority+=5;
 				TRACE(3,"calculated ACL priority is %d",val_priority);
 			}
 			else
 				TRACE(3,"configured ACL priority is %d",val_priority);
 
-			CXmlNode *prm = acl->Lookup(action);
-			if(!prm)
-				prm = acl->Lookup("all");
-			if(val_priority>=max_priority && prm && (isUser || !valid_groups[val_branch]))
+			if(acl->GetChild(action) || acl->GetChild("all"))
 			{
-				CXmlNode *deny=prm->Lookup("@deny");
-				CXmlNode *inherit=prm->Lookup("@inherit");
-				max_priority = val_priority;
-				TRACE(3,"new max priority is %d",val_priority);
-				if(!first_iteration && inherit && !atoi(inherit->GetValue()))
+				if(val_priority>=max_priority /*&& (isUser || !valid_groups[val_branch])*/)
 				{
-					/* If we've reached a non-inheritable ACL ignore it and
-						all ACLs above it. */
-					if(isUser)
-						user_state=2;
-					else
-						valid_groups[val_branch]=2;
-				}
-				else
-				{
-					if(deny && atoi(deny->GetValue()))
+					const char *deny=acl->GetAttrValue("deny");
+					const char *inherit=acl->GetAttrValue("@inherit");
+					max_priority = val_priority;
+					TRACE(3,"new max priority is %d",val_priority);
+					if(!first_iteration && inherit && !atoi(inherit))
 					{
+						/* If we've reached a non-inheritable ACL ignore it and
+							all ACLs above it. */
 						if(isUser)
+							user_state=2;
+//						else
+//							valid_groups[val_branch]=2;
+					}
+					else
+					{
+						if(deny && atoi(deny))
 						{
-							/* user message overrides group message.  We won't get here twice. */
-							if(message)
-								*message = val_message;
-							user_state=-1;
-						}
-						else
-						{
-							if(message && !*message)
-								*message = val_message;
+							if(isUser)
+							{
+								/* user message overrides group message.  We won't get here twice. */
+								if(message)
+									*message = val_message;
+								user_state=-1;
+							}
+							else
+							{
+								if(message && !*message)
+									*message = val_message;
 
-							group_state = -1;
-							valid_groups[val_branch]=1;
+								group_state = -1;
+//								valid_groups[val_user]=1;
+							}
 						}
-					}
-					else
-					{
-						if(isUser)
-							user_state = 1;
 						else
 						{
-							group_state = 1;
-							valid_groups[val_branch]=1;
+							if(isUser)
+								user_state = 1;
+							else
+							{
+								group_state = 1;
+//								valid_groups[val_user]=1;
+							}
 						}
 					}
 				}
+				acl->GetParent();
 			}
 		}
-		acl = acl->Next();
-	}
+	} while(acl->GetSibling("acl"));
 }
 
 static int verify_perm(const char *dir, const char *file, const char *action, const char *tag, const char *merge, const char **message)
@@ -392,7 +434,8 @@ static int verify_perm(const char *dir, const char *file, const char *action, co
 		return 1;
 	}
 
-	if(verify_owner(dir) && !strcmp(action,"control"))
+	TRACE(3,"verify_perm: verify_owner_dir()");
+	if(!strcmp(action,"control") && (verify_admin() || verify_owner_dir(dir)))
 		return 1;
 
 	if(!tag || !*tag)
@@ -404,13 +447,16 @@ static int verify_perm(const char *dir, const char *file, const char *action, co
 	if(!fncmp(p,CVSNULLREPOS))
 		return 1; // Don't do a verify on CVSROOT/Emptydir
 
+	TRACE(3,"verify_perm() - get_valid_groups()");
 	get_valid_groups();
 
+	TRACE(3,"verify_perm() - get_valid_groups() completed, so now cache_directory_permissions()");
 	if(cache_directory_permissions(dir))
 	{
 		TRACE(3,"Unable to read directory permission cache");
 		return 1;
 	}
+	TRACE(3,"verify_perm() Read directory permission cache OK");
 
 	/* Order:
 		1. Exact match (user)
@@ -439,8 +485,8 @@ static int verify_perm(const char *dir, const char *file, const char *action, co
 
 	*/
 	d = xstrdup(dir);
-	for(valid_groups_t::iterator i = valid_groups.begin(); i!=valid_groups.end(); i++)
-		i->second=0;
+//	for(valid_groups_t::iterator i = valid_groups.begin(); i!=valid_groups.end(); i++)
+//		i->second=0;
 	user_state = group_state = 0;
 
 	bool first_iteration = true;
@@ -449,8 +495,9 @@ static int verify_perm(const char *dir, const char *file, const char *action, co
 		directory_cache_t::const_iterator dc = directory_cache.find(d);
 		if(dc!=directory_cache.end() && dc->second)
 		{
-			CXmlNode *acl = _fileattr_find(dc->second,"file[@name=F'%s']/acl",file);
-			if(acl)
+			CXmlNodePtr acl = dc->second->Clone();
+			acl->xpathVariable("name",file);
+			if(acl->Lookup("file[cvs:filename(@name,$name)]/acl") && acl->XPathResultNext())
 			{
 				TRACE(3,"ACL lookup on file %s",file);
 				verify_acl(acl, action, tag, merge, user_state, group_state, true, message);
@@ -467,10 +514,16 @@ static int verify_perm(const char *dir, const char *file, const char *action, co
 		directory_cache_t::const_iterator dc = directory_cache.find(d);
 		if(dc!=directory_cache.end() && dc->second)
 		{
-			CXmlNode *acl = dc->second->Lookup("directory/acl");
-			int max_priority = -1;
-			TRACE(3,"ACL lookup on directory %s",d);
-			verify_acl(acl, action, tag, merge, user_state, group_state, first_iteration, message);
+			if(dc->second->GetChild("directory"))
+			{
+				if(dc->second->GetChild("acl"))
+				{
+					TRACE(3,"ACL lookup on directory %s",d);
+					verify_acl(dc->second, action, tag, merge, user_state, group_state, first_iteration, message);
+					dc->second->GetParent();
+				}
+				dc->second->GetParent();
+			}
 		}
 
 		TRACE(3,"user_state = %d, group_state = %d", user_state, group_state);
@@ -501,6 +554,7 @@ match_found:
 	if(group_state>0)
 		return 1;
 	// If in mode 2 (normal) or this is a control action, default DENY
+	TRACE(3,"verify_perm() return");
 	if(acl_mode == 2 || !strcmp(action,"control"))
 		return 0;
 	return 1;
@@ -522,6 +576,7 @@ int verify_write (const char *dir, const char *name, const char *tag, const char
 
 int verify_create (const char *dir, const char *name, const char *tag, const char **message, const char **type_message)
 {
+	TRACE(3,"verify_create()");
 	if(type_message)
 		*type_message="create";
     return verify_perm(dir, name, "create", tag, NULL,message);
@@ -548,6 +603,11 @@ int verify_merge (const char *dir, const char *name, const char *tag, const char
 
 int change_owner (const char *user)
 {
-	fileattr_setvalue(fileattr_create(NULL,"directory/owner"),NULL,user);
+	TRACE(3,"change_owner(%s)",PATCH_NULL(user));
+	CXmlNodePtr node = fileattr_getroot();
+	if(!node->GetChild("directory")) node->NewNode("directory");
+	if(!node->GetChild("owner")) node->NewNode("owner");
+	node->SetValue(user);
+	TRACE(3,"change_owner() - return");
 	return 0;
 }

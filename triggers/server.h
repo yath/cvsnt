@@ -47,12 +47,12 @@ class CChangeInfoStruct :
      COM_INTERFACE_ENTRY(IChangeInfoStruct)
     END_COM_MAP()
 public:
-	virtual BSTR STDMETHODCALLTYPE get_filename() { return filename; }
-	virtual BSTR STDMETHODCALLTYPE get_rev_new() { return rev_new; }
-	virtual BSTR STDMETHODCALLTYPE get_rev_old() { return rev_old; }
-	virtual BSTR STDMETHODCALLTYPE get_type() { return type; }
-	virtual BSTR STDMETHODCALLTYPE get_tag() { return tag; }
-	virtual BSTR STDMETHODCALLTYPE get_bugid() { return bugid; }
+	virtual BSTR STDMETHODCALLTYPE get_filename() { return SysAllocString(filename); }
+	virtual BSTR STDMETHODCALLTYPE get_rev_new() { return SysAllocString(rev_new); }
+	virtual BSTR STDMETHODCALLTYPE get_rev_old() { return SysAllocString(rev_old); }
+	virtual BSTR STDMETHODCALLTYPE get_type() { return SysAllocString(type); }
+	virtual BSTR STDMETHODCALLTYPE get_tag() { return SysAllocString(tag); }
+	virtual BSTR STDMETHODCALLTYPE get_bugid() { return SysAllocString(bugid); }
 
 	BSTR filename;
 	BSTR rev_new;
@@ -73,8 +73,8 @@ class CItemListStruct :
     END_COM_MAP()
 
 public:
-	virtual BSTR STDMETHODCALLTYPE get_name() { return name; }
-	virtual BSTR STDMETHODCALLTYPE get_value() { return value; }
+	virtual BSTR STDMETHODCALLTYPE get_name() { return name.copy(); }
+	virtual BSTR STDMETHODCALLTYPE get_value() { return value.copy(); }
 
 	_bstr_t name;
 	_bstr_t value;
@@ -125,7 +125,14 @@ public:
    virtual ~CChangeInfoCollection() { }
 
    STDMETHOD(get__NewEnum)(IUnknown** ppUnk) { return CreateSTLEnumerator<VarVarEnum>(ppUnk, this, m_vec); }
-   STDMETHOD(get_Item)(long Index, IDispatch **ppVal) { if(Index<0 || Index>(long)m_vec.size()) return E_INVALIDARG; *ppVal=m_vec[Index].pdispVal; return S_OK; }
+   STDMETHOD(get_Item)(long Index, IDispatch **ppVal) 
+       { 
+       if(Index<0 || Index>(long)m_vec.size()) 
+           return E_INVALIDARG; 
+       *ppVal=m_vec[Index].pdispVal;
+       (*ppVal)->AddRef ();
+       return S_OK; 
+       }
    STDMETHOD(get_Count)(long *pVal) { *pVal=m_vec.size(); return S_OK; }
 };
 
@@ -146,7 +153,7 @@ public:
    virtual ~CItemListCollection() { }
 
    STDMETHOD(get__NewEnum)(IUnknown** ppUnk) { return CreateSTLEnumerator<VarVarEnum>(ppUnk, this, m_vec); }
-   STDMETHOD(get_Item)(long Index, IDispatch **ppVal) { if(Index<0 || Index>(long)m_vec.size()) return E_INVALIDARG; *ppVal=m_vec[Index].pdispVal; return S_OK; }
+   STDMETHOD(get_Item)(long Index, IDispatch **ppVal) { if(Index<0 || Index>(long)m_vec.size()) return E_INVALIDARG; *ppVal=m_vec[Index].pdispVal; (*ppVal)->AddRef (); return S_OK; }
    STDMETHOD(get_Count)(long *pVal) { *pVal=m_vec.size(); return S_OK; }
 };
 

@@ -13,6 +13,7 @@
  * The call is: cvs commit [options] files...
  *
  */
+#include "../version.h"
 
 #include "cvs.h"
 #include "getline.h"
@@ -113,7 +114,12 @@ static const char *const commit_usage[] =
 //	"\t-i\t\tIgnore keyword differences (EXPERIMENTAL).\n",
     "\t-n\t\tDo not run the module program (if any).\n",
 	"\t-l\t\tLocal directory only (not recursive).\n",
+#ifdef _WIN32
+	"\t-m message\tLog message (the log message will include an advert).\n",
+#else
 	"\t-m message\tLog message.\n",
+#endif
+	"\t-M message\tLog message.\n",
 	"\t-R\t\tProcess directories recursively.\n",
 	"\t-T\t\tMove empty branches (where possible).\n",
     "(Specify the --help global option for a list of other help options)\n",
@@ -134,6 +140,7 @@ struct question {
 
 struct find_data {
     List *ulist;
+    List *ulistrenames;
     int argc;
     char **argv;
 
@@ -164,6 +171,7 @@ struct find_data {
 static Dtype find_dirent_proc (void *callerdat, char *dir, char *repository, char *update_dir, List *entries, const char *virtual_repository, Dtype hint)
 {
     struct find_data *find_data = (struct find_data *)callerdat;
+    Node *node;
 
 	if(hint!=R_PROCESS)
 		return hint;
@@ -179,8 +187,22 @@ static Dtype find_dirent_proc (void *callerdat, char *dir, char *repository, cha
     if (!quiet)
 	error (0, 0, "Examining %s", update_dir);
 
-	if(isfile(CVSADM_RENAME))
+    char *renameadm;
+    renameadm=(char*)xmalloc (sizeof (char) * strlen(update_dir) + strlen(CVSADM_RENAME) +20);
+    if (renameadm!=NULL)
+    {
+	sprintf(renameadm,"%s/%s",update_dir,CVSADM_RENAME);
+	if(isfile(renameadm))
+	{
 		find_data->renames++;
+		node = getnode ();
+		node->key = xstrdup (update_dir);
+		node->type = DIRS;
+		(void)addnode (find_data->ulistrenames, node);
+	}
+	xfree(renameadm);
+	renameadm=NULL;
+    }
 
     return R_PROCESS;
 }
@@ -312,6 +334,7 @@ static int find_fileproc(void *callerdat, struct file_info *finfo)
 static int copy_ulist (Node *node, void *data)
 {
     struct find_data *args = (struct find_data *)data;
+    TRACE(3,"copy_ulist( ) create the argv[%d] list \"%s\".",args->argc,PATCH_NULL(node->key));
     args->argv[args->argc++] = node->key;
     return 0;
 }
@@ -340,6 +363,7 @@ int commit (int argc, char **argv)
     int c;
     int err = 0;
     int local = 0;
+	int mhadvertise = 0, mhadvertiseserver = 0;
 
     if (argc == -1)
 		usage (commit_usage);
@@ -366,8 +390,14 @@ int commit (int argc, char **argv)
     }
 #endif /* CVS_BADROOT */
 
+#ifdef _WIN32
+	char boughtsuite[100];
+    if(CGlobalSettings::GetGlobalValue("cvsnt","PServer","HaveBoughtSuite",boughtsuite,sizeof(boughtsuite)))
+		strcpy(boughtsuite,"no");
+#endif
+
     optind = 0;
-	while ((c = getopt (argc, argv, "+cnlRm:fF:Db:B:eTi")) != -1)
+	while ((c = getopt (argc, argv, "+cnlRm:M:fF:Db:B:eTi")) != -1)
     {
 	switch (c)
 	{
@@ -377,8 +407,8 @@ int commit (int argc, char **argv)
 	case 'b':
 		if(bugid.size() && !only_bug)
 			error(1,0,"Cannot mix -B and -b");
-		if(!RCS_check_bugid(optarg))
-			error(1,0,"Invalid characters in bug identifier.  Please avoid ,\"'");
+		if(!RCS_check_bugid(optarg,true))
+			error(1,0,"Invalid characters in bug identifier.  Please avoid \"'");
 		if(bugid.size())
 			bugid+=",";
 		bugid+=optarg;
@@ -387,8 +417,8 @@ int commit (int argc, char **argv)
 	case 'B':
 		if(bugid.size() && only_bug)
 			error(1,0,"Cannot mix -B and -b");
-		if(!RCS_check_bugid(optarg))
-			error(1,0,"Invalid characters in bug identifier.  Please avoid ,\"'");
+		if(!RCS_check_bugid(optarg,true))
+			error(1,0,"Invalid characters in bug identifier.  Please avoid \"'");
 		if(bugid.size())
 			bugid+=",";
 		bugid+=optarg;
@@ -400,6 +430,12 @@ int commit (int argc, char **argv)
 		run_module_prog = 0;
 		break;
 	case 'm':
+#ifdef _WIN32
+		mhadvertiseserver = 1;
+		if (strcasecmp(boughtsuite,"yes"))
+			mhadvertise = 1;
+#endif
+	case 'M':
 #ifdef FORCE_USE_EDITOR
 		use_editor = 1;
 #else
@@ -467,6 +503,7 @@ int commit (int argc, char **argv)
 	struct find_data find_args;
 
 	find_args.ulist = getlist ();
+	find_args.ulistrenames = getlist ();
 	find_args.argc = 0;
 	find_args.questionables = NULL;
 	find_args.ignlist = NULL;
@@ -483,7 +520,7 @@ int commit (int argc, char **argv)
 			       (PREDIRENTPROC) NULL, find_dirent_proc, (DIRLEAVEPROC) NULL,
 			       (void *)&find_args,
 			       argc, argv, local, W_LOCAL, 0, 0,
-			       (char *)NULL, NULL, 0, (PERMPROC) NULL);
+			       (char *)NULL, NULL, 0, (PERMPROC) NULL, NULL);
 	if (err)
 	    error (1, 0, "correct above errors first!");
 
@@ -494,6 +531,7 @@ int commit (int argc, char **argv)
 	       foo" for files which merit it, because we don't know
 	       what is in the CVSROOT/cvsignore file).  */
 	    dellist (&find_args.ulist);
+	    dellist (&find_args.ulistrenames);
 	    return 0;
 	}
 
@@ -504,13 +542,22 @@ int commit (int argc, char **argv)
 	find_args.argv = (char **) xmalloc (find_args.argc * sizeof (char **));
 	find_args.argc = 0;
 	walklist (find_args.ulist, copy_ulist, &find_args);
+	if (find_args.argc != 0 && find_args.renames)
+	{
+		TRACE(3,"* there are renames, so make sure we commit the '.' directory.");
+		walklist (find_args.ulistrenames, copy_ulist, &find_args);
+	}
+	TRACE(3,"Commit created the argv[] list with find_args.argc=%d",find_args.argc);
 
 	/*
 	 * We do this once, not once for each directory as in normal CVS.
 	 * The protocol is designed this way.  This is a feature.
 	 */
 	if (use_editor)
+	{
+		mhadvertise=1;
 	    do_editor (".", &saved_message, (char *)NULL, find_args.ulist);
+	}
 
 	/* Run the user-defined script to verify/check information in
 	 *the log message
@@ -520,7 +567,24 @@ int commit (int argc, char **argv)
 	    error (1, 0, "correct above errors first!");
 
 
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+	if (strcasecmp(CVSNT_SPECIAL_BUILD,"Suite")!=0)
+#endif
+	{
 	/* We always send some sort of message, even if empty.  */
+	if (mhadvertise)
+	{
+		if (saved_message!=NULL)
+		{
+		size_t saved_message_size=strlen(saved_message);
+		saved_message=(char *)xrealloc(saved_message,saved_message_size+250);
+		}
+		else
+		saved_message=(char *)xmalloc(250);
+		strcat(saved_message,"\nCommitted on the Free edition of March Hare Software CVSNT Client.\nUpgrade to CVS Suite for more features and support:\nhttp://march-hare.com/cvsnt/");
+		size_t saved_message_size=strlen(saved_message);
+	}
+    }
 	/* FIXME: is that true?  There seems to be some code in do_editor
 	   which can leave the message NULL.  */
 	option_with_arg ("-m", saved_message);
@@ -627,6 +691,7 @@ int commit (int argc, char **argv)
 	send_file_names (find_args.argc, find_args.argv, 0);
 	xfree (find_args.argv);
 	dellist (&find_args.ulist);
+	dellist (&find_args.ulistrenames);
 
 	send_to_server ("ci\n", 0);
 	err = get_responses_and_close ();
@@ -655,6 +720,17 @@ int commit (int argc, char **argv)
 	    error (0, 0, "saving log message in %s", fname);
 	    xfree (fname);
 	}
+#ifdef _WIN32
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+	if (strcasecmp(CVSNT_SPECIAL_BUILD,"Suite")!=0)
+#endif
+	{
+	if (!mhadvertise)
+	{
+		error(0, 0, "Committed on the Free edition of March Hare Software CVSNT Client\n           Upgrade to CVS Suite for more features and support:\n           http://march-hare.com/cvsnt/");
+	}
+    }
+#endif
 	return err;
     }
 
@@ -671,7 +747,7 @@ int commit (int argc, char **argv)
     err = start_recursion (check_fileproc, check_filesdoneproc,
 			   (PREDIRENTPROC) NULL, check_direntproc, (DIRLEAVEPROC) NULL, NULL, argc,
 			   argv, local, W_LOCAL, aflag, 0, (char *) NULL, NULL, 1,
-			   verify_write);
+			   verify_write, NULL);
     if (err)
     {
 	Lock_Cleanup ();
@@ -683,21 +759,24 @@ int commit (int argc, char **argv)
     /*
      * Run the recursion processor to commit the files
      */
+	TRACE(3,"commit Run the recursion processor to commit the files");
     write_dirnonbranch = 0;
     if (noexec == 0)
 	err = start_recursion (commit_fileproc, commit_filesdoneproc,
 			       (PREDIRENTPROC) NULL, commit_direntproc, commit_dirleaveproc, NULL,
 			       argc, argv, local, W_LOCAL|W_QUIET, aflag, 0,
-			       (char *) NULL, NULL, 1, verify_write);
+			       (char *) NULL, NULL, 1, verify_write, NULL);
 
     /*
      * Unlock all the dirs and clean up
      */
+	TRACE(3,"commit Unlock all the dirs and clean up");
     Lock_Cleanup ();
     dellist (&mulist);
 
 	xfree(current_date);
 
+	TRACE(3,"commit do_module stuff");
 	{
     DBM *db = open_module ();
 	int i;
@@ -727,8 +806,15 @@ int commit (int argc, char **argv)
     close_module (db);
 	}
 
+#if (CVSNT_SPECIAL_BUILD_FLAG != 0)
+	TRACE(3,"commit server_active=%s, mhadvertiseserver=%s, CVSNT_SPECIAL_BUILD=%s",(server_active)?"yes":"no",(mhadvertiseserver)?"yes":"no",CVSNT_SPECIAL_BUILD);
+#else
+	TRACE(3,"commit server_active=%s, mhadvertiseserver=%s",(server_active)?"yes":"no",(mhadvertiseserver)?"yes":"no");
+#endif
 	if (server_active)
+	{
 		return err;
+	}
 
     /* see if we need to sleep before returning to avoid time-stamp races */
     if (last_register_time)
@@ -822,7 +908,7 @@ static int check_fileproc (void *callerdat, struct file_info *finfo)
 		vers->ts_rcs[0] && strcmp(vers->ts_user,vers->ts_rcs))
 	{
 	    Register (finfo->entries, finfo->file, vers->vn_rcs, vers->ts_user,
-		      vers->options, vers->tag, vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid);
+		      vers->options, vers->tag, vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid, NULL);
 #ifdef SERVER_SUPPORT
 		if(server_active)
 		{
@@ -972,7 +1058,11 @@ warning: file `%s' seems to still contain conflict indicators",
 			(check_valid_edit>=0 && (check_valid_edit || 
 				kftmp.flags&KFLAG_RESERVED_EDIT) )) && ( status == T_MODIFIED || status == T_REMOVED ) )
 	    {
-			XmlHandle_t handle = fileattr_find(NULL, "file[@name=F'%s']/editor[@name=U'%s']", finfo->file, CVS_Username);
+			CXmlNodePtr handle = fileattr_getroot();
+			handle->xpathVariable("name",finfo->file);
+			handle->xpathVariable("user",CVS_Username);
+			if(!handle->Lookup("file[cvs:filename(@name,$name)]/editor[cvs:username(@name,$user)]"))
+			  handle=NULL;
 			while(handle)
 			{
 				const char *edittag = fileattr_getvalue(handle,"tag");
@@ -983,7 +1073,8 @@ warning: file `%s' seems to still contain conflict indicators",
 				if(vers->tag && !strcmp(edittag,vers->tag))
 					break;
 
-				handle = fileattr_next(handle);
+				if(!handle->XPathResultNext())
+				  handle = NULL;
 			}
 			if(!handle)
 			{
@@ -1047,13 +1138,13 @@ warning: file `%s' seems to still contain conflict indicators",
 		{
 			char *f = (char*)xmalloc(strlen(finfo->file)+sizeof(RCSEXT)+10);
 			sprintf(f,"%s%s",finfo->file,RCSEXT);
-			ci->lockId = do_lock_advisory(f, finfo->repository, 1, 0);
-			/* To avoid deadlock, release the file, before doing an advisory lock which waits */
+			ci->lockId = do_lock_file(f, finfo->repository, 0, 0);
+			/* To avoid deadlock, release the file, before doing a lock which waits */
 			if(!ci->lockId)
 			{
 				if(finfo->rcs)
 					rcsbuf_close(&finfo->rcs->rcsbuf);
-				ci->lockId = do_lock_advisory(f, finfo->repository, 1, 1);
+				ci->lockId = do_lock_file(f, finfo->repository, 1, 1);
 			}
 			xfree(f);
 		}
@@ -1325,7 +1416,7 @@ static int commit_fileproc (void *callerdat, struct file_info *finfo)
 					Vers_TS * vers = Version_TS(finfo,ci->options,ci->tag,NULL,0,0,0);
 					checkout_file(finfo,vers,0,0,1,0,0,NULL,NULL);
 					Register(finfo->entries, finfo->file, vers->vn_rcs, vers->ts_rcs,
-						vers->options, vers->tag, vers->date, vers->ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, NULL);
+						vers->options, vers->tag, vers->date, vers->ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, NULL, NULL);
 					freevers_ts(&vers);
 
 					RCS_rewrite(finfo->rcs,NULL,NULL,0);

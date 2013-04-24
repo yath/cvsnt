@@ -135,7 +135,7 @@ int ls(int argc, char **argv)
 				send_file_names(argc,argv,SEND_EXPAND_WILD);
 				client_module_expansion.clear();
 				send_to_server("expand-modules\n",0);
-				err = get_server_responses();
+				err = get_server_responses_noproxy();
 				if(err)
 					return err;
 
@@ -302,7 +302,7 @@ static int ls_proc (int argc, char **argv, const char *xwhere, const char *mwher
 	    char *path;
 
 	    /* if the portion of the module is a path, put the dir part on repos */
-	    if ((cp = strrchr (mfile, '/')) != NULL)
+	    if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 	    {
 		*cp = '\0';
 		(void) strcat (repository, "/");
@@ -358,7 +358,7 @@ static int ls_proc (int argc, char **argv, const char *xwhere, const char *mwher
     err = start_recursion (ls_fileproc, (FILESDONEPROC) NULL,(PREDIRENTPROC) NULL,
 			   ls_direntproc, (DIRLEAVEPROC) NULL, NULL,
 			   argc - 1, argv + 1, local, which, 0, 1,
-			   where, repository, 1, verify_read);
+			   where, repository, 1, verify_read, show_tag);
 
 	if(!strcmp(mname,"."))
 	{

@@ -16,19 +16,72 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 /* Win32 specific */
+#include <config.h>
+#include "../lib/api_system.h"
+
 #define WIN32_LEAN_AND_MEAN
 #define STRICT
 #include <windows.h>
+#include <io.h>
 #include <tchar.h>
+#include <errno.h>
 
-#include <config.h>
 #include <stdio.h>
 
-#include "../lib/api_system.h"
 #include "../cvs_string.h"
 #include "../FileAccess.h"
+#include "../ServerIO.h"
 
 bool CFileAccess::m_bUtf8Mode = false;
+
+static struct { DWORD err; int dos;} errors[] =
+{
+        {  ERROR_INVALID_FUNCTION,       EINVAL    },  /* 1 */
+        {  ERROR_FILE_NOT_FOUND,         ENOENT    },  /* 2 */
+        {  ERROR_PATH_NOT_FOUND,         ENOENT    },  /* 3 */
+        {  ERROR_TOO_MANY_OPEN_FILES,    EMFILE    },  /* 4 */
+        {  ERROR_ACCESS_DENIED,          EACCES    },  /* 5 */
+        {  ERROR_INVALID_HANDLE,         EBADF     },  /* 6 */
+        {  ERROR_ARENA_TRASHED,          ENOMEM    },  /* 7 */
+        {  ERROR_NOT_ENOUGH_MEMORY,      ENOMEM    },  /* 8 */
+        {  ERROR_INVALID_BLOCK,          ENOMEM    },  /* 9 */
+        {  ERROR_BAD_ENVIRONMENT,        E2BIG     },  /* 10 */
+        {  ERROR_BAD_FORMAT,             ENOEXEC   },  /* 11 */
+        {  ERROR_INVALID_ACCESS,         EINVAL    },  /* 12 */
+        {  ERROR_INVALID_DATA,           EINVAL    },  /* 13 */
+        {  ERROR_INVALID_DRIVE,          ENOENT    },  /* 15 */
+        {  ERROR_CURRENT_DIRECTORY,      EACCES    },  /* 16 */
+        {  ERROR_NOT_SAME_DEVICE,        EXDEV     },  /* 17 */
+        {  ERROR_NO_MORE_FILES,          ENOENT    },  /* 18 */
+        {  ERROR_LOCK_VIOLATION,         EACCES    },  /* 33 */
+        {  ERROR_BAD_NETPATH,            ENOENT    },  /* 53 */
+        {  ERROR_NETWORK_ACCESS_DENIED,  EACCES    },  /* 65 */
+        {  ERROR_BAD_NET_NAME,           ENOENT    },  /* 67 */
+        {  ERROR_FILE_EXISTS,            EEXIST    },  /* 80 */
+        {  ERROR_CANNOT_MAKE,            EACCES    },  /* 82 */
+        {  ERROR_FAIL_I24,               EACCES    },  /* 83 */
+        {  ERROR_INVALID_PARAMETER,      EINVAL    },  /* 87 */
+        {  ERROR_NO_PROC_SLOTS,          EAGAIN    },  /* 89 */
+        {  ERROR_DRIVE_LOCKED,           EACCES    },  /* 108 */
+        {  ERROR_BROKEN_PIPE,            EPIPE     },  /* 109 */
+        {  ERROR_DISK_FULL,              ENOSPC    },  /* 112 */
+        {  ERROR_INVALID_TARGET_HANDLE,  EBADF     },  /* 114 */
+        {  ERROR_INVALID_HANDLE,         EINVAL    },  /* 124 */
+        {  ERROR_WAIT_NO_CHILDREN,       ECHILD    },  /* 128 */
+        {  ERROR_CHILD_NOT_COMPLETE,     ECHILD    },  /* 129 */
+        {  ERROR_DIRECT_ACCESS_HANDLE,   EBADF     },  /* 130 */
+        {  ERROR_NEGATIVE_SEEK,          EINVAL    },  /* 131 */
+        {  ERROR_SEEK_ON_DEVICE,         EACCES    },  /* 132 */
+        {  ERROR_DIR_NOT_EMPTY,          ENOTEMPTY },  /* 145 */
+        {  ERROR_NOT_LOCKED,             EACCES    },  /* 158 */
+        {  ERROR_BAD_PATHNAME,           ENOENT    },  /* 161 */
+        {  ERROR_MAX_THRDS_REACHED,      EAGAIN    },  /* 164 */
+        {  ERROR_LOCK_FAILED,            EACCES    },  /* 167 */
+        {  ERROR_ALREADY_EXISTS,         EEXIST    },  /* 183 */
+        {  ERROR_FILENAME_EXCED_RANGE,   ENOENT    },  /* 206 */
+        {  ERROR_NESTING_NOT_ALLOWED,    EAGAIN    },  /* 215 */
+        {  ERROR_NOT_ENOUGH_QUOTA,       ENOMEM    }    /* 1816 */
+};
 
 CFileAccess::CFileAccess()
 {
@@ -139,7 +192,7 @@ size_t CFileAccess::write(const void *buf, size_t length)
 	if(!m_file)
 		return 0;
 
-	return fwrite(buf,length,1,m_file);
+	return fwrite(buf,1,length,m_file);
 }
 
 loff_t CFileAccess::length()
@@ -157,6 +210,91 @@ loff_t CFileAccess::length()
 	if(fsetpos(m_file,&pos)<0)
 		return 0;
 	return (loff_t)len;
+}
+
+void CFileAccess::_dosmaperr(DWORD dwErr)
+{
+	int n;
+	for(n=0; n<sizeof(errors)/sizeof(errors[0]); n++)
+	{
+		if(errors[n].err==dwErr)
+		{
+			errno=errors[n].dos;
+			return;
+		}
+	}
+	errno=EFAULT;
+}
+
+/*
+ * Make a path to the argument directory, printing a message if something
+ * goes wrong.
+ */
+void CFileAccess::_tmake_directories(const char *name, const TCHAR *fn)
+{
+	DWORD fa;
+	TCHAR *dir;
+	TCHAR *cp;
+
+	fa = GetFileAttributes(fn);
+	if(fa!=0xFFFFFFFF)
+	{
+		if(!(fa&FILE_ATTRIBUTE_DIRECTORY))
+			CServerIo::error (0, 0, "%s already exists but is not a directory", name);
+		else
+		{
+			return;
+		}
+	}
+	if (!CreateDirectory(fn,NULL))
+	{
+		DWORD dwErr = GetLastError();
+		if(dwErr!=ERROR_PATH_NOT_FOUND)
+		{
+			_dosmaperr(dwErr);
+			CServerIo::error (0, errno, "cannot make directory %s", name);
+			return;
+		}
+	}
+	else
+		return;
+	dir = _tcsdup(fn);
+	for(cp=dir+_tcslen(dir);cp>dir && !ISDIRSEP(*cp); --cp)
+		;
+	if(cp==dir)
+	{
+		free(dir);
+		return;
+	}
+    *cp = '\0';
+    _tmake_directories (name,dir);
+    *cp++ = '/';
+    if (*cp == '\0')
+	{
+		free(dir);
+		return;
+	}
+	if (!CreateDirectory(dir,NULL))
+	{
+		_dosmaperr(GetLastError());
+		CServerIo::error (0, errno, "cannot make directory %s", name);
+		free(dir);
+		return;
+	}
+	free(dir);
+}
+
+void CFileAccess::make_directories (const char *name)
+{
+	Win32Wide fn = name;
+	_tmake_directories(name,fn);
+}
+
+bool CFileAccess::copyfile(const char *ExistingFileName, const char *NewFileName, bool FailIfExists)
+{
+	BOOL copyresult;
+	copyresult=CopyFileW(Win32Wide(ExistingFileName), Win32Wide(NewFileName), FailIfExists);
+	return (copyresult==0)?false:true;
 }
 
 loff_t CFileAccess::pos()

@@ -21,6 +21,17 @@
 
 #include <assert.h>
 
+#if 0
+// gcc stackdump code.. compile with CFLAGS=-g -rdynamic
+#include <execinfo.h>
+static void bt()
+{
+  void *array[32];
+  int c = backtrace(array,32);
+  backtrace_symbols_fd(array,c,1);
+}
+#endif
+
 namespace cvs
 {
 	template<typename _Typ>

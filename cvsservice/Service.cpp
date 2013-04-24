@@ -37,6 +37,7 @@
 #include <activeds.h>
 #include <shellapi.h>
 
+typedef __int64 longint;
 
 #include "../version_no.h"
 #include "../version_fu.h"
@@ -57,34 +58,47 @@ struct  _LARGE_INTEGER_X {
 
 #define SERVICE_NAMEA "CVSNT"
 #define SERVICE_NAME _T("CVSNT")
-#define DISPLAY_NAMEA "CVSNT"
-#define DISPLAY_NAME _T("CVSNT")
-#define NTSERVICE_VERSION_STRING "CVSNT Service " CVSNT_PRODUCTVERSION_STRING
+#define DISPLAY_NAMEA "CVSNT Low Performance Service " CVSNT_PRODUCTVERSION_STRING_A
+#define DISPLAY_NAME _T("CVSNT Low Performance Service ") CVSNT_PRODUCTVERSION_STRING_W
+#define NTSERVICE_VERSION_STRING _T("This service handles connections from clients and dispatches CVSNT server processes to handle them.  A high performance version is also available in CVS Suite.")
 
 static void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv);
 static void CALLBACK ServiceHandler(DWORD fdwControl);
 static BOOL NotifySCM(DWORD dwState, DWORD dwWin32ExitCode, DWORD dwProgress);
 static char* basename(const char* str);
 static LPCSTR GetErrorString();
-static void AddEventSource(LPCTSTR szService, LPCTSTR szModule);
 static void ReportError(BOOL bError, LPCSTR szError, ...);
 static DWORD CALLBACK DoCvsThread(LPVOID lpParam);
 static DWORD CALLBACK DoUnisonThread(LPVOID lpParam);
+static bool SendStatistics();
+static void GetOsVersion(LPTSTR os, LPTSTR servicepack, DWORD& dwMajor, DWORD& dwMinor);
 
 static DWORD   g_dwCurrentState;
 static SERVICE_STATUS_HANDLE  g_hService;
 static std::vector<SOCKET> g_Sockets;
 static BOOL g_bStop = FALSE;
 static BOOL g_bTestMode = FALSE;
+static LONG g_dwUsers,g_dwMaxUsers,g_dwAverageTime,g_dwSessionCount;
 
-/* These are from vista SDK */
-#define SERVICE_CONFIG_REQUIRED_PRIVILEGES_INFO 6
-typedef struct _SERVICE_REQUIRED_PRIVILEGES_INFO {  
-	LPTSTR pmszRequiredPrivileges;
-} SERVICE_REQUIRED_PRIVILEGES_INFO;
-/*  */
+CRITICAL_SECTION g_crit;
 
-int main(int argc, char* argv[])
+void InitServer()
+{
+	InitializeCriticalSection(&g_crit);
+}
+
+void CloseServer()
+{
+	DeleteCriticalSection(&g_crit);
+}
+
+struct ClientLock
+{
+	ClientLock() { EnterCriticalSection(&g_crit); }
+	~ClientLock() { LeaveCriticalSection(&g_crit); }
+};
+
+CVSNT_EXPORT int main(int argc, char* argv[])
 {
     SC_HANDLE  hSCManager = NULL, hService = NULL;
     TCHAR szImagePath[MAX_PATH];
@@ -103,19 +117,21 @@ int main(int argc, char* argv[])
 		// not running as a service
 		if(!StartServiceCtrlDispatcher(ServiceTable)) return 0;
 	}
-	if(argc<2 || (strcmp(argv[1],"-i") && strcmp(argv[1],"-reglsa") && strcmp(argv[1],"-u") && strcmp(argv[1],"-unreglsa") && strcmp(argv[1],"-test") && strcmp(argv[1],"-v") ))
+	if(argc<2 || (strcmp(argv[1],"-i") && strcmp(argv[1],"-reglsa") && strcmp(argv[1],"-u") && strcmp(argv[1],"-unreglsa") && strcmp(argv[1],"-test") && strcmp(argv[1],"-v") && strcmp(argv[1],"-sendstats")))
 	{
-		fprintf(stderr, "CVSNT Service Handler\n\n"
+		fprintf(stderr, "CVSNT Low Performance Service Handler\n\n"
                         "Arguments:\n"
                         "\t%s -i [cvsroot]\tInstall\n"
                         "\t%s -reglsa\tRegister LSA helper\n"
                         "\t%s -u\tUninstall\n"
                         "\t%s -unreglsa\tUnregister LSA helper\n"
                         "\t%s -test\tInteractive run\n"
-                        "\t%s -v\tReport version number\n",
+                        "\t%s -v\tReport version number\n"
+						"\t%s -sendstats\tSend statistics\n",
                         basename(argv[0]),basename(argv[0]),
                         basename(argv[0]), basename(argv[0]), 
-                        basename(argv[0]), basename(argv[0]) 
+                        basename(argv[0]), basename(argv[0]),
+						basename(argv[0])
                         );
 		return -1;
 	}
@@ -151,14 +167,14 @@ int main(int argc, char* argv[])
 		TCHAR *p = lsaBuf;
 		while(*p)
 		{
-			if(!_tcscmp(p,"setuid"))
+			if(!_tcscmp(p,_T("setuid")))
 				break;
-			p+=strlen(p)+1;
+			p+=_tcslen(p)+1;
 		}
 		if(!*p)
 		{
-			strcpy(p,"setuid");
-			dwLsaBuf+=strlen(p)+1;
+			_tcscpy(p,_T("setuid"));
+			dwLsaBuf+=_tcslen(p)+1;
 			lsaBuf[dwLsaBuf]='\0';
 			if(RegSetValueEx(hk,_T("Authentication Packages"),NULL,dwType,(BYTE*)lsaBuf,dwLsaBuf))
 			{
@@ -200,13 +216,13 @@ int main(int argc, char* argv[])
 		TCHAR *p = lsaBuf;
 		while(*p)
 		{
-			if(!_tcscmp(p,"setuid"))
+			if(!_tcscmp(p,_T("setuid")))
 				break;
-			p+=strlen(p)+1;
+			p+=_tcslen(p)+1;
 		}
 		if(*p)
 		{
-			size_t l = strlen(p)+1;
+			size_t l = _tcslen(p)+1;
 			memcpy(p,p+l,(dwLsaBuf-((p+l)-lsaBuf))+1);
 			dwLsaBuf-=l;
 			if(RegSetValueEx(hk,_T("Authentication Packages"),NULL,dwType,(BYTE*)lsaBuf,dwLsaBuf))
@@ -220,7 +236,7 @@ int main(int argc, char* argv[])
 
     if (!strcmp(argv[1],"-v"))
 	{
-        puts(NTSERVICE_VERSION_STRING);
+        _putts(NTSERVICE_VERSION_STRING);
         return 0;
     }
 
@@ -275,7 +291,7 @@ int main(int argc, char* argv[])
 		}
 		{
 			BOOL (WINAPI *pChangeServiceConfig2)(SC_HANDLE,DWORD,LPVOID);
-			pChangeServiceConfig2=(BOOL (WINAPI *)(SC_HANDLE,DWORD,LPVOID))GetProcAddress(GetModuleHandle("advapi32"),"ChangeServiceConfig2A");
+			pChangeServiceConfig2=(BOOL (WINAPI *)(SC_HANDLE,DWORD,LPVOID))GetProcAddress(GetModuleHandle(_T("advapi32")),"ChangeServiceConfig2W");
 			if(pChangeServiceConfig2)
 			{
 				SERVICE_DESCRIPTION sd = { NTSERVICE_VERSION_STRING };
@@ -283,7 +299,7 @@ int main(int argc, char* argv[])
 				{
 					0;
 				}
-				SERVICE_REQUIRED_PRIVILEGES_INFO sp = { SE_NETWORK_LOGON_NAME"\0"SE_IMPERSONATE_NAME"\0" };
+				SERVICE_REQUIRED_PRIVILEGES_INFO sp = { SE_NETWORK_LOGON_NAME _T("\0") SE_IMPERSONATE_NAME _T("\0") };
 				if(!pChangeServiceConfig2(hService,SERVICE_CONFIG_REQUIRED_PRIVILEGES_INFO,&sp))
 				{
 					0;
@@ -335,6 +351,12 @@ int main(int argc, char* argv[])
 
 		ServiceMain(999,NULL);
 	}
+	else if(!strcmp(argv[1],"-sendstats"))
+	{
+		g_bTestMode=true;
+		printf("Sending Statistics\n");
+		SendStatistics();
+	}
 	return 0;
 }
 
@@ -384,7 +406,7 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 
 	if(!RegQueryValueEx(hk,_T("InstallPath"),NULL,&dwType,(BYTE*)szTmp2,&dwTmp))
 	{
-		_tcscat(szTmp2,";");
+		_tcscat(szTmp2,_T(";"));
 	}
 
 	dwTmp=sizeof(szTmp);
@@ -450,7 +472,7 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 	CSocketIO unison_sock;
 	TCHAR unison_path[MAX_PATH];
 
-	if(FindExecutable("unison.exe",NULL,unison_path)>=(HINSTANCE)32)
+	if(FindExecutable(_T("unison.exe"),NULL,unison_path)>=(HINSTANCE)32)
 	{
 		if(g_bTestMode)
 			printf("Unison is available\n");
@@ -481,7 +503,6 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 	{
 		printf("Initialising socket...\n");
 	}
-	RegCloseKey(hk);
 
 	if(!cvs_sock.create(szNode,szAuthServer,false))
 	{
@@ -534,7 +555,7 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 		return;
 	}
 
-	if(LoadLibrary("NtDsApi"))
+	if(LoadLibrary(_T("NtDsApi")))
 	{
 		CoInitialize(NULL);
 		try
@@ -553,18 +574,18 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 			HANDLE hDS = NULL;
 			dwTmp = DsBind(NULL,NULL,&hDS);
 			if(!dwTmp)
-				dwTmp = DsGetSpn(DS_SPN_DNS_HOST,"cvs",NULL,0,0,NULL,NULL,&nspn,&pspn);
+				dwTmp = DsGetSpn(DS_SPN_DNS_HOST,_T("cvs"),NULL,0,0,NULL,NULL,&nspn,&pspn);
 			if(g_bTestMode && nspn)
-				printf("Adding %s\n",pspn[0]);
+				printf("Adding %S\n",pspn[0]);
 			if(!dwTmp)
 				dwTmp = DsWriteAccountSpn(hDS,DS_SPN_ADD_SPN_OP ,path,nspn,(LPCTSTR*)pspn);
 			if(nspn)
 				DsFreeSpnArray(nspn,pspn);
 			nspn = 0;
 			if(!dwTmp)
-				dwTmp = DsGetSpn(DS_SPN_NB_HOST,"cvs",NULL,0,0,NULL,NULL,&nspn,&pspn);
+				dwTmp = DsGetSpn(DS_SPN_NB_HOST,_T("cvs"),NULL,0,0,NULL,NULL,&nspn,&pspn);
 			if(g_bTestMode && nspn)
-				printf("Adding %s\n",pspn[0]);
+				printf("Adding %S\n",pspn[0]);
 			if(!dwTmp)
 				dwTmp = DsWriteAccountSpn(hDS,DS_SPN_ADD_SPN_OP,path,nspn,(LPCTSTR*)pspn);
 			if(nspn)
@@ -581,7 +602,7 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 		catch(_com_error e)
 		{
 			if(g_bTestMode)
-				printf("Couldn't register with active directory: %s\n",e.ErrorMessage());
+				printf("Couldn't register with active directory: %S\n",e.ErrorMessage());
 		}
 	}
 
@@ -590,7 +611,29 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 	if(!g_bTestMode)
 		NotifySCM(SERVICE_RUNNING, 0, 0);
 
+	time_t servtime;
+	time(&servtime);
+	longint st = servtime;
+	CGlobalSettings::SetGlobalValue("Server",NULL,"StartTime",st);
+
+	int dw = 0;
+	CGlobalSettings::GetGlobalValue("Server",NULL,"MaxUsers",dw);
+	g_dwMaxUsers=dw;
+	
+	dw = 0;
+	CGlobalSettings::GetGlobalValue("Server",NULL,"AverageTime",dw);
+	g_dwAverageTime=dw;
+
+	dw = 0;
+	CGlobalSettings::GetGlobalValue("Server",NULL,"SessionCount",dw);
+	g_dwSessionCount=dw;
+
+	g_dwUsers=0;
 	g_bStop=FALSE;
+
+	InitServer();
+
+	LONG dwOldMaxUsers = g_dwMaxUsers;
 
 	CSocketIO* sock_list[2] = { &cvs_sock, &unison_sock };
 	
@@ -603,10 +646,52 @@ void CALLBACK ServiceMain(DWORD dwArgc, LPTSTR *lpszArgv)
 			for(size_t n=0; n<unison_sock.accepted_sockets().size(); n++)
 				CloseHandle(CreateThread(NULL,0,DoUnisonThread,(void*)unison_sock.accepted_sockets()[n].Detach(),0,NULL));
 		}
+		if(dwOldMaxUsers<g_dwMaxUsers)
+		{
+			dwOldMaxUsers=g_dwMaxUsers;
+			CGlobalSettings::SetGlobalValue("Server",NULL,"MaxUsers",(int)dwOldMaxUsers);
+		}
+		CGlobalSettings::SetGlobalValue("Server",NULL,"SessionCount",g_dwSessionCount);
+		CGlobalSettings::SetGlobalValue("Server",NULL,"AverageTime",g_dwAverageTime);
+
+		int dwSendStatistics=0;
+		CGlobalSettings::GetGlobalValue("Server",NULL,"SendStatistics",dwSendStatistics);
+
+		if (dwSendStatistics)
+		{
+			longint lastAttempt,lastSuccess;
+			if (CGlobalSettings::GetGlobalValue("Server",NULL,"LastAttemptedSend",lastAttempt))
+				lastAttempt=0;
+			if (CGlobalSettings::GetGlobalValue("Server",NULL,"LastSend",lastSuccess))
+				lastSuccess=0;
+			CGlobalSettings::SetGlobalValue("Server",NULL,"LastAttemptedSend",lastAttempt);
+			time_t nextAttempt,now;
+			if(lastAttempt==lastSuccess)
+				nextAttempt = lastAttempt + 604800; // 1 week
+			else
+				nextAttempt = lastAttempt + 28800; // 8 hour retry on failure
+			
+			time(&now);
+			if((nextAttempt<=now))
+			{
+				if(g_bTestMode)
+					printf("Sending Statistics\n");
+				bool bSuccess = SendStatistics();
+				if(g_bTestMode)
+					printf("Sending Statistics %s\n",bSuccess?"succeeded":"failed");
+				
+				lastAttempt=now;
+				CGlobalSettings::SetGlobalValue("Server",NULL,"LastAttemptedSend",lastAttempt);
+				if(bSuccess)
+					CGlobalSettings::SetGlobalValue("Server",NULL,"LastSend",lastAttempt);
+			}
+		}
 	}
 
 	NotifySCM(SERVICE_STOPPED, 0, 0);
 	ReportError(FALSE,SERVICE_NAMEA" stopped successfully");
+
+	RegCloseKey(hk);
 }
 
 void CALLBACK ServiceHandler(DWORD fdwControl)
@@ -670,7 +755,6 @@ LPCSTR GetErrorString()
 
 void ReportError(BOOL bError, LPCSTR szError, ...)
 {
-	static BOOL bEventSourceAdded = FALSE;
 	char buf[512];
 	const char *bufp = buf;
 	va_list va;
@@ -679,66 +763,20 @@ void ReportError(BOOL bError, LPCSTR szError, ...)
 	vsprintf(buf,szError,va);
 	va_end(va);
 	if(g_bTestMode)
-	{
 		printf("%s%s\n",bError?"Error: ":"",buf);
-	}
 	else
-	{
-		if(!bEventSourceAdded)
-		{
-			TCHAR szModule[MAX_PATH];
-			GetModuleFileName(NULL,szModule,MAX_PATH);
-			AddEventSource(SERVICE_NAME,szModule);
-			bEventSourceAdded=TRUE;
-		}
-
-		HANDLE hEvent = RegisterEventSource(NULL,  SERVICE_NAME);
-		ReportEventA(hEvent,bError?EVENTLOG_ERROR_TYPE:EVENTLOG_INFORMATION_TYPE,0,MSG_STRING,NULL,1,0,&bufp,NULL);
-		DeregisterEventSource(hEvent);
-	}
+		CServerIo::log(bError?CServerIo::logError:CServerIo::logNotice,buf);
 }
-
-void AddEventSource(LPCTSTR szService, LPCTSTR szModule)
-{
-	HKEY hk;
-	DWORD dwData;
-	TCHAR szKey[1024];
-
-	_tcscpy(szKey,_T("SYSTEM\\CurrentControlSet\\Services\\EventLog\\Application\\"));
-	_tcscat(szKey,szService);
-
-    // Add your source name as a subkey under the Application 
-    // key in the EventLog registry key.  
-    if (RegCreateKey(HKEY_LOCAL_MACHINE, szKey, &hk))
-		return; // Fatal error, no key and no way of reporting the error!!!
-
-    // Add the name to the EventMessageFile subkey.  
-    if (RegSetValueEx(hk,             // subkey handle 
-            _T("EventMessageFile"),       // value name 
-            0,                        // must be zero 
-            REG_EXPAND_SZ,            // value type 
-            (LPBYTE) szModule,           // pointer to value data 
-            _tcslen(szModule) + 1))       // length of value data 
-			return; // Couldn't set key
-
-    // Set the supported event types in the TypesSupported subkey.  
-    dwData = EVENTLOG_ERROR_TYPE | EVENTLOG_WARNING_TYPE | 
-        EVENTLOG_INFORMATION_TYPE;  
-    if (RegSetValueEx(hk,      // subkey handle 
-            _T("TypesSupported"),  // value name 
-            0,                 // must be zero 
-            REG_DWORD,         // value type 
-            (LPBYTE) &dwData,  // pointer to value data 
-            sizeof(DWORD)))    // length of value data 
-			return; // Couldn't set key
-	RegCloseKey(hk); 
-} 
 
 DWORD CALLBACK DoCvsThread(LPVOID lpParam)
 {
 	CSocketIOPtr conn = (CSocketIO*)lpParam;
 	CRunFile rf;
 	cvs::string line;
+	DWORD timestart = GetTickCount(),timeend;
+
+	InterlockedIncrement(&g_dwUsers);
+	if(g_dwUsers>g_dwMaxUsers) g_dwMaxUsers=g_dwUsers;
 
 	cvs::sprintf(line,128,"cvs.exe --win32_socket_io=%ld authserver",(long)conn->getsocket());
 	rf.setArgs(line.c_str());
@@ -751,6 +789,25 @@ DWORD CALLBACK DoCvsThread(LPVOID lpParam)
 		if(rf.wait(ret,5000))
 			break;
 	} while(!g_bStop);
+
+	InterlockedDecrement(&g_dwUsers);
+	timeend = GetTickCount();
+
+	InterlockedIncrement(&g_dwSessionCount);
+
+	if(timeend>timestart)
+	{
+		ClientLock lock;
+
+		// There must be a better way than multiply/add/divide but I can't think of it right now
+
+		DWORD sessiontime = timeend - timestart;
+		__int64 tot = g_dwAverageTime;
+		tot *= (g_dwSessionCount-1);
+		tot += sessiontime;
+		tot /= g_dwSessionCount;
+		g_dwAverageTime = (DWORD)tot;
+	}
 
 	if(g_bStop)
 		rf.terminate();
@@ -795,4 +852,123 @@ DWORD CALLBACK DoUnisonThread(LPVOID lpParam)
 		printf("%08x: Unison process %terminated\n",GetTickCount());
 
 	return 0;
+}
+
+bool SendStatistics()
+{
+	CHttpSocket sock;
+	char os[256],servicepack[256];
+	longint servtime;
+	longint uptime;
+	int dwMaxUsers;
+	int dwAverageTime;
+	int dwSessionCount;
+	int dwUserCount;
+	int major, minor;
+	cvs::string registration;
+	unsigned  dwCodepage;
+
+#ifdef _WIN32
+	HKEY hInstallerKey;
+	if(RegOpenKeyEx(HKEY_LOCAL_MACHINE,_T("Software\\March Hare Software Ltd\\Keys"),0,KEY_READ,&hInstallerKey))
+	{
+	   if (RegCreateKeyEx(HKEY_CURRENT_USER,_T("Software\\March Hare Software Ltd\\Keys"),0,NULL,0,KEY_READ,NULL,&hInstallerKey,NULL))
+	   {
+		if(g_bTestMode)
+			printf("Sending Statistics - cannot open Keys\n");
+		return false;
+	   }
+	}
+
+	dwCodepage = GetACP();
+#else
+	dwCodepage = 0; //  This should be a string, as numeric codepages don't exist outside windows
+#endif
+
+	GetOsVersion(os,servicepack, major, minor);
+	if(g_bTestMode)
+		printf("Sending Statistics - os=%s servicepack=%s major=%d minor=%d\n",
+					os,servicepack, major, minor);
+
+	if (!CGlobalSettings::GetGlobalValue("Server",NULL,"StartTime",servtime))
+	{
+		time_t then = servtime,now;
+		time(&now);
+		if(then>now) uptime=0;
+		else uptime=now-then;
+	}
+	else uptime=0;
+
+	if(CGlobalSettings::GetGlobalValue("Server",NULL,"MaxUsers",dwMaxUsers))
+		dwMaxUsers=0;
+		
+	if (CGlobalSettings::GetGlobalValue("Server",NULL,"AverageTime",dwAverageTime))
+		dwAverageTime=0;
+		
+	if (CGlobalSettings::GetGlobalValue("Server",NULL,"SessionCount",dwSessionCount))
+		dwSessionCount=0;
+		
+	if (CGlobalSettings::GetGlobalValue("Server",NULL,"UserCount",dwUserCount))
+		dwUserCount=0;
+	
+#ifdef _WIN32	
+	DWORD dwLen,dwType;
+	registration.resize(256);
+	dwLen=(DWORD)registration.size();
+	if(!RegQueryValueExA(hInstallerKey,"serversuite",NULL,&dwType,(LPBYTE)registration.data(),&dwLen) || dwType!=REG_SZ)
+	{
+		dwLen=(DWORD)registration.size();
+		if(!RegQueryValueExA(hInstallerKey,"server",NULL,&dwType,(LPBYTE)registration.data(),&dwLen) || dwType!=REG_SZ)
+		{
+			dwLen=(DWORD)registration.size();
+			if(!RegQueryValueExA(hInstallerKey,"servertrial",NULL,&dwType,(LPBYTE)registration.data(),&dwLen) || dwType!=REG_SZ)
+				registration="";
+			else
+				registration.resize(dwLen);
+		}
+		else
+			registration.resize(dwLen);
+	}
+	else
+		registration.resize(dwLen);
+
+	RegCloseKey(hInstallerKey);
+#endif
+
+	cvs::string url;
+	cvs::sprintf(url,128,"/cvspro/prods-pre.asp?register=stats&os=%s&sp=%s&ver=%s&avgtime=%u&up=%u&users=%u&uusers=%u&susers=%u&id=%s&cp=%u&major=%u&minor=%u",
+		os,servicepack,CVSNT_PRODUCTVERSION_SHORT,dwAverageTime,(unsigned)uptime,dwSessionCount,dwUserCount,dwMaxUsers,registration.c_str(),dwCodepage,major,minor);
+
+	// To be 100% certain, replace all ' ' with %20.  Webservers can cope but there may be a proxy
+	// that doesn't.
+
+	size_t pos;
+	while((pos=url.find_first_of(' '))!=cvs::string::npos)
+		url.replace(pos,1,"%20");
+
+	if(g_bTestMode)
+		printf("Sending Statistics http://march-hare.com%s\n",url.c_str());
+	if(!sock.create("http://www.march-hare.com"))
+	{
+		if(g_bTestMode)
+			printf("Failed to send statistics.  Server not responding\n");
+		return false;
+	}
+
+	if(!sock.request("GET",url.c_str()))
+	{
+		// Not sure this can actually fail.. it would normally succeed with an error code
+		if(g_bTestMode)
+			printf("Failed to send statistics.  Server not responding\n");
+		return false;
+	}
+
+	if(sock.responseCode()!=200)
+	{
+		if(g_bTestMode)
+			printf("Failed to send statistics.  Server returned error %d\n",sock.responseCode());
+		return false;
+	}
+
+	return true;
 }

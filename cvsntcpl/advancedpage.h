@@ -30,7 +30,6 @@ public:
 	CButton m_btNoReverseDns;
 	CButton m_btLockServerLocal;
 	CButton m_btAllowTrace;
-	CButton m_btCaseSensitive;
 	CButton m_btUnicodeServer;
 	CButton m_btReadOnly;
 	CButton m_btRemoteInit;
@@ -52,7 +51,6 @@ protected:
 	virtual BOOL OnInitDialog();
 	afx_msg void OnBnClickedNoreversedns();
 	afx_msg void OnBnClickedAllowtrace();
-	afx_msg void OnBnClickedCasesensitive();
 	afx_msg void OnBnClickedLockserverlocal();
 	afx_msg void OnBnClickedUnicodeserver();
 	afx_msg void OnBnClickedReadonly();
@@ -63,7 +61,9 @@ public:
 	CComboBox m_cbZeroconf;
 	afx_msg void OnCbnSelendokZeroconf();
 	CButton m_cbAtomicCheckouts;
+	CButton m_cbGlobalScript;
 	afx_msg void OnBnClickedAtomiccheckouts();
+	afx_msg void OnBnClickedGlobalscript();
 	afx_msg void OnCbnSelchangeZeroconf();
 	CButton m_btReplication;
 	CEdit m_edReplicationPort;

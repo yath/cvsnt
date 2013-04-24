@@ -1,3 +1,9 @@
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -167,7 +173,7 @@ static char *x11_verify(unsigned long peer_ip, int peer_port,
 	    if (data[i] != 0)	       /* zero padding wrong */
 		return "XDM-AUTHORIZATION-1 data failed check";
 	tim = time(NULL);
-	if (abs(t - tim) > 20*60)      /* 20 minute clock skew should be OK */
+	if (abs(t - (unsigned long)tim) > 20*60)      /* 20 minute clock skew should be OK */
 	    return "XDM-AUTHORIZATION-1 time stamp was too far out";
     }
     /* implement other protocols here if ever required */

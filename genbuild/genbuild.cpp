@@ -18,6 +18,13 @@
 //
 
 #ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
+
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define STRICT
 #include <windows.h>
@@ -42,11 +49,28 @@ int main(int argc, char **argv)
 
 #ifndef _DEBUG
 	time_t t = time(NULL);
-	size_t days = t/(60*60*24);
+	size_t days = (size_t)(t/(60*60*24));
 	days -= (365*30);
 	days += BUILD_FROB;
 
-	FILE *f=fopen(lpCmdLine,"w");
+	FILE *f=fopen("c:\\forcebuild.txt","r");
+	if(f)
+	{
+		fscanf(f,"%d",&days);
+		printf("Forcing build to %d\n",days);
+		fclose(f);
+	}
+	else
+	{
+		printf("Generated build number %d\n",days);
+	}
+
+	f=fopen(lpCmdLine,"w");
+	if (f==NULL)
+	{
+		printf("Failed to generate build number from %s\n",(lpCmdLine)?lpCmdLine:"NULL");
+		return -1;
+	}
 	fprintf(f,"#define CVSNT_PRODUCT_BUILD %d\n",days);
 	fclose(f);
 #endif

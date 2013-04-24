@@ -21,6 +21,9 @@
 #include "DiffBase.h"
 #include "StringDiff.h"
 
+#include <stdio.h>
+#include <string.h>
+
 CStringDiff::CStringDiff()
 {
 }

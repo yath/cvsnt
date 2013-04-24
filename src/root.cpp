@@ -106,19 +106,19 @@ char *Name_Root (const char *dir, const char *update_dir)
     }
 
     {
-		const char *tmp;
-		int online = 1;
+		const root_allow_struct *found_root = NULL;
+		const char *real_root;
 		
-		if(!server_active || !root_allow_ok(root,&tmp,&online))
-			tmp = root;
-	    if ((strchr (root, ':') == NULL) && (strchr(root, '@') == NULL) && !isdir (tmp))
+		if(!server_active || !root_allow_ok(root,found_root,real_root,false))
+			real_root = root;
+	    if ((strchr (root, ':') == NULL) && (strchr(root, '@') == NULL) && !isdir (real_root))
 		{
 			error (0, 0, "in directory %s:", xupdate_dir);
 			error (0, 0, "ignoring %s because it specifies a non-existent repository %s", CVSADM_ROOT, root);
 			ret = NULL;
 			goto out;
 		}
-		if(!online)
+		if(found_root && !found_root->online)
 		{
 			error (0, 0, "in directory %s:", xupdate_dir);
 			error (0, 0, "ignoring %s because repository %s is offline", CVSADM_ROOT, root);
@@ -132,8 +132,7 @@ char *Name_Root (const char *dir, const char *update_dir)
     ret = xstrdup (root);
  out:
     xfree (cvsadm);
-    xfree (tmp);
-    if (root != NULL)
+	xfree (tmp);
 	xfree (root);
     return (ret);
 }
@@ -179,97 +178,58 @@ void Create_Root (const char *dir, const char *rootdir)
    directories.  Then we can check against them when a remote user
    hands us a CVSROOT directory.  */
 
-typedef struct
+static std::vector<root_allow_struct> root_allow_vector;
+
+void root_allow_add(const char *root, const char *name, bool online, bool readwrite, bool proxypasswd, RootType repotype, const char *remote_serv, const char *remote_repos, const char *proxy_repos, const char *remote_pass)
 {
-	const char *root;
-	const char *name;
-	int online;
-} root_allow_struct;
+	root_allow_struct r;
 
-int root_allow_count;
-static root_allow_struct *root_allow_vector;
-static int root_allow_size;
+	r.root = root;
+	r.name = name;
+	r.online = online;
+	r.readwrite = readwrite;
+	r.proxypasswd = proxypasswd;
+	r.repotype = repotype;
+	r.remote_server = remote_serv?remote_serv:"";
+	r.remote_repository = remote_repos?remote_repos:"";
+	r.proxy_repository = proxy_repos?proxy_repos:"";
+	r.remote_passphrase = remote_pass?remote_pass:"";
 
-void root_allow_add(const char *root, const char *name, int online)
-{
-    if (root_allow_size <= root_allow_count)
-    {
-		if (root_allow_size == 0)
-		{
-			root_allow_size = 1;
-			root_allow_vector = (root_allow_struct *) xmalloc (root_allow_size * sizeof (root_allow_struct));
-		}
-		else
-		{
-			root_allow_size *= 2;
-			root_allow_vector = (root_allow_struct *) xrealloc(root_allow_vector,  root_allow_size * sizeof (root_allow_struct));
-		}
-
-		if (root_allow_vector == NULL)
-		{
-	//	no_memory:
-			/* Strictly speaking, we're not supposed to output anything
-			now.  But we're about to exit(), give it a try.  */
-			printf ("E Fatal server error, aborting.\nerror ENOMEM Virtual memory exhausted.\n");
-
-			/* I'm doing this manually rather than via error_exit ()
-			because I'm not sure whether we want to call server_cleanup.
-			Needs more investigation....  */
-
-#ifdef SYSTEM_CLEANUP
-			/* Hook for OS-specific behavior, for example socket
-			subsystems on NT and OS2 or dealing with windows
-			and arguments on Mac.  */
-			SYSTEM_CLEANUP ();
-#endif
-
-			CCvsgui::Close(EXIT_FAILURE);
-
-			exit (EXIT_FAILURE);
-		}
-    }
-    root_allow_vector[root_allow_count].root = xstrdup(root);
-    root_allow_vector[root_allow_count].online = online;
-    root_allow_vector[root_allow_count++].name = xstrdup(name);
+	root_allow_vector.push_back(r);
 }
 
 void root_allow_free ()
 {
-	int n;
-
-    if (root_allow_vector != NULL)
-	{
-		for(n=0; n<root_allow_count; n++)
-		{
-			xfree(root_allow_vector[n].root);
-			xfree(root_allow_vector[n].name);
-		}
-		xfree(root_allow_vector);
-	}
-    root_allow_size = root_allow_count = 0;
+	root_allow_vector.clear();
 }
 
-int root_allow_ok (const char *root, const char **real_root, int *online)
+bool root_allow_ok (const char *root, const root_allow_struct*& found_root, const char *&real_root, bool authuse)
 {
-    int i;
-    for (i = 0; i < root_allow_count; ++i)
-		if(!fncmp(root_allow_vector[i].name, root))
+    size_t i;
+    for (i = 0; i < root_allow_vector.size(); ++i)
+	{
+		if(!fncmp(root_allow_vector[i].name.c_str(), root))
 		{
-			if(real_root) *real_root=root_allow_vector[i].root;
-			if(online) *online = root_allow_vector[i].online;
+			found_root = &root_allow_vector[i];
+			if ((found_root->proxypasswd)&&(authuse))
+			real_root = found_root->proxy_repository.c_str();
+			else
+			real_root = found_root->root.c_str();
 			break;
+	
 		}
+	}
 
-    if(i==root_allow_count)
-      return 0;
+    if(i==root_allow_vector.size())
+      return false;
 #ifndef _WIN32
     if(chroot_done && chroot_base && real_root)
     {
-      if(!fnncmp(*real_root,chroot_base,strlen(chroot_base)) && strlen(chroot_base)<=strlen(*real_root))
-	*real_root+=strlen(chroot_base);
+      if(!fnncmp(real_root,chroot_base,strlen(chroot_base)) && strlen(chroot_base)<=strlen(real_root))
+			real_root+=strlen(chroot_base);
     }
 #endif
-    return 1;
+    return true;
 }
 
 
@@ -336,6 +296,11 @@ cvsroot *new_cvsroot_t()
 	newroot->proxypassword = NULL;
     newroot->isremote = false;
 	newroot->password_used = false;
+	newroot->type = RootTypeStandard;
+	newroot->remote_server = NULL;
+	newroot->remote_repository = NULL;
+	newroot->proxy_repository_root = NULL;
+	newroot->remote_passphrase = NULL;
 
     return newroot;
 }
@@ -348,6 +313,8 @@ void free_cvsroot_t (cvsroot *root)
 	if(!root)
 		return;
 
+	if (root->method)
+		xfree(root->method);
 	xfree (root->original);
 	xfree (root->username);
 	/* I like to be paranoid */
@@ -372,6 +339,10 @@ void free_cvsroot_t (cvsroot *root)
 	xfree(root->proxyuser);
 	xfree(root->proxypassword);
 	xfree(root->mapped_directory);
+	xfree(root->remote_server);
+	xfree(root->remote_repository);
+	xfree(root->proxy_repository_root);
+	xfree(root->remote_passphrase);
     xfree (root);
 }
 
@@ -411,7 +382,7 @@ static int parse_keyword(char *keyword, char **p, cvsroot *newroot)
 	{
 		CProtocolLibrary lib;
 		if(*value && strcasecmp(value,"local"))
-			newroot->method = xstrdup(value);
+			strcpy(newroot->method,xstrdup(value));
 		if(newroot->method)
 		{
 			client_protocol = lib.LoadProtocol(newroot->method);
@@ -775,49 +746,64 @@ cvsroot *parse_cvsroot (const char *root_in)
 	    cvsroot_copy = ++p;
 	}
 
-	/* now deal with host[:[port]] */
-
-	/* the port */
-	if ((p = strchr (cvsroot_copy, ':')) != NULL)
+	if(newroot->isremote)
 	{
-		
-	    *p++ = '\0';
-	    if (strlen(p))
-	    {
-		q = p;
-		if (*q == '-') q++;
-		while (*q && !(*q==':' && !*(q+1)) && !(isalpha(*q) && *(q+1)==':' && !*(q+2)))
-		{
-		    if (!isdigit(*q++))
-		    {
-			error(0, 0, "CVSROOT (\"%s\")", root_in);
-			error(0, 0, "may only specify a positive, non-zero, integer port (not \"%s\").",
-				p);
-			error(0, 0, "perhaps you entered a relative pathname?");
-			xfree (cvsroot_save);
-			goto error_exit;
-		    }
-		}
-		*q='\0';
-		if (atoi(p) <= 0)
-		{
-		    error (0, 0, "CVSROOT (\"%s\")", root_in);
-		    error(0, 0, "may only specify a positive, non-zero, integer port (not \"%s\").",
-			    p);
-		    error(0, 0, "perhaps you entered a relative pathname?");
-		    xfree (cvsroot_save);
-		    goto error_exit;
-		}
-		newroot->port = xstrdup(p);
-	    }
-	}
+		/* now deal with host[:[port]] */
 
-	/* copy host */
-	if (*cvsroot_copy != '\0')
-	    /* blank hostnames are invalid, but for now leave the field NULL
-	     * and catch the error during the sanity checks later
-	     */
-	    newroot->hostname = xstrdup (cvsroot_copy);
+		/* the port */
+		p=cvsroot_copy;
+		if(p[0]=='[')
+		{
+			p=strchr(cvsroot_copy,']');
+			if(!p)
+			{
+				error(0, 0, "CVSROOT (\"%s\")", root_in);
+				error(0, 0, "Invalid hostname");
+				xfree (cvsroot_save);
+				goto error_exit;
+			}
+		}		
+		if ((p = strchr (p, ':')) != NULL)
+		{
+			
+			*p++ = '\0';
+			if (strlen(p))
+			{
+				q = p;
+				if (*q == '-') q++;
+				while (*q && !(*q==':' && !*(q+1)) && !(isalpha(*q) && *(q+1)==':' && !*(q+2)))
+				{
+					if (!isdigit(*q++))
+					{
+						error(0, 0, "CVSROOT (\"%s\")", root_in);
+						error(0, 0, "may only specify a positive, non-zero, integer port (not \"%s\").",
+							p);
+						error(0, 0, "perhaps you entered a relative pathname?");
+						xfree (cvsroot_save);
+						goto error_exit;
+					}
+				}
+				*q='\0';
+				if (atoi(p) <= 0)
+				{
+					error (0, 0, "CVSROOT (\"%s\")", root_in);
+					error(0, 0, "may only specify a positive, non-zero, integer port (not \"%s\").",
+						p);
+					error(0, 0, "perhaps you entered a relative pathname?");
+					xfree (cvsroot_save);
+					goto error_exit;
+				}
+				newroot->port = xstrdup(p);
+			}
+		}
+
+		/* copy host */
+		if (*cvsroot_copy != '\0')
+			/* blank hostnames are invalid, but for now leave the field NULL
+			 * and catch the error during the sanity checks later
+			 */
+			 newroot->hostname = xstrdup (cvsroot_copy);
+	}
 
 	/* restore the '/' */
 	cvsroot_copy = firstslash;
@@ -837,10 +823,12 @@ cvsroot *parse_cvsroot (const char *root_in)
 	}
 	else
 	{
-		const char *tmp;
-		if(!root_allow_ok(cvsroot_copy,&tmp,NULL))
-			tmp = cvsroot_copy;
-		newroot->directory = xstrdup(tmp);
+		const root_allow_struct *found_root = NULL;
+		const char *real_root;
+		
+		if(!root_allow_ok(cvsroot_copy,found_root,real_root,false))
+			real_root = cvsroot_copy;
+		newroot->directory = xstrdup(real_root);
 	}
 
 new_root_ok:
@@ -928,6 +916,11 @@ new_root_ok:
 				!rsi.default_repository.size())
 			{
 				error(0, 0, "Remote server '%s' does not allow anonymous login",newroot->hostname);
+				goto error_exit;
+			}
+			if (strlen(rsi.anon_protocol.c_str())>20)
+			{
+				error(0, 0, "Remote server '%s' protocol too long",rsi.anon_protocol.c_str());
 				goto error_exit;
 			}
 			newroot->method = xstrdup(rsi.anon_protocol.c_str());
@@ -1093,18 +1086,24 @@ char *normalize_cvsroot (const cvsroot *root)
 
 /* allocate and return a cvsroot structure set up as if we're using the local
  * repository DIR.  */
-cvsroot *local_cvsroot (const char *dir, const char *real_dir)
+cvsroot *local_cvsroot (const char *dir, const char *real_dir,bool readwrite, RootType type, const char *remote_serv, const char *remote_repos, const char *proxy_repos, const char *remote_pass)
 {
     cvsroot *newroot = new_cvsroot_t();
 
-    newroot->original = xstrdup(dir);
-    newroot->method = NULL;
+	newroot->original = xstrdup(dir?dir:"");
 
-    newroot->directory = xstrdup(real_dir);
+	newroot->directory = xstrdup(real_dir&&*real_dir?real_dir:newroot->original);
 
-    newroot->unparsed_directory = xstrdup(dir);
+	newroot->unparsed_directory = xstrdup(newroot->original);
 
-	if(*real_dir)
+	newroot->readwrite = readwrite;
+	newroot->type = type;
+	newroot->remote_server = xstrdup(remote_serv);
+	newroot->remote_repository = xstrdup(remote_repos);
+	newroot->proxy_repository_root = xstrdup(proxy_repos);
+	newroot->remote_passphrase = xstrdup(remote_pass);
+
+	if(real_dir && *real_dir)
     {
 		struct saved_cwd cwd;
 		save_cwd(&cwd);

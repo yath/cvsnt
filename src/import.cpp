@@ -94,13 +94,13 @@ int import (int argc, char **argv)
     List *ulist;
     Node *p;
 #ifdef SERVER_SUPPORT
-    char *existing_repos_dir;
-	const char *msg;
+    char *existing_repos_dir=NULL;
+	const char *msg=NULL;
 #endif
     struct logfile_info *li;
 	int vargc;
-	char *vtag, **vargv;
-	const char *single_filename;
+	char *vtag=NULL, **vargv=NULL;
+	const char *single_filename=NULL;
 
     if (argc == -1)
 	usage (import_usage);
@@ -219,7 +219,7 @@ int import (int argc, char **argv)
     }
 
     /* XXX - this should be a module, not just a pathname */
-    if (! isabsolute (argv[0]) && pathname_levels (argv[0]) == 0)
+    if (! isabsolute (argv[0]) && pathname_levels (argv[0]) == 0 && strcmp(argv[0],"."))
     {
 		if (current_parsed_root == NULL)
 		{
@@ -238,6 +238,7 @@ int import (int argc, char **argv)
 	/* It is somewhere between a security hole and "unexpected" to
 	   let the client start mucking around outside the cvsroot
 	   (wouldn't get the right CVSROOT configuration, &c).  */
+	/* In the '.' case, possibly this error message isn't the most informative */
 	error (1, 0, "directory %s not relative within the repository",
 	       argv[0]);
     }
@@ -291,7 +292,7 @@ int import (int argc, char **argv)
 
 	if(vbranch == NULL)
 		send_arg("-n");
-	else if (vbranch[0] != '\0')
+	else if (vbranch[0] != '\0' && strcmp(vbranch,CVSBRANCH))
 	    option_with_arg ("-b", vbranch);
 	if (message)
 	    option_with_arg ("-m", message);
@@ -347,12 +348,15 @@ int import (int argc, char **argv)
 		   CVS_Username, argv[0]);
 	*cp = '\0';
     }
+	TRACE(3,"import() call verify_create()");
     if (! verify_create(existing_repos_dir,NULL,NULL,&msg, NULL))
 	{
+		TRACE(3,"import() call verify_create() failed - user cannot create files.");
 		error (msg?0:1, 0, "User %s cannot create files in %s", CVS_Username, argv[0]);
 		if(msg)
 			error(1,0,"%s",msg);
 	}
+	TRACE(3,"import() call verify_create() succeeded - user can create files.");
     xfree(existing_repos_dir);
 #endif
 
@@ -360,6 +364,7 @@ int import (int argc, char **argv)
      * Make all newly created directories writable.  Should really use a more
      * sophisticated security mechanism here.
      */
+	TRACE(3,"import() Make all newly created directories writable.");
     mode_t oumask = umask (cvsumask);
     make_directories (repository);
 	umask(oumask);
@@ -1101,7 +1106,7 @@ static char *get_comment (const char *user)
     char *retval;
 
     suffix_path = (char*)xmalloc (strlen (user) + 5);
-    cp = strrchr (user, '.');
+    cp = (char*)strrchr (user, '.');
     if (cp != NULL)
     {
 	cp++;
@@ -1229,7 +1234,7 @@ add_rcs_file (
        cvs_stat the file before opening it. -twp */
 
 	RCS_get_kflags(local_opt, true, local_opt_flags);
-	crlf = CRLF_DEFAULT;
+	crlf = crlf_mode;
 	if(!server_active)
 	{
 		if(local_opt_flags.flags&KFLAG_MAC)
@@ -1420,6 +1425,12 @@ add_rcs_file (
 					sb.st_mode & 0777) < 0)
 			goto write_error;
 
+		if (fprintf (fprcs, "commitid\t%s;\n", global_session_id) <0)
+                       	goto write_error;
+
+		if (fprintf (fprcs, "filename\t%s;\n", userfile) <0)
+			goto write_error;
+		    
 		if (add_vbranch != NULL)
 		{
 			if (fprintf (fprcs, "\n%s.1\n", add_vbranch) < 0 ||
@@ -1459,7 +1470,13 @@ add_rcs_file (
 			/* Store initial permissions */
 			if (fprintf (fprcs, "permissions\t%o;\n", sb.st_mode & 0777) < 0)
 				goto write_error;
-		    
+
+			if (fprintf (fprcs, "commitid\t%s;\n", global_session_id) <0)
+                          	goto write_error;
+
+			if (fprintf (fprcs, "filename\t%s;\n", userfile) <0)
+				goto write_error;
+
 			if (fprintf (fprcs, "\n") < 0)
 				goto write_error;
 		}
@@ -1532,8 +1549,8 @@ add_rcs_file (
 				}
 				else if(res<0)
 					error(0,0,"Unable to convert from %s to UTF-8",local_opt_flags.encoding.encoding);
-				cdp.EndEncoding();
 				cdp.StripCrLf(buf,len);
+				cdp.EndEncoding();
 			}
 
 			if(local_opt_flags.flags&KFLAG_COMPRESS_DELTA)
@@ -1699,7 +1716,7 @@ static int import_descend_dir (char *message, char *dir, char *vtag, int targc, 
     char *cp;
     int ierrno, err;
     char *rcs = NULL;
-	const char *msg;
+	const char *msg=NULL;
 
     if (islink (dir))
 	return (0);
@@ -1727,16 +1744,23 @@ static int import_descend_dir (char *message, char *dir, char *vtag, int targc, 
     }
 
     /* Verify we have create access in this directory. */
+	TRACE(3,"import_descend_dir() verify_create() to verify we have acreate access in this directory.");
     if (! verify_create (repository,NULL,NULL,&msg,NULL))
 	{
+		TRACE(3,"import_descend_dir() verify_create() failed - user cannot create files");
 		error (msg?0:1, 0, "User %s cannot create files in %s", CVS_Username, fn_root(repository));
 		if(msg)
 			error(1,0,"%s",msg);
 	}
 
+	TRACE(3,"import_descend_dir() verify_create() succeeded.");
     if (!quiet && !current_parsed_root->isremote)
+	{
+		TRACE(3,"import_descend_dir() Importing...");
 		error (0, 0, "Importing %s", repository);
+	}
 
+	TRACE(3,"import_descend_dir() change dir...");
     if ( CVS_CHDIR (dir) < 0)
     {
 	ierrno = errno;

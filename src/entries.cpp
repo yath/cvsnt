@@ -43,12 +43,16 @@ static Entnode *Entnode_Create(
 	time_t rcs_timestamp,
 	const char *edit_revision,
 	const char *edit_tag,
-	const char *edit_bugid)
+	const char *edit_bugid,
+	const char *md5)
 {
     Entnode *ent;
+	TRACE(4,"Entnode_Create()");
     
     /* Note that timestamp and options must be non-NULL */
     ent = (Entnode *) xmalloc (sizeof (Entnode));
+	if (ent)
+	{
     ent->type      = type;
     ent->user      = xstrdup (user);
     ent->version   = xstrdup (vn);
@@ -63,7 +67,9 @@ static Entnode *Entnode_Create(
 	ent->edit_revision = xstrdup(edit_revision?edit_revision:"");
 	ent->edit_tag = xstrdup(edit_tag?edit_tag:"");
 	ent->edit_bugid = xstrdup(edit_bugid?edit_bugid:"");
-
+	ent->md5 = xstrdup(md5?md5:"");
+	}
+	TRACE(4,"Entnode_Create() finished");
     return ent;
 }
 
@@ -85,6 +91,7 @@ static void Entnode_Destroy (Entnode *ent)
 	xfree (ent->edit_revision);
 	xfree (ent->edit_tag);
 	xfree (ent->edit_bugid);
+	xfree (ent->md5);
 
     xfree (ent);
 }
@@ -137,6 +144,7 @@ static void write_entries (List *list)
 
     sawdir = 0;
 
+	TRACE(3,"write_entries() CVSADM_ENTBAK entfilename=\"%s\"",entfilename);
     /* open the new one and walk the list writing entries */
     entfilename = CVSADM_ENTBAK;
     entfile = CVS_FOPEN (entfilename, "w+");
@@ -159,6 +167,7 @@ static void write_entries (List *list)
 	return;
     }
 
+	TRACE(3,"write_entries() CVSADM_ENTBAK ok");
 	entexfilename= CVSADM_ENTEXTBAK;
     entexfile = CVS_FOPEN (entexfilename, "w+");
     if (entexfile == NULL)
@@ -180,11 +189,13 @@ static void write_entries (List *list)
 	return;
     }
 
+	TRACE(3,"write_entries() CVSADM_ENTEXBAK ok");
 	(void) walklist (list, write_ent_ex_proc, (void *) &sawdir);
     if (! sawdir)
     {
 	struct stickydirtag *sdtp;
 
+	TRACE(3,"write_entries() !sawdir");
 	/* We didn't write out any directories.  Check the list
            private data to see whether subdirectory information is
            known.  If it is, we need to write out an empty D line.  */
@@ -201,12 +212,14 @@ static void write_entries (List *list)
     /* now, atomically (on systems that support it) rename it */
 	/* First make a copy in the .Old files (note we don't rename so that the
 	   entries files always exist) */
+	TRACE(3,"write_entries() now, atomically (on systems that support it) rename it ");
 	copy_file (CVSADM_ENT, CVSADM_ENTOLD, 1, 0);
     rename_file (entfilename, CVSADM_ENT);
 	copy_file (CVSADM_ENTEXT, CVSADM_ENTEXTOLD, 1, 0);
     rename_file (entexfilename, CVSADM_ENTEXT);
 
     /* now, remove the log file */
+	TRACE(3,"write_entries() now, remove the log file ");
     if (unlink_file (CVSADM_ENTLOG) < 0
 	&& !existence_error (errno))
 		error (0, errno, "cannot remove %s", CVSADM_ENTLOG);
@@ -214,6 +227,7 @@ static void write_entries (List *list)
     if (unlink_file (CVSADM_ENTEXTLOG) < 0
 	&& !existence_error (errno))
 		error (0, errno, "cannot remove %s", CVSADM_ENTEXTLOG);
+	TRACE(3,"write_entries() done");
 }
 
 /*
@@ -325,12 +339,12 @@ void Rename_Entry (List *list, const char *from, const char *to)
 Node *Fast_Register (List *list, const char *fname, const char *vn,  const char *ts, const char *options, const char *tag,
     const char *date, const char *ts_conflict, const char *merge_from_tag_1,
 	const char *merge_from_tag_2, time_t rcs_timestamp, 
-	const char *edit_revision, const char *edit_tag, const char *edit_bugid)
+	const char *edit_revision, const char *edit_tag, const char *edit_bugid, const char *md5)
 {
 	Entnode *entnode;
 	Node *node;
     entnode = Entnode_Create(ENT_FILE, fname, vn, ts, options, tag, date,
-			      ts_conflict,merge_from_tag_1,merge_from_tag_2,rcs_timestamp, edit_revision, edit_tag, edit_bugid);
+			      ts_conflict,merge_from_tag_1,merge_from_tag_2,rcs_timestamp, edit_revision, edit_tag, edit_bugid, md5);
     node = AddEntryNode (list, entnode);
 	return node;
 }
@@ -342,7 +356,7 @@ Node *Fast_Register (List *list, const char *fname, const char *vn,  const char 
 void Register (List *list, const char *fname, const char *vn, const char *ts, const char *options, const char *tag,
     const char *date, const char *ts_conflict, const char *merge_from_tag_1,
 	const char *merge_from_tag_2, time_t rcs_timestamp, 
-	const char *edit_revision, const char *edit_tag, const char *edit_bugid)
+	const char *edit_revision, const char *edit_tag, const char *edit_bugid, const char *md5)
 {
     Entnode *entnode;
     Node *node;
@@ -355,10 +369,10 @@ void Register (List *list, const char *fname, const char *vn, const char *ts, co
 
 #ifdef SERVER_SUPPORT
     if (server_active)
-		server_register (fname, vn, ts, options, tag, date, ts_conflict, merge_from_tag_1, merge_from_tag_2, rcs_timestamp, edit_revision, edit_tag, edit_bugid);
+		server_register (fname, vn, ts, options, tag, date, ts_conflict, merge_from_tag_1, merge_from_tag_2, rcs_timestamp, edit_revision, edit_tag, edit_bugid, md5);
 #endif
 
-	TRACE(1,"Register(%s, %s, %s%s%s, %s, %s %s, %s, %s, %s, %s)",
+	TRACE(1,"Register(%s, %s, %s%s%s, %s, %s %s, %s, %s, %s, %s, %s)",
 			PATCH_NULL(fname), PATCH_NULL(vn), ts ? ts : "",
 			ts_conflict ? "+" : "", ts_conflict ? ts_conflict : "",
 			PATCH_NULL(options), tag ? tag : "", date ? date : "",
@@ -366,14 +380,20 @@ void Register (List *list, const char *fname, const char *vn, const char *ts, co
 			merge_from_tag_2 ? merge_from_tag_2:"", 
 			edit_revision ? edit_revision:"",
 			edit_tag ? edit_tag:"",
-			edit_bugid ? edit_bugid:"");
+			edit_bugid ? edit_bugid:"",
+			md5?md5:"");
 
     entnode = Entnode_Create(ENT_FILE, fname, vn, ts, options, tag, date,
-			      ts_conflict,merge_from_tag_1,merge_from_tag_2,rcs_timestamp, edit_revision, edit_tag, edit_bugid);
+			      ts_conflict,merge_from_tag_1,merge_from_tag_2,rcs_timestamp, edit_revision, edit_tag, edit_bugid, md5);
+	if (!entnode){
+		error (0, errno, "Cannot create file node for \"%s\"", PATCH_NULL(fname));
+		return;
+	}
     node = AddEntryNode (list, entnode);
 
     if (!noexec)
     {
+		TRACE(3,"Register(): !noexec");
 		entfilename = CVSADM_ENTLOG;
 		entexfilename = CVSADM_ENTEXTLOG;
 		entfile = CVS_FOPEN (entfilename, "a");
@@ -407,6 +427,7 @@ void Register (List *list, const char *fname, const char *vn, const char *ts, co
 		if (fclose (entexfile) == EOF)
 			error (1, errno, "error closing %s", entexfilename);
     }
+	TRACE(3,"Register(): finished");
 }
 
 /*
@@ -542,7 +563,7 @@ static Entnode *fgetentent(FILE *fpin, char *cmd, int *sawdir)
 	}
 
 	ent = Entnode_Create (type, user, vn, ts, options, tag, date,
-			      ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, NULL);
+			      ts_conflict, NULL, NULL, (time_t)-1, NULL, NULL, NULL, NULL);
 	break;
     }
 
@@ -561,7 +582,7 @@ static int fgetententex(List *entries, FILE *fpin, char *cmd)
     char *line;
     size_t line_chars_allocated;
     register char *cp;
-    char *l, *user, *tag1, *tag2, *rcs_timestamp_string, *edit_revision, *edit_tag, *edit_bugid;
+    char *l, *user, *tag1, *tag2, *rcs_timestamp_string, *edit_revision, *edit_tag, *edit_bugid, *md5;
     int line_length;
 
     line = NULL;
@@ -666,6 +687,17 @@ static int fgetententex(List *entries, FILE *fpin, char *cmd)
 	xfree(ent->edit_bugid);
 	ent->edit_bugid=xstrdup(edit_bugid);
 
+	if(!*cp)
+		break;
+
+	md5=cp;
+	if ((cp = strchr (md5, '/')) == NULL)
+		continue;
+	*cp++ = '\0';
+
+	xfree(ent->md5);
+	ent->md5 = xstrdup(md5);
+
 	break;
 	}
 
@@ -740,7 +772,7 @@ int fputententex(FILE *fp, Entnode *p)
 	{
 		fprintf (fp, "%"TIME_T_SPRINTF"d", p->rcs_timestamp);
 	}
-	fprintf(fp,"/%s/%s/%s/\n",p->edit_revision?p->edit_revision:"",p->edit_tag?p->edit_tag:"",p->edit_bugid?p->edit_bugid:"");
+	fprintf(fp,"/%s/%s/%s/%s/\n",p->edit_revision?p->edit_revision:"",p->edit_tag?p->edit_tag:"",p->edit_bugid?p->edit_bugid:"",p->md5?p->md5:"");
 
     return 0;
 }
@@ -768,7 +800,7 @@ List *Entries_Open_Dir (int aflag, const char *dir, const char *update_dir)
    dir is the directory relative to this one, or NULL */
 List *Entries_Open (int aflag, const char *update_dir)
 {
-    List *entries;
+    List *entrieslist;
     struct stickydirtag *sdtp = NULL;
     Entnode *ent;
     const char *dirtag, *dirdate;
@@ -777,16 +809,20 @@ List *Entries_Open (int aflag, const char *update_dir)
     FILE *fpin;
     int sawdir;
 
+	TRACE(3,"Entries_Open()");
     /* get a fresh list... */
-    entries = getlist ();
+    entrieslist = getlist ();
 
     /*
      * Parse the CVS/Tag file, to get any default tag/date settings. Use
      * list-private storage to tuck them away for Version_TS().
      */
+	TRACE(3,"Entries_Open ParseTag()");
 	ParseTag (&dirtag, &dirdate, &dirnonbranch, NULL);
     if (aflag || dirtag || dirdate)
     {
+	TRACE(3,"Entries_Open aflag || dirtag || dirdate");
+
 	sdtp = (struct stickydirtag *) xmalloc (sizeof (*sdtp));
 	memset ((char *) sdtp, 0, sizeof (*sdtp));
 	sdtp->aflag = aflag;
@@ -795,12 +831,15 @@ List *Entries_Open (int aflag, const char *update_dir)
 	sdtp->nonbranch = dirnonbranch;
 
 	/* feed it into the list-private area */
-	entries->list->data = (char *) sdtp;
-	entries->list->delproc = freesdt;
+	entrieslist->list->data = (char *) sdtp;
+	entrieslist->list->delproc = freesdt;
     }
+	else
+	TRACE(3,"Entries_Open aflag==0 && dirtag==0 && dirdate==0");
 
     sawdir = 0;
 
+	TRACE(3,"Entries_Open CVS_FOPEN(\"%s\",\"r\")",CVSADM_ENT);
     fpin = CVS_FOPEN (CVSADM_ENT, "r");
     if (!fpin && (!noexec || !existence_error(errno)))
     {
@@ -810,16 +849,19 @@ List *Entries_Open (int aflag, const char *update_dir)
     }
     else if(fpin)
     {
+	TRACE(3,"Entries_Open CVS_FOPEN CVSADM_ENT returned a file handle, now call the (slow) fgetentent() / AddEntryNode");
 	while ((ent = fgetentent (fpin, (char *) NULL, &sawdir)) != NULL) 
 	{
-	    (void) AddEntryNode (entries, ent);
+	    (void) AddEntryNode (entrieslist, ent);
 	}
 
+	TRACE(3,"Entries_Open fclose() CVSADM_ENT ");
 	if (fclose (fpin) < 0)
 	    /* FIXME-update-dir: should include update_dir in message.  */
 	    error (0, errno, "cannot close %s", CVSADM_ENT);
     }
 
+	TRACE(3,"Entries_Open CVS_FOPEN(\"%s\",\"r\")",CVSADM_ENTEXT);
     fpin = CVS_FOPEN (CVSADM_ENTEXT, "r");
     if (fpin == NULL && !existence_error(errno))
     {
@@ -829,30 +871,37 @@ List *Entries_Open (int aflag, const char *update_dir)
     }
     else if(fpin)
     {
-		while (!fgetententex (entries,fpin,NULL)) 
+		TRACE(3,"Entries_Open CVS_FOPEN CVSADM_ENTEXT returned a file handle");
+		while (!fgetententex (entrieslist,fpin,NULL)) 
 			;
+		TRACE(3,"Entries_Open fclose() CVSADM_ENTEXT ");
 		if (fclose (fpin) < 0)
 		    /* FIXME-update-dir: should include update_dir in message.  */
 		    error (0, errno, "cannot close %s", CVSADM_ENTEXT);
     }
 
+	TRACE(3,"Entries_Open CVS_FOPEN(\"%s\",\"r\")",CVSADM_ENTLOG);
 	fpin = CVS_FOPEN (CVSADM_ENTLOG, "r");
     if (fpin != NULL) 
     {
 	char cmd;
 	Node *node;
 
+	TRACE(3,"Entries_Open CVS_FOPEN CVSADM_ENTLOG returned a file handle");
 	while ((ent = fgetentent (fpin, &cmd, &sawdir)) != NULL)
 	{
 	    switch (cmd)
 	    {
 	    case 'A':
-		(void) AddEntryNode (entries, ent);
+		TRACE(3,"Entries_Open CVSADM_ENTLOG AddEntryNode (entrieslist, ent)");
+		(void) AddEntryNode (entrieslist, ent);
 		break;
 	    case 'R':
-		node = findnode_fn (entries, ent->user);
+		TRACE(3,"Entries_Open CVSADM_ENTLOG findnode_fn (entrieslist, ent->user)");
+		node = findnode_fn (entrieslist, ent->user);
 		if (node != NULL)
 		    delnode (node);
+		TRACE(3,"Entries_Open CVSADM_ENTLOG Entnode_Destroy (ent)");
 		Entnode_Destroy (ent);
 		break;
 	    default:
@@ -861,6 +910,7 @@ List *Entries_Open (int aflag, const char *update_dir)
 	    }
 	}
 	do_rewrite = 1;
+	TRACE(3,"Entries_Open fclose() CVSADM_ENTLOG ");
 	if (fclose (fpin) < 0)
 	    /* FIXME-update-dir: should include update_dir in message.  */
 	    error (0, errno, "cannot close %s", CVSADM_ENTLOG);
@@ -873,22 +923,32 @@ List *Entries_Open (int aflag, const char *update_dir)
 	sdtp->subdirs = sawdir;
     else if (! sawdir)
     {
+	TRACE(3,"Entries_Open (! sawdir) - so xmalloc()");
 	sdtp = (struct stickydirtag *) xmalloc (sizeof (*sdtp));
 	memset ((char *) sdtp, 0, sizeof (*sdtp));
 	sdtp->subdirs = 0;
-	entries->list->data = (char *) sdtp;
-	entries->list->delproc = freesdt;
+	// ************************** //
+	if (entrieslist!=NULL)
+	{
+	entrieslist->list->data = (char *) sdtp;
+	entrieslist->list->delproc = freesdt;
+	}
     }
 
     if (do_rewrite && !noexec)
-	write_entries (entries);
+	{
+	TRACE(3,"Entries_Open write_entries(entrieslist)");
+	write_entries (entrieslist);
+	}
 
     /* clean up and return */
+	TRACE(3,"Entries_Open clean up and return ");
     if (dirtag)
 	xfree (dirtag);
     if (dirdate)
 	xfree (dirdate);
-    return (entries);
+	TRACE(3,"Entries_Open done");
+    return (entrieslist);
 }
 
 void Entries_Close_Dir (List *list, const char *dir)
@@ -908,9 +968,14 @@ void Entries_Close(List *list)
     {
 		if (!noexec) 
 		{
+			TRACE(3,"Entries_Close - isfile (\"%s\")",CVSADM_ENTLOG);
 			if (isfile (CVSADM_ENTLOG))
+			{
+				TRACE(3,"Entries_Close - write_entries (list)");
 				write_entries (list);
+			}
 		}
+		TRACE(3,"Entries_Close - dellist (list)");
 		dellist(&list);
     }
 }
@@ -936,13 +1001,17 @@ static Node *AddEntryNode(List *list, Entnode *entdata)
 {
     Node *p;
 
+	TRACE(4,"AddEntryNode()");
     /* was it already there? */
     if ((p  = findnode_fn (list, entdata->user)) != NULL)
     {
+		TRACE(3,"AddEntryNode() was it already there? -- apparently yes");
 		/* Special case... if new entry contains an edit revision of '*', then
 		   we copy the edit data from the old revision */
 		if(p->data && entdata->edit_revision && !strcmp(entdata->edit_revision,"*"))
 		{
+			TRACE(3,"AddEntryNode() Special case... if new entry contains an edit revision of '*', then");
+			TRACE(3,"               we copy the edit data from the old revision ");
 			Entnode *oldent = (Entnode*)p->data;
 
 			xfree(entdata->edit_revision);
@@ -956,15 +1025,18 @@ static Node *AddEntryNode(List *list, Entnode *entdata)
 			oldent->edit_bugid = NULL;
 		}
 		/* take it out */
+		TRACE(3,"AddEntryNode() take it out ");
 		delnode (p);
     }
 
     /* get a node and fill in the regular stuff */
+	TRACE(4,"AddEntryNode() get a node and fill in the regular stuff ");
     p = getnode ();
     p->type = ENTRIES;
     p->delproc = Entries_delproc;
 
     /* this one gets a key of the name for hashing */
+	TRACE(4,"AddEntryNode() this one gets a key of the name for hashing ");
     /* FIXME This results in duplicated data --- the hash package shouldn't
        assume that the key is dynamically allocated.  The user's free proc
        should be responsible for freeing the key. */
@@ -972,7 +1044,9 @@ static Node *AddEntryNode(List *list, Entnode *entdata)
     p->data = (char *) entdata;
 
     /* put the node into the list */
+	TRACE(4,"AddEntryNode() put the node into the list ");
     addnode (list, p);
+	TRACE(4,"AddEntryNode() finished");
     return (p);
 }
 
@@ -1091,6 +1165,7 @@ void ParseTag_Dir(const char *dir, const char **tagp, const char **datep, int *n
 	char *p;
     cvs::string fn;
 
+	TRACE(3,"ParseTag_Dir(%s,%s,%s,%d,%s)",PATCH_NULL(dir),(tagp)?"<something>":"",(datep)?"<something>":"",(nonbranchp)?*nonbranchp:0,(versionp)?"<something>":"");
     if (tagp)
 		*tagp = (char *) NULL;
     if (datep)
@@ -1114,7 +1189,7 @@ void ParseTag_Dir(const char *dir, const char **tagp, const char **datep, int *n
     fp = CVS_FOPEN(fn.c_str(),"r");
     if (fp)
     {
-		char *line;
+		char *line=NULL;
 		int line_length;
 		size_t line_chars_allocated;
 
@@ -1139,7 +1214,7 @@ void ParseTag_Dir(const char *dir, const char **tagp, const char **datep, int *n
 					if (tagp != NULL)
 					{
 						*tagp = xstrdup (line + 1);
-						p=strchr(*tagp,':');
+						p=(char*)strchr(*tagp,':');
 					}
 					else
 						p=strchr(line+1,':');
@@ -1184,6 +1259,7 @@ void ParseTag_Dir(const char *dir, const char **tagp, const char **datep, int *n
 			error (0, errno, "cannot close %s", CVSADM_TAG);
 
 		xfree (line);
+		line=NULL;
     }
     else if (!existence_error (errno))
 	{
@@ -1245,7 +1321,7 @@ static Entnode *subdir_record (int cmd, const char *parent, const char *dir)
     entnode = Entnode_Create (ENT_SUBDIR, dir, "", "", "",
 			      (char *) NULL, (char *) NULL,
 			      (char *) NULL, (char *) NULL,
-			      (char *) NULL, (time_t) -1, NULL, NULL, NULL);
+			      (char *) NULL, (time_t) -1, NULL, NULL, NULL, NULL);
 
     if (!noexec)
     {

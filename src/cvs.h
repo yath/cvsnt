@@ -17,8 +17,15 @@
 #define MAIN_CVS
 #include "../windows-NT/config.h"
 #else
-#include <config.h>		/* this is stuff found via autoconf */
+#ifdef HAVE_CONFIG_H
+/* this is stuff found via autoconf */
+#include "config.h"
+#endif /* HAVE_CONFIG_H */
 #endif
+#ifndef HAVE_PTRDIFF_T
+typedef long ptrdiff_t;
+#endif
+
 #include "options.h"		/* these are some larger questions which
 				   can't easily be automatically checked
 				   for */
@@ -27,10 +34,6 @@
 #include <cvstools.h>
 
 #define	PTR	void *
-
-#ifndef HAVE_PTRDIFF_T
-typedef long ptrdiff_t;
-#endif
 
 #include <stdio.h>
 
@@ -349,6 +352,9 @@ struct entnode
 
     /* Last commit date from RCS file */
 	time_t rcs_timestamp;
+
+	/* Checksum from last checkout, if supplied */
+	char *md5;
 };
 typedef struct entnode Entnode;
 
@@ -415,7 +421,7 @@ extern int read_only_server;
 extern char *CVSroot_cmdline;
 
 int perms_close();
-int verify_admin();
+bool verify_admin();
 int verify_read(const char *dir, const char *file, const char *tag, const char **message, const char **type_message);
 int verify_write(const char *dir, const char *file, const char *tag, const char **message, const char **type_message);
 int verify_create(const char *dir, const char *file, const char *tag, const char **message, const char **type_message);
@@ -489,17 +495,33 @@ void tm_to_rcsdiff(char *, const struct tm *);
 
 char *Name_Repository(const char *dir, const char *update_dir);
 const char *Short_Repository(const char *repository);
-void Sanitize_Repository_Name(char *repository);
+void Sanitize_Repository_Name(char **repository);
 
 char *Name_Root (const char *dir, const char *update_dir);
 void free_cvsroot_t(cvsroot *root_in);
 cvsroot *parse_cvsroot (const char *root_in);
 cvsroot *new_cvsroot_t();
-cvsroot *local_cvsroot (const char *dir, const char *real_dir);
+cvsroot *local_cvsroot (const char *dir, const char *real_dir, bool readwrite, RootType type, const char *remote_serv, const char *remote_repos, const char *proxy_repos, const char *remote_pass);
 void Create_Root(const char *dir, const char *rootdir);
-void root_allow_add(const char *root, const char *name, int online);
-void root_allow_free(void);
-int root_allow_ok (const char *root, const char **real_root, int *online);
+
+typedef struct
+{
+	cvs::filename root;
+	cvs::filename name;
+	bool online;
+	bool readwrite;
+	bool proxypasswd;
+	RootType repotype;
+	cvs::string remote_server;
+	cvs::string remote_repository;
+	cvs::string proxy_repository;
+	cvs::string remote_passphrase;
+} root_allow_struct;
+
+void root_allow_add(const char *root, const char *name, bool online, bool readwrite, bool proxypasswd, RootType type, const char *remote_serv, const char *remote_repos, const char *proxy_repos, const char *remote_pass);
+void root_allow_free();
+bool root_allow_ok (const char *root, const root_allow_struct*& found_root, const char *&real_root, bool authuse);
+
 char *normalize_path(char *path);
 
 char *gca (const char *rev1, const char *rev2);
@@ -573,7 +595,6 @@ int local_lockserver();
 
 /* Single file full lock/unlock */
 size_t do_lock_file(const char *file, const char *repository, int write, int wait);
-size_t do_lock_advisory(const char *file, const char *repository, int write, int wait);
 int do_lock_version(size_t lockId, const char *branch, char **version);
 int do_unlock_file(size_t lockId);
 
@@ -629,10 +650,6 @@ void rename_file (const char *from, const char *to);
    malloc'd.  It is OK to call it with PARGC == &ARGC or PARGV == &ARGV.  */
 void expand_wild (int argc, char **argv, int *pargc, char ***pargv);
 
-#ifdef SERVER_SUPPORT
-extern int fopen_case();
-#endif
-
 void strip_trailing_slashes (char *path);
 void update_delproc (Node *p);
 void usage (const char *const cpp[]);
@@ -643,11 +660,11 @@ List *Find_Names (const char *repository, int which, int aflag, List **optentrie
 Node *Fast_Register (List *list, const char *fname, const char *vn,  const char *ts, const char *options, const char *tag,
     const char *date, const char *ts_conflict, const char *merge_from_tag_1,
 	const char *merge_from_tag_2, time_t rcs_timestamp, 
-	const char *edit_revision, const char *edit_tag, const char *edit_bugid);
+	const char *edit_revision, const char *edit_tag, const char *edit_bugid, const char *md5);
 void Register (List *list, const char *fname, const char *vn,  const char *ts, const char *options, const char *tag,
     const char *date, const char *ts_conflict, const char *merge_from_tag_1,
 	const char *merge_from_tag_2, time_t rcs_timestamp,
-	const char *edit_revision, const char *edit_tag, const char *edit_bugid);
+	const char *edit_revision, const char *edit_tag, const char *edit_bugid, const char *md5);
 void Update_Logfile (const char *repository, const char *xmessage, FILE *xlogfp, List *xchanges, const char *xbugid);
 void do_editor (const char *dir, char **messagep, const char *repository, List *changes);
 
@@ -715,7 +732,7 @@ int do_module (DBM *db, const char *mname, enum mtype m_type,  const char *msg, 
     const char *where, int shorten, int local_specified, int run_module_prog, int build_dirs,
     const char *extra_arg);
 void history_write (int type, const char *update_dir, const char *revs, const char *name, const char *repository, const char *bugid, const char *message);
-int start_recursion(FILEPROC fileproc, FILESDONEPROC filesdoneproc, PREDIRENTPROC predirentproc, DIRENTPROC direntproc, DIRLEAVEPROC dirleaveproc, void *callerdat, int argc, char **argv, int local, int which, int aflag, int readlock, const char *update_preload, const char *update_repository, int dosrcs, PERMPROC permproc);
+int start_recursion(FILEPROC fileproc, FILESDONEPROC filesdoneproc, PREDIRENTPROC predirentproc, DIRENTPROC direntproc, DIRLEAVEPROC dirleaveproc, void *callerdat, int argc, char **argv, int local, int which, int aflag, int readlock, const char *update_preload, const char *update_repository, int dosrcs, PERMPROC permproc, const char *tag);
 void read_cvsrc (int *argc, char ***argv, const char *cmdname);
 void reset_saved_cvsrc();
 int close_cvsrc();
@@ -950,10 +967,12 @@ int ls(int argc, char **argv);
 int info(int argc, char **argv);
 int cvsrcs(int argc, char **argv);
 int xdiff(int argc, char **argv);
+int cvsswitch(int argc, char **argv);
 
 unsigned long int lookup_command_attribute (const char *cmd_name);
 
 extern const struct protocol_interface *client_protocol;
+extern const struct protocol_interface *server_protocol;
 
 char *normalize_cvsroot (const cvsroot *root);
 
@@ -1140,6 +1159,14 @@ extern int allow_trace;
 /* Is client/server locale translation active? */
 extern int locale_active;
 extern const char *force_locale;
+extern int server_stats_enabled;
+extern char *server_statistics;
+#ifdef _WIN32
+extern int force_no_statistics;
+#endif
+
+/* Client force mode flag */
+extern LineType crlf_mode;
 
 /* atomic checkouts */
 extern int atomic_checkouts;
@@ -1150,6 +1177,7 @@ struct precommand_args_t
 	int argc;
 	const char **argv;
 	const char *command; 
+	int retval;
 };
 int precommand_proc(void *param, const trigger_interface *cb);
 int postcommand_proc(void *param, const trigger_interface *cb);

@@ -3,8 +3,8 @@
 "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">
 <book lang="en">
   <bookinfo>
-    <title>cvsnt--Concurrent Versions System __VERSION__</title>
-
+    <title>Concurrent Versions System (cvsnt) __VERSION__</title>
+    <releaseinfo>cvsnt __VERSION__</releaseinfo>
     <abstract>
       <para>This info manual describes how to use and administer cvsnt version
       __VERSION__.</para>
@@ -2428,6 +2428,123 @@ cvs -d :pserver:bach@faun.example.org:/usr/local/cvsroot checkout foo
         to avoid exposing NT drive letters to the clients.</para>
       </sect2>
     </sect1>
+
+
+    <sect1 id="Replicating-a-repository">
+      <title>Replicating a repository and Repository Caching</title>
+
+      <para><indexterm>
+          <primary>Repository, replicting</primary>
+        </indexterm><indexterm>
+          <primary>Replicating a repository</primary>
+        </indexterm><indexterm>
+          <primary>Caching a repository</primary>
+        </indexterm> Repository replication and caching may be configured so 
+      that remote locations can have fast access for read operations while 
+      keeping changes stored in a master repository.  If the master repositoryy
+      goes offline then people at the remote location can continue to work
+      or one of the remote caches can be re-configured to be the new master.</para>
+
+      <para>The fisrt thing to consider is whether replication and caching 
+      are needed at all.  CVS was designed for networks that were much slower
+      and less reliable that are available today, so even without replication
+      and caching it should perform adequately for large remote teams using a
+      central repository located in the same or a distant continent.  If you
+      are considering repository replication and caching primarily to improve
+      performance then you should instead address the causes of the performance
+      issues first by contacting the CVSNT Newsgroup or purchasing commercial
+      support from the project sponsor (<xref linkend="BUGS" />).</para>
+
+
+
+      <sect2 id="Overview-Replicating-a-repository">
+        <title>Overview</title>
+
+        <para>After much analysis and discussion internally the CVSNT developers
+        could not see any benefit for repository replication and caching since
+        the CVSNT protocol was designed for telecommunications networks far 
+        slower and less reliable that what is commonly available today.</para>
+
+        <para>Secondly in hypotheticals about 'if we did do multi-repos' - we could
+        not see any benefit in a quorum based system where the changes on
+        one repository are mulitcast to several servers simultaneously, since the
+        quorum needs to be tracked and the 'excluded members' of the quorum are
+        just as incapable of accepting patches as is a single repository shadow.</para>
+
+        <para>The solution we have come up with is a 'master' repository and multiple
+        shadows.  If you like  you can change which is the 'master' at any time
+        you like.  </para>
+
+        <para>The CVSNT developers have been using the 2.5.04 repostiory cache feature since 2007
+        internally between Manchester UK and Sydney Australia and it works very well - and if you have
+        large binaries in the repository or your processes require 'fresh checkouts'
+        rather than 'updates' then installng a shadow does improve performance.</para>
+
+
+        <para>Changing your procedures to use 'udpate' would do the same thing and
+        requires much less effort than setting up repository replication.</para>
+
+        <para>It cannot be stressed enough just how unnecessary repository replication and
+        caching is for 99.9% of organisations as teams - if you are experiencing multi
+        site performance problems there are probably much 'better' ways to fix
+        it that using repository replication and caching.</para>
+
+        <para>If you want more info on repository replication please see the
+        previous newsgroup posts:</para>
+
+    <itemizedlist mark="bullet">
+      <listitem>
+        <para>1. <screen>http://www.cvsnt.org/pipermail/cvsnt/2008-May/030637.html</screen> And</para>
+      </listitem>
+
+      <listitem>
+        <para>1. <screen>http://www.cvsnt.org/pipermail/cvsnt/2008-May/030642.html</screen> And</para>
+      </listitem>
+
+      <listitem>
+        <para>1. <screen>http://www.cvsnt.org/pipermail/cvsnt/2008-May/030653.html</screen> And</para>
+      </listitem>
+
+      <listitem>
+        <para>1. <screen>http://www.cvsnt.org/pipermail/cvsnt/2008-May/030655.html</screen> And</para>
+      </listitem>
+
+      <listitem>
+        <para>1. <screen>http://www.cvsnt.org/pipermail/cvsnt/2008-May/030659.html</screen> .</para>
+      </listitem>
+
+
+    </itemizedlist>
+
+      </sect2>
+
+      <sect2 id="Into-Replicating-a-repository">
+        <title>Introduction</title>
+
+        <para>CVSNT provides the following specific repository replication an caching features:</para>
+    <itemizedlist mark="bullet">
+      <listitem>
+        <para>The SYNC protocol to 'pass through' changes form a local cache to the master server, and</para>
+      </listitem>
+
+      <listitem>
+        <para>The UNISON port on the Master server to allow caching clients to obtain delta copies of the repository (Unison is included in the quality assured CVS Suite only)</para>
+      </listitem>
+
+      <listitem>
+        <para>Triggers to automatically activate synchronising changes from the master server back to the local cache (the quality assured CVS Suite includes a SYNC trigger)</para>
+      </listitem>
+
+        <para>It is also necessary to configure the synchronise to occur at intervals when the caching server is inactive (the quality assured CVS Suite includes a SYNC scheduler)</para>
+
+
+    </itemizedlist>
+
+      </sect2>
+
+    </sect1>
+
+
   </chapter>
 
   <chapter id="Security">
@@ -10872,7 +10989,7 @@ Recommended login: :sspi:cvs.cvsnt.org:/usr/local/cvs</screen>The layout will
                 </varlistentry>
 
                 <varlistentry>
-                  <term><varname>rev</varname>:</term>
+                  <term><varname>rev</varname>::</term>
 
                   <listitem>
                     <para>Revisions starting just after <varname>rev</varname>
@@ -14410,6 +14527,12 @@ Release Tags: release_tag</screen> Next, separated by an empty line, is the
               root</para>
             </listitem>
           </varlistentry>
+          <varlistentry>
+            <term>%x</term>
+            <listitem>
+              <para>Return code of the command</para>
+            </listitem>
+          </varlistentry>
         </variablelist></para>
 
       <para>By default the string <command>%r/%p %c</command> is used, which
@@ -17057,7 +17180,7 @@ cvs [server aborted]: can't chdir(/root): Permission denied
   </appendix>
 
   <appendix id="BUGS">
-    <title>Dealing with bugs in CVS or this manual</title>
+    <title>Dealing with bugs or getting help</title>
 
     <para><indexterm>
         <primary>Bugs in this manual or CVS</primary>
@@ -17084,9 +17207,12 @@ cvs [server aborted]: can't chdir(/root): Permission denied
         also included. March Hare can guarantee this support because the
         people who have been developing CVS since 1999 work for us.</para>
 
-        <para>At the time of writing, small support contracts are available
-        from US$32 per user per month (based on a 10 user 12 month "Single
-        Site Basic" contract of US$3,753).</para>
+        <para>At the time of writing, quality-assured builds of CVSNT are 
+         available from US$152 with many additional integrations (eg: Bugzilla,
+         Mantis, Jira, Visual Studio NET) and extensive documentation and a 
+         range of support SLAs (Service Level Agreements) are available for 
+         an additional change.  On site services such as training and installation
+         are also available worldwide.</para>
       </listitem>
 
       <listitem>

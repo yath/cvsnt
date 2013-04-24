@@ -42,6 +42,7 @@ struct recursion_frame {
     int readlock;
     int dosrcs;
     PERMPROC permproc;
+    const char *tag;
 };
 
 static int do_recursion(struct recursion_frame *frame, int top_level);
@@ -72,12 +73,10 @@ static int verify_access (PERMPROC permproc, const char *dir, const char *file, 
     int  retval;
 
     if (permproc == NULL)
-    {
         return 1;
-    }
 
     /* No point in verifying access if the repo is remote */
-    if (current_parsed_root->isremote && !server_active)
+    if (current_parsed_root->isremote)
         return 1;
 
     TRACE(3,"verify_access %s,%s,%s",PATCH_NULL(dir),PATCH_NULL(update_dir),PATCH_NULL(tag));
@@ -178,12 +177,15 @@ int start_recursion (FILEPROC fileproc, FILESDONEPROC filesdoneproc,
     const char *update_preload,
 	const char *repos_preload,
     int dosrcs,
-    PERMPROC permproc)
+    PERMPROC permproc,
+    const char *tag)
 {
     int i, err = 0;
     List *args_to_send_when_finished = NULL;
     List *files_by_dir = NULL;
     struct recursion_frame frame;
+
+	TRACE(3,"start_recursion()");	
 
     frame.fileproc = fileproc;
     frame.filesdoneproc = filesdoneproc;
@@ -197,6 +199,7 @@ int start_recursion (FILEPROC fileproc, FILESDONEPROC filesdoneproc,
     frame.readlock = readlock;
     frame.dosrcs = dosrcs;
     frame.permproc = permproc;
+    frame.tag = tag;
 
     expand_wild (argc, argv, &argc, &argv);
 
@@ -294,7 +297,9 @@ int start_recursion (FILEPROC fileproc, FILESDONEPROC filesdoneproc,
 	    }
 	}
 	else
+	{
 	    addlist (&dirlist, ".");
+	}
 
 	goto do_the_work;
     }
@@ -414,7 +419,9 @@ int start_recursion (FILEPROC fileproc, FILESDONEPROC filesdoneproc,
 		    xfree (repos);
 
 		    if (isdir (reposfile))
+			{
 			addlist (&dirlist, argv[i]);
+			}
 		    else
 			addfile (&files_by_dir, dir, comp);
 
@@ -440,6 +447,7 @@ int start_recursion (FILEPROC fileproc, FILESDONEPROC filesdoneproc,
        calling do_recursion. */
 
     err += walklist (files_by_dir, unroll_files_proc, (void *) &frame);
+    if (files_by_dir)
     dellist(&files_by_dir);
 
     /* then do_recursion on the dirlist. */
@@ -579,6 +587,7 @@ int start_recursion (FILEPROC fileproc, FILESDONEPROC filesdoneproc,
 	    xfree (our_argv);
 	}
 
+	if (args_to_send_when_finished)
 	dellist (&args_to_send_when_finished);
     }
     
@@ -675,7 +684,7 @@ static int do_recursion (struct recursion_frame *frame, int top_level)
 		repository[strlen(repository)-1]='\0';
     srepository = repository;		/* remember what to free */
 
-	if(repository && (server_active || !current_parsed_root->isremote))
+	if(repository && !current_parsed_root->isremote)
 	{
 		mapped_repository = map_repository(repository);
 	}
@@ -684,8 +693,6 @@ static int do_recursion (struct recursion_frame *frame, int top_level)
 		mapped_repository=xstrdup(repository);
 	}
 
-	TRACE(3,"Repository = %s",PATCH_NULL(repository));
-	TRACE(3,"Mapped repository = %s",PATCH_NULL(mapped_repository));
 	xfree(last_repository);
 	last_repository = xstrdup(mapped_repository);
 
@@ -695,7 +702,7 @@ static int do_recursion (struct recursion_frame *frame, int top_level)
 	/* Note that for a recursion this is done already in do_dir_proc... */
 	if(top_level)
 	{
-		if(repository && (server_active || !current_parsed_root->isremote))
+		if(repository && !current_parsed_root->isremote)
 		{
 			const char *tag;
 			const char *message;
@@ -703,7 +710,7 @@ static int do_recursion (struct recursion_frame *frame, int top_level)
 
 			ParseTag(&tag, NULL, NULL, NULL);
 
-			if (! verify_access(frame->permproc, mapped_repository, NULL,update_dir,tag,&message, &v_msg))
+			if (! verify_access(frame->permproc, mapped_repository, NULL, update_dir,frame->tag?frame->tag:tag,&message, &v_msg))
 			{
 				if(tag)
 					error (0, 0, "User '%s' cannot %s %s on tag/branch %s", CVS_Username, v_msg, fn_root(repository), tag);
@@ -748,9 +755,8 @@ static int do_recursion (struct recursion_frame *frame, int top_level)
 	       repository at this point.  Name_Repository will give a
 	       reasonable error message.  */
 	    if (repository == NULL)
-		{
 			repository = Name_Repository ((char *) NULL, update_dir);
-		}
+		else
 		if(mapped_repository == NULL)
 			mapped_repository = map_repository(repository);
 
@@ -824,17 +830,20 @@ static int do_recursion (struct recursion_frame *frame, int top_level)
 	    Lock_Cleanup_Directory();
 
 	/* clean up */
+	if (filelist)
 	dellist (&filelist);
     }
 
     /* call-back files done proc (if any) */
     if (process_this_directory && dodoneproc && frame->filesdoneproc != NULL)
-	err = frame->filesdoneproc (frame->callerdat, err, (char*)mapped_repository,
+	{
+		err = frame->filesdoneproc (frame->callerdat, err, (char*)mapped_repository,
 				    (char*)(update_dir[0] ? update_dir : "."),
 				    entries);
+	}
 
  skip_directory:
-	if(repository && (server_active || !current_parsed_root->isremote))
+	if(repository && !current_parsed_root->isremote)
 	{
 		fileattr_write ();
 		fileattr_free ();
@@ -843,12 +852,16 @@ static int do_recursion (struct recursion_frame *frame, int top_level)
     /* process the directories (if necessary) */
     if (dirlist != NULL)
     {
+		// BUGME!!!
+		/* for some reason this code path is not entered some times when it SHOULD be, eg:
+		   after a rename!  This means the .direcrory_history file is not created !!!! */
 	struct frame_and_entries frent;
 
 	frent.frame = frame;
 	frent.entries = entries;
 	err += walklist (dirlist, do_dir_proc, (void *) &frent);
     }
+	if (dirlist)
     dellist (&dirlist);
 
     if (entries) 
@@ -877,15 +890,10 @@ static int do_file_proc (Node *p, void *closure)
 	const char *mapped_name;
 	const char *mapped_file_repository = NULL;
 
-	if(server_active || !current_parsed_root->isremote)
+	if(!current_parsed_root->isremote)
 		mapped_name = map_filename(finfo->virtual_repository, p->key, &mapped_file_repository);
 	else
 		mapped_name = xstrdup(p->key);
-
-	if(!mapped_name) /* Deleted file */
-	{
-		TRACE(3,"%s deleted by filename mapping",PATCH_NULL(p->key));
-	}
 
 	finfo->file = p->key;
 	finfo->mapped_file = mapped_name;
@@ -1067,7 +1075,7 @@ static int do_dir_proc (Node *p, void *closure)
 			virtrepos = (char*)xmalloc (strlen (repository) + strlen (dir) + 5);
 			sprintf (virtrepos, "%s/%s", repository, dir);
 		}
-		if(server_active || !current_parsed_root->isremote)
+		if(!current_parsed_root->isremote)
 		{
 			newrepos = map_repository(virtrepos);
 			if(!newrepos)
@@ -1190,25 +1198,28 @@ static int do_dir_proc (Node *p, void *closure)
     /*
      * Do we have access to this directory?
      */
-	if(server_active || !current_parsed_root->isremote)
+	if(!current_parsed_root->isremote)
 	{
-		const char *tag;
-		const char *date;
-		int nonbranch;
+		const char *tag=NULL;
+		const char *date=NULL;
+		int nonbranch=0;
 		const char *message;
 		const char *v_msg;
 
 		/* before we do anything else, see if we have any
 		   per-directory tags */
-		ParseTag_Dir (newrepos, &tag, &date, &nonbranch, NULL);
-		if (! verify_access (frame->permproc, newrepos, NULL, update_dir, tag,&message, &v_msg))
+		ParseTag (&tag, &date, &nonbranch, NULL);
+		if (! verify_access (frame->permproc, newrepos, NULL, update_dir, frame->tag?frame->tag:tag,&message, &v_msg))
 		{
-//			if(tag)
-//			   error (0, 0, "User '%s' cannot %s %s on tag/branch %s", CVS_Username, v_msg, fn_root(virtrepos), tag);
-//			else
-//			   error (0, 0, "User '%s' cannot %s %s", CVS_Username, v_msg, fn_root(virtrepos));
-//			if(message)
-//				error(0,0,"%s",message);
+			if(frame->permproc!=verify_read)
+			{
+			  if(tag)
+			    error (0, 0, "User '%s' cannot %s %s on tag/branch %s", CVS_Username, v_msg, fn_root(virtrepos), tag);
+			  else
+			    error (0, 0, "User '%s' cannot %s %s", CVS_Username, v_msg, fn_root(virtrepos));
+			  if(message)
+				error(0,0,"%s",message);	
+			}
 			dir_return = R_SKIP_ALL;
 		}
 		xfree(tag);
@@ -1236,10 +1247,11 @@ static int do_dir_proc (Node *p, void *closure)
 	;
     else if(process_this_directory)
 	{
-		const char *dirversion;
-		const char *dirtag;
-		const char *dirdate;
-		int dirnonbranch;
+		int directory_opened_status=-1;
+		const char *dirversion=NULL;
+		const char *dirtag=NULL;
+		const char *dirdate=NULL;
+		int dirnonbranch=0;
 
 		if(frame->predirentproc != NULL)
 		{
@@ -1250,8 +1262,9 @@ static int do_dir_proc (Node *p, void *closure)
 		/* before we do anything else, see if we have any
 			per-directory tags */
 		ParseTag_Dir (dir, &dirtag, &dirdate, &dirnonbranch, &dirversion);
-		open_directory(newrepos,dir,dirtag,dirdate,dirnonbranch,dirversion,current_parsed_root->isremote);
-		directory_opened = 1;
+		directory_opened_status=open_directory(newrepos,dir,dirtag,dirdate,dirnonbranch,dirversion,current_parsed_root->isremote);
+		if (directory_opened_status!=-1)
+			directory_opened = 1;
 		xfree(dirversion);
 		xfree(dirtag);
 		xfree(dirdate);
@@ -1261,7 +1274,7 @@ static int do_dir_proc (Node *p, void *closure)
 
 	/* call-back dir entry proc (if any) */
     if (dir_return == R_SKIP_ALL || dir_return == R_ERROR)
-	;
+		;
     else if (frame->direntproc != NULL)
     {
 	/* If we're doing the actual processing, call direntproc.
@@ -1391,6 +1404,7 @@ static void addlist (List **listp, char *key)
     p = getnode ();
     p->type = FILES;
     p->key = xstrdup (key);
+	p->data=NULL;
     if (addnode (*listp, p) != 0)
 	freenode (p);
 }
@@ -1419,6 +1433,7 @@ static void addfile (List **listp, char *dir, char *file)
 
 static int unroll_files_proc (Node *p, void *closure)
 {
+	int directory_opened = 0;
     Node *n;
     struct recursion_frame *frame = (struct recursion_frame *) closure;
     int err = 0;
@@ -1461,6 +1476,7 @@ static int unroll_files_proc (Node *p, void *closure)
 
 	if(frame->which&W_LOCAL)
 	{
+		int directory_opened_status=-1;
 		const char *version;
 		const char *tag;
 		const char *date;
@@ -1468,18 +1484,31 @@ static int unroll_files_proc (Node *p, void *closure)
 		char *repository = Name_Repository(NULL,update_dir);
 
 		ParseTag(&tag, &date, &nonbranch, &version);
-		open_directory(repository,".",tag,date,nonbranch,version,current_parsed_root->isremote);
+		directory_opened_status=open_directory(repository,".",tag,date,nonbranch,version,current_parsed_root->isremote);
+		if (directory_opened_status!=-1)
+			directory_opened = 1;
 		xfree(repository);
 		xfree(version);
 		xfree(tag);
 		xfree(date);
 	}
 	else
-		open_directory(NULL,".",NULL,NULL,0,NULL,1); /* We want to open the directory anyway, so treat it as 'remote'.  This only affects rlog, etc. */
+	{
+		int directory_opened_status=-1;
+		/* we can't simply call Name_Repository() here, if we do we get:
+		-> Name_Repository((null),cvsnt/src)
+		cvs server: in directory cvsnt/src:
+		cvs [server aborted]: CVS directory without administration files present.  Cannot continue until this directory is deleted or renamed.
+		*/
+		directory_opened_status=open_directory(NULL,".",NULL,NULL,0,NULL,1); /* We want to open the directory anyway, so treat it as 'remote'.  This only affects rlog, etc. */
+		if (directory_opened_status!=-1)
+			directory_opened = 1;
+	}
 
     err += do_recursion (frame, 1);
 
-	close_directory();
+	if(directory_opened)
+		close_directory();
 
     if (save_update_dir != NULL)
     {

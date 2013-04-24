@@ -63,6 +63,7 @@ List *getlist ()
 			list[i].nofree=1;
 			list[i].list = node;
 			node->type = ntHEADER;
+			node->data = NULL;
 			node->next = node->prev = node;
 		}
 		list[i-1].next=NULL;
@@ -146,6 +147,7 @@ Node *getnode ()
     memset((char *) p, 0, sizeof (Node));
 	p->nofree = f;
     p->type = NT_UNKNOWN;
+	p->data = NULL;
 
     return (p);
 }
@@ -200,6 +202,14 @@ void freenode (Node *p)
 {
 //	TRACE(3,"freenode %s: %p",p->key,p->data);
     /* first free the memory */
+	if (p->type == DIRS)
+	{
+		TRACE(4,"freenode() free the badbad DIRS");
+		List *fl;
+		fl = (List *) p->data;
+		dellist (&fl);
+		p->data = NULL;
+	}
     freenode_mem (p);
 
     /* then put it in the cache */
@@ -301,6 +311,8 @@ int insert_before (List *list, Node *marker, Node *p)
  */
 int addnode (List *list, Node *p)
 {
+  if (!list)
+	    error (1, 0, "cannot add directory %s to non existent list", p->key);
   return insert_before (list, list->list, p);
 }
 

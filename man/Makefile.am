@@ -12,7 +12,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
-man_MANS = cvs.1 cvs.5 
+man_MANS = cvs.1 cvs.5 cvslockd.1 Plugins.5 PServer.5
 EXTRA_DIST = \
 	.cvsignore \
 	$(man_MANS)

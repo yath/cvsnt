@@ -535,7 +535,7 @@ char *gca (const char *rev1, const char *rev2)
 	for (i = 0; i < 2; ++i)
 	{
 	    /* swap out the dot */
-	    s[i] = strchr (p[i], '.');
+	    s[i] = (char*)strchr (p[i], '.');
 	    if (s[i] != NULL) {
 		c[i] = *s[i];
 	    }
@@ -834,8 +834,9 @@ void get_file (const char *name, const char *fullname, const char *mode,
 		{
 			error(0,0,"Unable to convert from %s to UTF-8",kf.encoding.encoding);
 		}
-		cdp.EndEncoding();
+
 		cdp.StripCrLf(*buf,nread);
+		cdp.EndEncoding();
 	}
 	else if(!(kf.flags&KFLAG_BINARY))
 	{
@@ -1087,7 +1088,7 @@ void cvs_trace(int level, const char *fmt, ...)
 			OutputDebugStringA(str);
 			OutputDebugStringW(L"\r\n");
 #endif
-			fprintf(stderr,"%-8.8s: %c -> ", ctime(&t)+11, server_active?'S':' ');
+			fprintf(stderr,"%-8.8s: %c -> ", ctime(&t)+11, proxy_active?'P':server_active?'S':' ');
 			fprintf(stderr,"%s\n",str);
 		}
 
@@ -1099,8 +1100,9 @@ void cvs_trace(int level, const char *fmt, ...)
 				xfree(trace_file);
 			else
 			{
-				fprintf(trace_file_fp,"%-8.8s: %c -> ", ctime(&t)+11, server_active?'S':' ');
+				fprintf(trace_file_fp,"%-8.8s: %c -> ", ctime(&t)+11, proxy_active?'P':server_active?'S':' ');
 				fprintf(trace_file_fp,"%s\n",str);
+				fflush(trace_file_fp);
 			}
 		}
 	}
@@ -1203,7 +1205,7 @@ int cvs_tcp_connect(const char *servername, const char *port, int supress_errors
 
 	hint.ai_flags=supress_errors?0:AI_CANONNAME;
 	hint.ai_socktype=SOCK_STREAM;
-	if((res=getaddrinfo(servername,port,&hint,&tcp_addrinfo))!=0)
+	if((res=getaddrinfo(cvs::idn(servername),port,&hint,&tcp_addrinfo))!=0)
 	{
 		if(!supress_errors)
 			error(0,0, "Error connecting to host %s: %s\n", servername, gai_strerror(socket_errno));
@@ -1244,7 +1246,7 @@ int cvs_tcp_connect(const char *servername, const char *port, int supress_errors
 			if(err!=1)
 			{
 				if(!supress_errors)
-					error(0,0, "connect to %s(%s):%s failed: %s", servername, tcp_addrinfo->ai_canonname, port, sock_strerror(socket_errno));
+					error(0,0, "connect to %s(%s):%s failed: %s", servername, (const char *)cvs::decode_idn(tcp_addrinfo->ai_canonname), port, sock_strerror(socket_errno));
 				closesocket(sock);
 				return -1;
 			}
@@ -1252,7 +1254,7 @@ int cvs_tcp_connect(const char *servername, const char *port, int supress_errors
 		else
 		{
 			if(!supress_errors)
-				error(0,0, "connect to %s(%s):%s failed: %s", servername, tcp_addrinfo->ai_canonname, port, sock_strerror(socket_errno));
+				error(0,0, "connect to %s(%s):%s failed: %s", servername, (const char *)cvs::decode_idn(tcp_addrinfo->ai_canonname), port, sock_strerror(socket_errno));
 			closesocket(sock);
 			return -1;
 		}

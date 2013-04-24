@@ -58,7 +58,7 @@ List *Find_Names (const char *repository, int which, int aflag, List **optentrie
     List *files;
 	const char *regex = NULL;
 
-	if(server_active || !current_parsed_root->isremote)
+	if(!current_parsed_root->isremote)
 		regex = lookup_regex(virtual_repository);
 
     /* make a list for the files */
@@ -171,7 +171,7 @@ List *Find_Directories (char *repository, int which, List *entries, const char *
 
 	const char *regex = NULL;
 
-	if((server_active || !current_parsed_root->isremote) && virtual_repository)
+	if(!current_parsed_root->isremote && virtual_repository)
 		regex = lookup_regex(virtual_repository);
 
 	/* make a list for the directories */

@@ -70,16 +70,34 @@ OM_uint32  gss_init_sec_context (
         int *ret_flags,
         OM_int32 *time_rec)
 {
+	SecPkgInfoA *secPackInfo = NULL;
 	gss_cred_id_t credhandle={0};
 	gss_ctx_id_t *pctx;
 
+	// SECBUFFER_TOKEN
+	// This buffer type is used to indicate the security token portion of the message. 
+	// This is read-only for input parameters or read/write for output parameters.
 	SecBuffer InputBuf[1] = {input_token?input_token->length:0,SECBUFFER_TOKEN,input_token?input_token->value:0};
-	SecBuffer OutputBuf[1] = {4096,SECBUFFER_TOKEN,malloc(4096)};
-	SecBufferDesc InputBuffer[1] = {SECBUFFER_VERSION, 1, InputBuf};
-	SecBufferDesc OutputBuffer[1] = {SECBUFFER_VERSION, 1, OutputBuf};
+	SecBuffer OutputBuf[1] = {0,SECBUFFER_TOKEN,NULL};
+	SecBufferDesc InBuffer[1] = {SECBUFFER_VERSION, 1, InputBuf};
+	SecBufferDesc OutBuffer[1] = {SECBUFFER_VERSION, 1, OutputBuf};
 	OM_uint32 ret;
 	TimeStamp tr;
 	unsigned long rf;
+	SECURITY_STATUS retq;
+
+	//
+	// Previously gserver passed ISC_REQ_ALLOCATE_MEMORY to InitializeSecurityContext
+	// but it returns SEC_E_BUFFER_TOO_SMALL - I think this is because
+	// only Digest and Schannel will allocate output buffers for you, even though the documentation
+	// doesn't make that clear for InitializeSecurityContext (see AcquireCredentialsHandle doco).
+	//
+	if((retq=QuerySecurityPackageInfoA( "Kerberos", &secPackInfo )) != SEC_E_OK)
+		return 0;
+
+	OutputBuf->BufferType = SECBUFFER_TOKEN; // preping a token here
+	OutputBuf->cbBuffer = secPackInfo->cbMaxToken;
+	OutputBuf->pvBuffer = malloc(secPackInfo->cbMaxToken);
 
 	if(claimant_cred_handle.dwLower==0 && claimant_cred_handle.dwUpper==0)
 	{
@@ -100,11 +118,32 @@ OM_uint32  gss_init_sec_context (
 	else
 		pctx = context_handle;
 
+	// note - only Digest and Schannel will allocate output buffers for you. 
+	// so kerberos and other security contexts should not use ISC_REQ_ALLOCATE_MEMORY
+	// and also should not free them by calling the FreeContextBuffer function.
 	ret = InitializeSecurityContextA(
 		&credhandle, pctx, target_name, req_flags, 0, SECURITY_NETWORK_DREP,
-		input_token?InputBuffer:NULL,0, pctx?NULL:context_handle, OutputBuffer, &rf, &tr); 
+		input_token?InBuffer:NULL,0, pctx?NULL:context_handle, OutBuffer, &rf, &tr); 
+
+	// really need to return if that didn't work...
+	if (ret != SEC_E_OK /*GSS_S_COMPLETE*/ && ret != SEC_I_CONTINUE_NEEDED /*GSS_S_CONTINUE_NEEDED*/ )
+	{
+		free(OutputBuf->pvBuffer);
+		OutputBuf->pvBuffer = NULL;
+		return ret;
+	}
+
 	output_token->length = OutputBuf[0].cbBuffer;
-	output_token->value = OutputBuf[0].pvBuffer;
+	output_token->value = malloc((OutputBuf[0].cbBuffer)+100);
+	if (output_token->value!=NULL)
+		memcpy(output_token->value,OutputBuf[0].pvBuffer,output_token->length);
+	
+	// only call this if InitializeSecurityContext successfully created the buffers for us
+	// FreeContextBuffer(OutBuffer);
+
+	// manually made the memory, so manually release it...
+	free(OutputBuf->pvBuffer);
+	OutputBuf->pvBuffer = NULL;
 
 	*minor_status = 0;
 	if(time_rec)
@@ -156,11 +195,20 @@ OM_uint32  gss_accept_sec_context (
 {
 	gss_cred_id_t credhandle={0};
 	gss_ctx_id_t *pctx;
+	DWORD cbmaxtoken;
+	PVOID pbuf;
 
+	// Get max token size
+	PSecPkgInfo pspi = NULL;
+	QuerySecurityPackageInfoA("Kerberos", &pspi);
+	cbmaxtoken = pspi->cbMaxToken;
+	FreeContextBuffer(pspi);
+
+	pbuf = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (cbmaxtoken<12000)?12000:cbmaxtoken);
 	SecBuffer InputBuf[1] = {input_token->length,SECBUFFER_TOKEN,input_token->value};
-	SecBuffer OutputBuf[1] = {4096,SECBUFFER_TOKEN,malloc(4096)};
-	SecBufferDesc InputBuffer[1] = {SECBUFFER_VERSION, 1, InputBuf};
-	SecBufferDesc OutputBuffer[1] = {SECBUFFER_VERSION, 1, OutputBuf};
+	SecBuffer OutputBuf[1] = {cbmaxtoken,SECBUFFER_TOKEN,pbuf};
+	SecBufferDesc InBuffer[1] = {SECBUFFER_VERSION, 1, InputBuf};
+	SecBufferDesc OutBuffer[1] = {SECBUFFER_VERSION, 1, OutputBuf};
 	OM_uint32 ret;
 	TimeStamp tr;
 	unsigned long rf;
@@ -170,10 +218,13 @@ OM_uint32  gss_accept_sec_context (
 	else
 		pctx = context_handle;
 
-	ret = AcceptSecurityContext(&verifier_cred_handle, pctx, InputBuffer, ASC_REQ_MUTUAL_AUTH,
-				SECURITY_NETWORK_DREP, context_handle, OutputBuffer, &rf, &tr);
+	ret = AcceptSecurityContext(&verifier_cred_handle, pctx, InBuffer, ASC_REQ_MUTUAL_AUTH,
+				SECURITY_NETWORK_DREP, context_handle, OutBuffer, &rf, &tr);
 	output_token->length = OutputBuf[0].cbBuffer;
-	output_token->value = OutputBuf[0].pvBuffer;
+	output_token->value = malloc((OutputBuf[0].cbBuffer)+100);
+	if (output_token->value!=NULL)
+		memcpy(output_token->value,OutputBuf[0].pvBuffer,OutputBuf[0].cbBuffer);
+	HeapFree(GetProcessHeap(), 0, pbuf);
 
 	if(!ret)
 	{

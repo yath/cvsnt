@@ -38,6 +38,7 @@ int No_Difference (struct file_info *finfo, Vers_TS *vers, int force_nodiff, int
 		else
 			options = xstrdup ("");
 
+		TRACE(3,"RCS_cmp_file() called in No_Difference()");
 		retcode = RCS_cmp_file (vers->srcfile, vers->vn_user, options,
 					finfo->file, ignore_keywords);
 	}
@@ -55,7 +56,7 @@ int No_Difference (struct file_info *finfo, Vers_TS *vers, int force_nodiff, int
 	ts = time_stamp (finfo->file, 0);
 	Register (finfo->entries, finfo->file,
 		  vers->vn_user ? vers->vn_user : vers->vn_rcs, ts,
-		  options, vers->tag, vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid);
+		  options, vers->tag, vers->date, (char *) 0, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid, NULL);
 #ifdef SERVER_SUPPORT
 	if (server_active)
 	{

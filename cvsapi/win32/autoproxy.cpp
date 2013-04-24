@@ -12,6 +12,9 @@
 //
 // FIXME: Could probably work around this with a cut/paste of the relevant bits
 
+#include <config.h>
+#include "../lib/api_system.h"
+
 #define WIN32_LEAN_AND_MEAN	1
 #include <windows.h>
 #include "wininet.h"
@@ -49,7 +52,7 @@ DWORD __stdcall ResolveHostName( LPSTR   lpszHostName,
   Hints.ai_socktype = SOCK_STREAM;     // Constrain results to stream socket.
   Hints.ai_protocol = IPPROTO_TCP;     // Constrain results to TCP.
 
-  error = getaddrinfo( lpszHostName, NULL, &Hints, &lpAddrInfo );
+  error = getaddrinfo( cvs::idn(lpszHostName), NULL, &Hints, &lpAddrInfo );
   if( error != EAI_NONAME )
   {
     if( error != 0 )
@@ -77,7 +80,7 @@ DWORD __stdcall ResolveHostName( LPSTR   lpszHostName,
 
   // Call getaddrinfo( ) again, this time with no flag set.
   Hints.ai_flags = 0;
-  error = getaddrinfo( lpszHostName, NULL, &Hints, &lpAddrInfo );
+  error = getaddrinfo( cvs::idn(lpszHostName), NULL, &Hints, &lpAddrInfo );
   if( error != 0 )
   {
     error = ( error == EAI_MEMORY ) ?

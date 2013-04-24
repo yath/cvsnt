@@ -12,6 +12,7 @@
  *
  */
 
+#include "../version.h"
 #include "cvs.h"
 
 #ifdef HAVE_LOCALE_H
@@ -71,9 +72,14 @@ int server_io_socket = 0;
 int force_network_share = 0;
 int locale_active = 1;
 const char *force_locale = NULL;
+#ifdef _WIN32
+int force_no_statistics = 0;
+#endif
+int server_stats_enabled = 0;
+char *server_statistics = NULL;
 int read_only_server = 0;
-int send_checksum;
 int atomic_checkouts = 0;
+LineType crlf_mode = CRLF_DEFAULT;
 
 #ifdef SERVER_SUPPORT
 /* This is set to request/force encryption/compression */
@@ -99,7 +105,7 @@ cvs_compat_t compat[2];
 char *CurDir;
 
 /* codepage in server config */
-const char *cvs_locale;
+const char *cvs_locale = NULL;
 
 /*
  * Defaults, for the environment variables that are not set
@@ -195,6 +201,7 @@ static const struct cmd
     { "server",   NULL,       NULL,        server,    CVS_CMD_MODIFIES_REPOSITORY | CVS_CMD_USES_WORK_DIR },
 #endif
     { "status",   "st",       "stat",      cvsstatus, CVS_CMD_USES_WORK_DIR },
+	{ "switch",	  "sw",		  "changeroot", cvsswitch, CVS_CMD_USES_WORK_DIR | CVS_CMD_NO_CONNECT },
     { "tag",      "ta",       "freeze",    cvstag,    CVS_CMD_MODIFIES_REPOSITORY | CVS_CMD_USES_WORK_DIR },
     { "unedit",   NULL,       NULL,        unedit,    CVS_CMD_MODIFIES_REPOSITORY | CVS_CMD_USES_WORK_DIR },
     { "update",   "up",       "upd",       update,    CVS_CMD_USES_WORK_DIR },
@@ -245,8 +252,18 @@ static const char *const usg[] =
        paragraph in ../cvs.spec without assuming the reader knows what
        version control means.  */
 
-    "For CVS updates and additional information, see\n",
-	"    the CVSNT home page at http://www.cvsnt.org/\n",
+	/* I feel it is important to make users aware that those who primarily
+	   contribute to the open source effort rely on the pro support income
+	   to do so */
+    "For Open Source CVS updates and additional information, see\n",
+	"    the CVSNT home page at http://www.cvsnt.org/wiki/\n",
+	"    The vendor offers no Professional or Commercial Support for this version.\n",
+    NULL,
+
+	"For Professional Support by the authors of CVSNT, see\n",
+	"    the CVS Suite home page at http://march-hare.com/cvsnt/\n",
+	"    and the CVS Pro home page at http://march-hare.com/cvspro/\n",
+	"     (See Pro edition for CVSNT Multi-Site replication support)\n",
     NULL,
 };
 
@@ -291,6 +308,7 @@ static const char *const cmd_usage[] =
     "        server       Server mode\n",
 #endif
     "        status       Display status information on checked out files\n",
+	"		 switch		  Change root of existing sandbox\n",
     "        tag          Add a symbolic tag to checked out version of files\n",
     "        unedit       Undo an edit command\n",
     "        update       Bring work tree in sync with repository\n",
@@ -334,8 +352,14 @@ static const char *const opt_usage[] =
 	"\n",
     "    --version       CVS version and copyright.\n",
     "    --encrypt       Encrypt all net traffic (if supported by protocol).\n",
-	"    --authenticate  Authenticate all net traffic (if supported by protocol).\n",
-	"    --readonly      Server is read only for all users.\n",
+    "    --authenticate  Authenticate all net traffic (if supported by protocol).\n",
+    "    --readonly      Server is read only for all users.\n",
+    "    --cr            Use Mac (cr) line endings by default.\n",
+    "    --lf            Use Unix (lf) line endings by default.\n",
+    "    --crlf          Use Windows (crlf) line endings by default.\n",
+#ifdef _WIN32
+    "    --nostats       Override sending statistics via client when server statistics are not up to date.\n",
+#endif
 	"\n",
     "(Specify the --help option for a list of other help options)\n",
     NULL
@@ -488,16 +512,6 @@ static RETSIGTYPE main_cleanup (int sig)
 #endif /* !DONT_USE_SIGNALS */
 }
 
-#if defined(WIN32)
-static void winUseDosLineFeed(int useDos)
-{
-   if(useDos)
-	_fmode = _O_TEXT;
-   else
-	_fmode = _O_BINARY;
-}
-#endif
-
 static void read_global_config(void)
 {
 	char buffer[MAX_PATH];
@@ -598,6 +612,7 @@ static void read_global_config(void)
 			remote_init_root = xstrdup(buffer);
 
 		n=0;
+		char proxy_repos[256], remote_repos[256], remote_serv[256], remote_pass[256];
 		while(!CGlobalSettings::EnumGlobalValues("cvsnt","PServer",n++,token,sizeof(token),buffer,sizeof(buffer)))
 		{
 			if(!strncasecmp(token,"Repository",10) && isdigit(token[10]) && isdigit(token[strlen(token)-1]))
@@ -611,10 +626,25 @@ static void read_global_config(void)
 					buffer[strlen(buffer)-1]='\0';
 				if(*buffer2 && ISDIRSEP(buffer2[strlen(buffer2)-1]))
 					buffer[strlen(buffer)-1]='\0';
-				int online = 1;
+				int online = 1, readwrite = 1, repotype = 1, proxypasswd = 0;
+				proxy_repos[0]=remote_repos[0]=remote_serv[0]=remote_pass[0]='\0';
 				snprintf(tmp,sizeof(tmp),"Repository%dOnline",prefixnum);
 				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,online);
-				root_allow_add(buffer,buffer2,online);
+				snprintf(tmp,sizeof(tmp),"Repository%dReadWrite",prefixnum);
+				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,readwrite);
+				snprintf(tmp,sizeof(tmp),"Repository%dType",prefixnum);
+				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,repotype);
+				snprintf(tmp,sizeof(tmp),"Repository%dRemoteServer",prefixnum);
+				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,remote_serv,sizeof(remote_serv));
+				snprintf(tmp,sizeof(tmp),"Repository%dRemoteRepository",prefixnum);
+				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,remote_repos,sizeof(remote_repos));
+				snprintf(tmp,sizeof(tmp),"Repository%dProxyPhysicalFiles",prefixnum);
+				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,proxy_repos,sizeof(proxy_repos));
+				snprintf(tmp,sizeof(tmp),"Repository%dProxyPasswdFiles",prefixnum);
+				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,proxypasswd);
+				snprintf(tmp,sizeof(tmp),"Repository%dRemotePassphrase",prefixnum);
+				CGlobalSettings::GetGlobalValue("cvsnt","PServer",tmp,remote_pass,sizeof(remote_pass));
+				root_allow_add(buffer,buffer2,online?true:false,readwrite?true:false,proxypasswd?true:false,(RootType)repotype,remote_serv,remote_repos,proxy_repos,remote_pass);
 			}
 		}
 	}
@@ -654,7 +684,7 @@ static int main_trace(int lvl, const char *out)
 	return 0;
 }
 
-int main (int argc, char **argv)
+CVSNT_EXPORT int main (int argc, char **argv)
 {
     const char *CVSroot = CVSROOT_DFLT;
 	char *end;
@@ -680,16 +710,18 @@ int main (int argc, char **argv)
 		{"version", 0, NULL, 'v'},
 		{"encrypt", 0, NULL, 'x'},
 		{"authenticate", 0, NULL, 'a'},
+#ifdef _WIN32
+		{"nostats", 0, NULL, 11},
+#endif
 		{"readonly",0,NULL,257},
 		{"utf8",0,NULL,258},
 		{"help-commands", 0, NULL, 1},
 		{"help-synonyms", 0, NULL, 2},
 		{"help-options", 0, NULL, 4},
 		{"allow-root", required_argument, NULL, 3},
-#if defined(WIN32)
 		{"crlf", 0, NULL, 5},
 		{"lf", 0, NULL, 6},
-#endif
+		{"cr", 0, NULL, 10},
 #if defined(SERVER_SUPPORT)
 		{"testserver", 0, NULL, 7 },
 #endif
@@ -795,18 +827,6 @@ int main (int argc, char **argv)
     if (use_cvsrc)
 		read_cvsrc (&argc, &argv, "cvs");
 
-#if defined(WIN32) 
-    /* in order to checkout the text files with the Unix Line Feed
-    (usefull for Cygwin users). */
-    /* Leads to corrupt data being sent to the server.  Going
-     * away as soon as WinCVS doesn't need it any more */
-    if(CProtocolLibrary::GetEnvironment("CVSUSEUNIXLF") != 0L)
-    {
-	error(0,0,"Obsolete CVSUSEUNIXLF option used.  Please update your client.");
-	winUseDosLineFeed(0);
-    }
-#endif
-
     optind = 0;
     opterr = 1;
 
@@ -826,16 +846,23 @@ int main (int argc, char **argv)
 		}
 		break;
 #endif
-#if defined(WIN32) 
-            case 5:
-	        /* --crlf */
-                break;
+#ifdef _WIN32
+	    case 11:
+	        force_no_statistics = 1;
+		break;
+#endif
+	    case 5:
+		/* --crlf */
+		crlf_mode=ltCrLf;
+		break;
             case 6:
 	        /* --lf */
-		error(0,0,"Obsolete --lf option used.  Please update your client.");
-                winUseDosLineFeed(0);
+                crlf_mode=ltLf;
                 break;
-#endif
+	    case 10:
+		/* --cr */
+		crlf_mode=ltCr;
+		break;
 #if defined(SERVER_SUPPORT)
 			case 7:
 				testserver = 1;
@@ -866,7 +893,7 @@ int main (int argc, char **argv)
 				*(p++)='\0';
 			else
 				p=optarg;
-			root_allow_add (optarg,p,1);
+			root_allow_add (optarg,p,true,true,true,RootTypeStandard,NULL,NULL,NULL,NULL);
 		}
 		break;
 	    case 'Q':
@@ -899,10 +926,11 @@ int main (int argc, char **argv)
 		version (0, (char **) NULL); 
 		fflush(stdout);
 		printf ("\n");
-		printf ("\
-Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
-                        Jeff Polk, and other authors\n");
- 		printf ("CVSNT version ("__DATE__") Copyright (c) 1999-2005 Tony Hoyle and others\n");
+ 		printf ("CVSNT %d.%d.%02d ("__DATE__") Copyright (c) 2008 March Hare Software Ltd.\n",CVSNT_PRODUCT_MAJOR,CVSNT_PRODUCT_MINOR,CVSNT_PRODUCT_PATCHLEVEL);
+		printf ("see http://www.march-hare.com/cvspro\n");
+		printf ("\n\n");
+		printf ("CVS Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\nJeff Polk, and other authors\n");
+ 		printf ("CVSNT Copyright (c) 1999-2008 Tony Hoyle and others\n");
 		printf ("see http://www.cvsnt.org\n");
 		printf ("\n");
 		printf ("Commercial support and training provided by March Hare Software Ltd.\n");
@@ -986,9 +1014,6 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 	    case 'L':
 		CGlobalSettings::SetLibraryDirectory(optarg);
 		break;
-		case 'c':
-			send_checksum = 1;
-			break;
 	    case 'C':
 			CGlobalSettings::SetConfigDirectory(optarg);
 		break;
@@ -1042,6 +1067,8 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
     if (argc < 1)
 		usage (usg);
 
+	make_session_id(); /* Calculate the cvs global session ID */
+
 	if(!strcmp(argv[0],"pserver") || !strcmp(argv[0],"authserver") || !strcmp(argv[0],"server"))
 	{
 		char buffer[MAX_PATH];
@@ -1051,11 +1078,30 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 		if(trace_file && !*trace_file)
 			xfree(trace_file);
 		if(trace_file)
+		{
+			cvs::string trace_file_str;
+			char process_id_str[50];
+			size_t foundpos;
+
+			trace_file_str = trace_file;
+			xfree(trace_file);
+			sprintf(process_id_str,"%d",(int)getpid());
+
+			// use %g - global_session_id
+			// use %p - process id
+			// use %t - global session time
+			if ((foundpos=trace_file_str.rfind("%g"))!=cvs::string::npos)
+				trace_file_str.replace(foundpos,2,PATCH_NULL(global_session_id));
+			if ((foundpos=trace_file_str.rfind("%t"))!=cvs::string::npos)
+				trace_file_str.replace(foundpos,2,PATCH_NULL(global_session_time));
+			if ((foundpos=trace_file_str.rfind("%p"))!=cvs::string::npos)
+				trace_file_str.replace(foundpos,2,process_id_str);
+
+			trace_file = xstrdup(trace_file_str.c_str());
 			CServerIo::loglevel(99);
+		}
 	}
 	CServerIo::init(cvs_output,cvs_outerr,cvs_outerr,main_trace);
-
-	make_session_id(); /* Calculate the cvs global session ID */
 
 	time (&global_session_time_t);
 	global_session_time = xstrdup(asctime (gmtime(&global_session_time_t)));
@@ -1174,6 +1220,38 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 		TRACE(3,"Platform does not have setlocale - locale override ignored");	
 #endif
 
+	if(server_active)
+		TRACE(3,"Server was compiled %s %s", __DATE__, __TIME__);
+	else
+		TRACE(3,"Client was compiled %s %s", __DATE__, __TIME__);
+
+#ifdef __GNUC__ 
+#ifndef __GNUC_PATCHLEVEL__
+#define __GNUC_PATCHLEVEL__ 0
+#endif
+#define CVSNT_GCC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__)
+	if(server_active)
+		TRACE(3,"Server was compiled with GNU C/C++ %d (%s)", CVSNT_GCC_VERSION, __VERSION__);
+	else
+		TRACE(3,"Client was compiled with GNU C/C++ %d (%s)", CVSNT_GCC_VERSION, __VERSION__);
+#endif
+#ifdef __HP_aCC
+	if(server_active)
+		TRACE(3,"Server was compiled with HP aCC C/C++ %d", __HP_aCC);
+	else
+		TRACE(3,"Client was compiled with HP aCC C/C++ %d", __HP_aCC);
+#endif
+#ifdef _MSC_VER
+	if(server_active)
+		TRACE(3,"Server was compiled with MSVC C/C++ %d", _MSC_VER);
+	else
+		TRACE(3,"Client was compiled with MSVC C/C++ %d", _MSC_VER);
+#endif
+
+	if(server_active)
+		TRACE(3,"Server build platform is %s-%s-%s", CVSNT_TARGET_VENDOR, CVSNT_TARGET_OS, CVSNT_TARGET_CPU);
+	else
+		TRACE(3,"Client build platform is %s-%s-%s", CVSNT_TARGET_VENDOR, CVSNT_TARGET_OS, CVSNT_TARGET_CPU);
 
 #ifdef SERVER_SUPPORT
 	if(server_active)
@@ -1225,6 +1303,7 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 				SET_BINARY_MODE(stdin);
 				SET_BINARY_MODE(stderr);
 			}
+			crlf_mode = ltLf;
 		}
 	}
 #endif
@@ -1483,7 +1562,7 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 		else
 #endif
 		{
-			if(!server_active && current_parsed_root && !current_parsed_root->isremote && lock_server && !is_remote_server(lock_server))
+			if(current_parsed_root && !current_parsed_root->isremote && lock_server && !is_remote_server(lock_server))
 			{
 				if(!local_lockserver())
 				{
@@ -1525,12 +1604,6 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 			}
 		}
 
-#ifdef _WIN32
-		/* Mark case insensitive, if needed */
-		if(!filenames_case_insensitive && current_parsed_root)
-			add_to_ci_directory_list(current_parsed_root->directory);
-#endif
-
 		lock_register_client(getcaller(),current_parsed_root?current_parsed_root->directory:"");
 		}
 
@@ -1561,7 +1634,7 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 		if (use_cvsrc)
 			read_cvsrc (&argc, &argv, command_name);
 
-		if(!server_active && current_parsed_root && !current_parsed_root->isremote)
+		if(!server_active && !proxy_active && current_parsed_root && !current_parsed_root->isremote)
 		{
 			precommand_args_t args;
 			args.command=command_name;
@@ -1578,19 +1651,23 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
 		if(!err)
 			err = (*(cm->func)) (argc, argv);
 	
-		if(!server_active && current_parsed_root && !current_parsed_root->isremote)
+		if(!server_active && !proxy_active && current_parsed_root && !current_parsed_root->isremote)
 		{
 			precommand_args_t args;
 			args.command=command_name;
 			args.argc = argc-1;
 			args.argv = (const char **)argv+1;
+			args.retval = err;
 			TRACE(3,"run postcommand trigger");
 			run_trigger(&args, postcommand_proc);
 		}
 		xfree(last_repository);
 
-		CTriggerLibrary lib;
-		lib.CloseAllTriggers(); /* This command has finished */
+		if(!server_active && !proxy_active)
+		{
+			CTriggerLibrary lib;
+			lib.CloseAllTriggers(); /* This command has finished */
+		}
 		tf_loaded = false;
 	
 	    /* Mark this root directory as done.  When the server is
@@ -1639,13 +1716,13 @@ Copyright (c) 1989-2001 Brian Berliner, david d `zoo' zuhn, \n\
     if (free_Tmpdir)
 		xfree (Tmpdir);
     root_allow_free ();
-
-	free_cvsroot_t (current_parsed_root);
-
 	perms_close();
 	free_modules2();
 	xfree(CVS_Username);
 	xfree(cvs_locale);
+
+	free_cvsroot_t (current_parsed_root);
+	current_parsed_root = NULL;
 
 #ifdef SYSTEM_CLEANUP
     /* Hook for OS-specific behavior, for example socket subsystems on

@@ -13,7 +13,7 @@
 # $(includeopt) is CVS specific and set by configure
 AM_CPPFLAGS = -I$(top_srcdir)/src -I$(top_srcdir)/lib -I$(top_srcdir)/cvsapi -I$(top_srcdir)/cvstools $(includeopt) \
         -DCVS_CONFIG_DIR=\"$(cvs_config_dir)\" \
-        -DCVS_LIBRARY_DIR=\"$(cvs_library_dir)\" $(INCLTDL)
+        -DCVS_LIBRARY_DIR=\"$(cvs_library_dir)\" 
 
 libdir = $(cvs_library_dir)/triggers
 

@@ -19,7 +19,7 @@
 # when compiling savecwd.c
 #
 # $(includeopt) is CVS specific and set by configure
-AM_CPPFLAGS = -I$(top_srcdir)/src -I$(top_srcdir)/lib -I$(top_srcdir)/cvsapi -I$(top_srcdir)/cvstools $(includeopt) $(INCLTDL)
+AM_CPPFLAGS = -I$(top_srcdir)/src -I$(top_srcdir)/lib -I$(top_srcdir)/cvsapi -I$(top_srcdir)/cvstools $(includeopt) 
 
 libdir=$(cvs_library_dir)/protocols
 
@@ -54,6 +54,22 @@ else
 sserver_target = 
 
 endif 
+
+#if SYNC_PROTOCOL_SUPPORT
+#
+#sync_target = sync.la
+#
+#sync_la_SOURCES = \
+#	sync.cpp \
+#	common.cpp 
+#
+#sync_la_LDFLAGS = -module -avoid-version  -L$(DESTDIR)/$(libdir) @SSL_LIBS@
+#
+#else
+
+sync_target = 
+
+#endif 
 
 if SSPI_PROTOCOL_SUPPORT
 
@@ -158,6 +174,7 @@ SUBDIRS = $(sspi_ntlm)
 
 lib_LTLIBRARIES = $(pserver_target) \
 	      $(sserver_target) \
+	      $(sync_target) \
 	      $(sspi_target) \
 	      $(gserver_target) \
 	      $(ext_target) \

@@ -27,34 +27,34 @@ public:
 
 	struct rpcObject
 	{
-		virtual bool Marshall(CXmlNode *params) =0;
+		virtual bool Marshall(CXmlNodePtr params) =0;
 	};
 
-	CVSAPI_EXPORT static CXmlNode *createNewParams(CXmlTree& tree);
+	CVSAPI_EXPORT static CXmlNodePtr createNewParams(CXmlTree& tree);
 
-	CVSAPI_EXPORT static bool addParam(CXmlNode *params, const char *name, const char *value);
-	CVSAPI_EXPORT static bool addParam(CXmlNode *params, const char *name, int value);
-	CVSAPI_EXPORT static bool addParam(CXmlNode *params, const char *name, rpcObject *obj);
+	CVSAPI_EXPORT static bool addParam(CXmlNodePtr params, const char *name, const char *value);
+	CVSAPI_EXPORT static bool addParam(CXmlNodePtr params, const char *name, int value);
+	CVSAPI_EXPORT static bool addParam(CXmlNodePtr params, const char *name, rpcObject *obj);
 
 	template<typename _Ty>
-		static bool addParamVector(CXmlNode *params, std::vector<_Ty>& ar)
+		static bool addParamVector(CXmlNodePtr params, std::vector<_Ty>& ar)
 		{
-			CXmlNode *array = params->NewNode("array",NULL);
-			CXmlNode *data = array->NewNode("data", NULL);
+			CXmlNodePtr array = params->NewNode("array",NULL);
+			CXmlNodePtr data = array->NewNode("data", NULL);
 			for(size_t n=0; n<ar.size(); n++)
 				if(!addParam(data,NULL,&ar[n]))
 					return false;
 			return true;
 		}
 
-	CVSAPI_EXPORT static bool rpcInt(CXmlNode *param, const char *name, int& value);
-	CVSAPI_EXPORT static bool rpcString(CXmlNode *param, const char *name, cvs::string& value);
-	CVSAPI_EXPORT static bool rpcArray(CXmlNode* param, const char *name, CXmlNode*& node);
-	CVSAPI_EXPORT static bool rpcObj(CXmlNode* param, const char *name, rpcObject *obj);
+	CVSAPI_EXPORT static bool rpcInt(CXmlNodePtr param, const char *name, int& value);
+	CVSAPI_EXPORT static bool rpcString(CXmlNodePtr param, const char *name, cvs::string& value);
+	CVSAPI_EXPORT static bool rpcArray(CXmlNodePtr param, const char *name, CXmlNodePtr& node);
+	CVSAPI_EXPORT static bool rpcObj(CXmlNodePtr param, const char *name, rpcObject *obj);
 
-	CVSAPI_EXPORT static CXmlNode *rpcFault(CXmlTree& tree, int err, const char *error);
-	CVSAPI_EXPORT static CXmlNode *rpcResponse(CXmlNode* result);
-	CVSAPI_EXPORT static CXmlNode *rpcCall(const char *method, CXmlNode *param);
+	CVSAPI_EXPORT static CXmlNodePtr rpcFault(CXmlTree& tree, int err, const char *error);
+	CVSAPI_EXPORT static CXmlNodePtr rpcResponse(CXmlNodePtr result);
+	CVSAPI_EXPORT static CXmlNodePtr rpcCall(const char *method, CXmlNodePtr param);
 };
 
 #endif

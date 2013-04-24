@@ -254,7 +254,7 @@ int do_module (DBM *db, const char *mname, enum mtype m_type,  const char *msg, 
 	    if (isfile (file) || isfile (attic_file))
 	    {
 			/* if mname was a file, we have to split it into "dir file" */
-			if ((cp = strrchr (mname, '/')) != NULL && cp != mname)
+			if ((cp = (char*)strrchr (mname, '/')) != NULL && cp != mname)
 			{
 				modargv = (char**)xmalloc (2 * sizeof (*modargv));
 				modargv[0] = (char*)xmalloc (strlen (mname) + 2);
@@ -337,7 +337,7 @@ int do_module (DBM *db, const char *mname, enum mtype m_type,  const char *msg, 
     }
 
     /* look up everything to the first / as a module */
-    if (mname[0] != '/' && (cp = strchr (mname, '/')) != NULL)
+    if (mname[0] != '/' && (cp = (char*)strchr (mname, '/')) != NULL)
     {
 	/* Make the slash the new end of the string temporarily */
 	*cp = '\0';
@@ -526,7 +526,7 @@ int do_module (DBM *db, const char *mname, enum mtype m_type,  const char *msg, 
 
 	for (i = 0; i < modargc; i++)
 	{
-	    if (strcmp (mname, modargv[i]) == 0)
+	    if (fncmp (mname, modargv[i]) == 0)
 		error (0, 0,
 		       "module `%s' in modules file contains infinite loop",
 		       mname);
@@ -853,7 +853,7 @@ static int sort_order (const PTR l, const PTR r)
 	if ((i = strcmp (left->status, right->status)) != 0)
 	    return (i);
     }
-    return (strcmp (left->modname, right->modname));
+    return (fncmp (left->modname, right->modname));
 }
 
 static void save_d (char *k, int ks, char *d, int ds)

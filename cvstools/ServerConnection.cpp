@@ -23,7 +23,7 @@
 
 #include <ctype.h>
 
-bool CServerConnection::Connect(const char *command, ServerConnectionInfo *info, CServerConnectionCallback* callback)
+bool CServerConnection::Connect(const char *command, ServerConnectionInfo *info, CServerConnectionCallback* callback, int (*debugFn)(int type, const char *,size_t, void *), void *userData)
 {
 	const char *cvsnt = CGlobalSettings::GetCvsCommand();
 
@@ -91,6 +91,8 @@ bool CServerConnection::Connect(const char *command, ServerConnectionInfo *info,
 		m_callback = callback;
 		CRunFile rf;
 		rf.setOutput(_ServerOutput,this);
+		rf.setDebug(debugFn,userData);
+		rf.resetArgs();
 		rf.addArg(cvsnt);
 		rf.addArg("--utf8");
 		rf.addArg("-z3");

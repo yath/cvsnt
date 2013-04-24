@@ -18,6 +18,12 @@
   USA.
 ***/
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  What planet are they on??
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#endif
+
 #ifdef sun
 // Solaris needs this to define the recvmsg calls properly
 #define __EXTENSIONS__
@@ -228,10 +234,13 @@ static int recv_dns_packet(sock_t fd, struct dns_packet **ret_packet, struct tim
         ssize_t l;
         int r;
         
-#ifdef IP_RECVTTL /* In theory anyone that has this also has recvmsg.. */
+#if defined (IP_RECVTTL ) && ! defined (__HP_aCC)
+		/* In theory anyone that has this also has recvmsg.. */
 		struct msghdr msg = {0};
 		struct iovec iov[1];
+#if defined (_XOPEN_SOURCE_EXTENDED) || ! defined (__digital)
 		char control[1024];
+#endif
 
 		iov[0].iov_base = p->data;
 		iov[0].iov_len = sizeof(p->data);
@@ -239,11 +248,14 @@ static int recv_dns_packet(sock_t fd, struct dns_packet **ret_packet, struct tim
 		msg.msg_iovlen = 1;
 		msg.msg_name = from;
 		msg.msg_namelen = from_len;
+#if defined (_XOPEN_SOURCE_EXTENDED) || ! defined (__digital)
 		msg.msg_control = control;
 		msg.msg_controllen = sizeof(control);
+#endif
 
 		if(( l = recvmsg(fd, &msg, 0)) >= 0)
 		{
+#if defined (_XOPEN_SOURCE_EXTENDED) || ! defined (__digital)
 			struct cmsghdr *cmsg;
 			*ttl=255;
 			for(cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg,cmsg))
@@ -254,6 +266,7 @@ static int recv_dns_packet(sock_t fd, struct dns_packet **ret_packet, struct tim
 					break;
 				}
 			}
+#endif
 
 			p->size = (size_t) l;
 			*ret_packet = p;
@@ -1161,7 +1174,7 @@ int mdns_query_ipv4(mdnshandle_t handle, const ipv4_address_t *ipv4, struct mdns
     return query_reverse(handle, name, callback, userdata, timeout);
 }
 
-int mdns_query_ipv6(mdnshandle_t handle, const ipv4_address_t *ipv6, struct mdns_callback *callback, void *userdata, uint64_t timeout)
+int mdns_query_ipv6(mdnshandle_t handle, const ipv6_address_t *ipv6, struct mdns_callback *callback, void *userdata, uint64_t timeout)
 {
     char name[256];
     assert(handle && ipv6 && callback);

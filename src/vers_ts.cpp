@@ -16,20 +16,26 @@ void assign_options(char **existing_options, const char *options)
 {
 	if(!options || !*options)
 		return;
-	char c = options[0];
-	if(c=='+' || c=='-')
+	char options_first_char = options[0];
+	if(options_first_char=='+' || options_first_char=='-')
 	{
-		char *opt = (char*)xmalloc(128);
+		char *optx = (char*)xmalloc(128);
+		*optx='\0';
+		if (existing_options)
+			TRACE(3,"assign_options: \"%s\" is a delta, apply to \"%s\"",PATCH_NULL(options),PATCH_NULL(*existing_options));
+		else
+			TRACE(3,"assign_options: \"%s\" is a delta, apply to \"%s\"",PATCH_NULL(options),"(existing options are NULL)");
 
 		kflag k1;
 		kflag k2;
 
 		k1.flags = 0;
+		k2.flags = 0;
 		
 		RCS_get_kflags(*existing_options, false, k1);
 		RCS_get_kflags(options+1, true, k2);
 
-		if(c=='+')
+		if(options_first_char=='+')
 		{
 			if(k1.flags&KFLAG_BINARY) /* Don't add kkv to binary files */
 				k2.flags&=~(KFLAG_DOS|KFLAG_UNIX|KFLAG_KEYWORD|KFLAG_KEYWORD|KFLAG_VALUE|KFLAG_VALUE_LOGONLY);
@@ -52,22 +58,38 @@ void assign_options(char **existing_options, const char *options)
 				k1.flags&=~KFLAG_ENCODED;
 			}
 		}
-		RCS_rebuild_options(&k1,opt);
+		RCS_rebuild_options(&k1,optx);
 		xfree(*existing_options);
-		if(opt[0])
-			*existing_options = opt;
+		if(optx[0])
+		{
+			*existing_options = optx;
+			TRACE(3,"Done a + or -, result is: \"%s\"",optx);
+		}
 		else
 		{
-			xfree(opt);
+		    char buffer2[MAX_PATH]="\0";
+			xfree(optx);
 			/* If we've done a + or -, then we need to have something otherwise the empty
 			   string would cause RCS to use its defaults */
-			*existing_options = xstrdup("kv");
+			TRACE(3,"If we've done a + or -, then we need to have something otherwise the empty string would cause RCS to use its defaults");
+			if(CGlobalSettings::GetGlobalValue("cvsnt","PServer","DefaultKeyword",buffer2,sizeof(buffer2)))
+			{
+			  	*existing_options = xstrdup("kv");
+				TRACE(3,"Probably RCS Build Options failed.  No setting DefaultKeyword from PServer, so \"kv\" was used.");
+			}
+			else
+			{
+				TRACE(3,"Probably RCS Build Options failed.  Used the setting DefaultKeyword from PServer \"%s\"",buffer2);
+			  	*existing_options = xstrdup(buffer2);
+			}
 		}
 	}
 	else
 	{
 		xfree(*existing_options);
 		*existing_options = xstrdup (options);
+		TRACE(3,"assign_options: \"%s\" is not a delta",PATCH_NULL(options));
+
 	}
 }
 
@@ -85,6 +107,7 @@ Vers_TS *Version_TS (struct file_info *finfo, const char *options, const char *t
     struct stickydirtag *sdtp;
     Entnode *entdata;
 
+	TRACE(3,"Version_TS(%s,%s,%d)",PATCH_NULL(tag),PATCH_NULL(date),force_tag_match);
 #ifdef UTIME_EXPECTS_WRITABLE
     int change_it_back = 0;
 #endif
@@ -164,7 +187,17 @@ Vers_TS *Version_TS (struct file_info *finfo, const char *options, const char *t
      * options stored in the entries file
      */
     if (options && *options != '\0')
+	{
+		TRACE(3,"Version_TS: got an open (eg: -k+x), need to find the 'default' for \"%s\"",PATCH_NULL(finfo->file));
+		char *existing_options=wrap_rcsoption(finfo->file);
+		if ((vers_ts->options==NULL)&&(existing_options!=NULL))
+		{
+			TRACE(3,"Version_TS: an default options of \"%s\".",PATCH_NULL(existing_options));
+			vers_ts->options=xstrdup(existing_options);
+		}
+		TRACE(3,"Version_TS: assign_options(\"%s\",\"%s\")",PATCH_NULL(vers_ts->options),PATCH_NULL(options));
 		assign_options(&vers_ts->options,options);
+	}
 
     /*
      * if tags were specified on the command line, they override what is in
@@ -191,7 +224,7 @@ Vers_TS *Version_TS (struct file_info *finfo, const char *options, const char *t
 	rcsdata = finfo->rcs;
 	rcsdata->refcount++;
     }
-    else if (finfo->repository != NULL && (server_active || !current_parsed_root->isremote))
+    else if (finfo->repository != NULL && !current_parsed_root->isremote)
 		rcsdata = RCS_parse (finfo->mapped_file, finfo->repository);
     else
 		rcsdata = NULL;
@@ -208,11 +241,44 @@ Vers_TS *Version_TS (struct file_info *finfo, const char *options, const char *t
 		}
 		else
 		{
-			int simple;
+			int simple=0;
 
+			int userevone=1;
+
+
+			int force_tag_match_now=force_tag_match;
+			int this_is_repoversion=0;
+
+			if ((vers_ts->tag!=NULL) && (userevone!=0) && (strstr(rcsdata->path, RCSREPOVERSION)!=NULL))
+			{
+				force_tag_match_now=1;
+				this_is_repoversion=1;
+			}
+			TRACE(3,"Version_TS - call RCS_getversion(\"%s\",%s,%s,%d,%d)",
+							PATCH_NULL(rcsdata->path),
+							PATCH_NULL(vers_ts->tag),
+							PATCH_NULL(vers_ts->date),force_tag_match_now,simple);
 			vers_ts->vn_rcs = RCS_getversion (rcsdata, vers_ts->tag,
+							vers_ts->date, force_tag_match_now,
+							&simple);
+			if ((this_is_repoversion) && (userevone!=0) && (vers_ts->vn_rcs == NULL))
+			{
+				TRACE(3,"Version_TS() - tag match failed, try not forcing...");
+				TRACE(3,"Version_TS - call RCS_getversion(\"%s\",%s,%s,%d,%d)",
+							PATCH_NULL(rcsdata->path),
+							PATCH_NULL(vers_ts->tag),
+							PATCH_NULL(vers_ts->date),force_tag_match,simple);
+				vers_ts->vn_rcs = RCS_getversion (rcsdata, vers_ts->tag,
 							vers_ts->date, force_tag_match,
 							&simple);
+				if (vers_ts->vn_rcs == NULL)
+				{
+					TRACE(3,"Version_TS() - still no sign of it, use version 1.1 in this case");
+					vers_ts->vn_rcs = RCS_getversion (rcsdata, "1.1",
+							vers_ts->date, force_tag_match,
+							&simple);
+				}
+			}
 			if (vers_ts->vn_rcs == NULL)
 			{
 				/* In a directory all tags exist in a virtual sense, and have revision 1.1 */

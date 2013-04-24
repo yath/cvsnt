@@ -342,7 +342,7 @@ bool RCS_setprop (RCSNode *rcs, const char *rev, const char *prop, const char *v
 List *RCS_symbols (RCSNode *rcs);
 List *RCS_properties (RCSNode *rcs);
 bool RCS_check_tag (const char *tag, bool error, bool versioned_tag, bool numeric_tag);
-bool RCS_check_bugid (const char *bugid);
+bool RCS_check_bugid (const char *bugid, bool allow_comma);
 int RCS_valid_rev (const char *rev);
 List *RCS_getlocks (RCSNode *rcs);
 void rcsbuf_close (struct rcsbuffer *rcsbuf);

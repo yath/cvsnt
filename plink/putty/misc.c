@@ -1,3 +1,9 @@
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 /*
  * Platform-independent routines shared between all PuTTY programs.
  */
@@ -87,9 +93,7 @@ char *dupvprintf(const char *fmt, va_list ap)
     size = 512;
 
     while (1) {
-#ifdef _WINDOWS
-#define vsnprintf _vsnprintf
-#endif
+
 	len = vsnprintf(buf, size, fmt, ap);
 	if (len >= 0 && len < size) {
 	    /* This is the C99-specified criterion for snprintf to have

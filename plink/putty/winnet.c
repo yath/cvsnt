@@ -1,3 +1,9 @@
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 /*
  * Windows networking abstraction.
  *
@@ -898,7 +904,7 @@ Socket sk_newlistener(char *srcaddr, int port, Plug plug, int local_host_only)
 
     ret->oobinline = 0;
 
-    p_setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char *)&on, sizeof(on));
+// No - not on Win32    p_setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char *)&on, sizeof(on));
 
 #ifdef IPV6
 	if (addr->family == AF_INET6) {

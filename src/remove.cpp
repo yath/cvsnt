@@ -83,7 +83,7 @@ int cvsremove (int argc, char **argv)
 		start_recursion (remove_force_fileproc, (FILESDONEPROC) NULL,
 				 (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL,
 				 (void *) NULL, argc, argv, local, W_LOCAL,
-				 0, 0, (char *) NULL, NULL, 0, NULL);
+				 0, 0, (char *) NULL, NULL, 0, NULL, NULL);
 	    }
 	    /* else FIXME should probably act as if the file doesn't exist
 	       in doing the following checks.  */
@@ -105,7 +105,7 @@ int cvsremove (int argc, char **argv)
                            (PREDIRENTPROC) NULL, remove_dirproc, (DIRLEAVEPROC) NULL, NULL,
 			   argc, argv,
                            local, W_LOCAL, 0, 1, (char *) NULL, NULL, 1,
-			   verify_create);
+			   verify_create, NULL);
 
     if (removed_files && !really_quiet)
 		error (0, 0, "use '%s commit' to remove %s permanently", program_name,
@@ -225,7 +225,7 @@ cannot remove file `%s' which has a sticky tag of `%s'",
 	(void) strcpy (fname, "-");
 	(void) strcat (fname, vers->vn_user);
 	Register (finfo->entries, finfo->file, fname, vers->ts_rcs, vers->options,
-		  vers->tag, vers->date, vers->ts_conflict, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid);
+		  vers->tag, vers->date, vers->ts_conflict, NULL, NULL, vers->tt_rcs, vers->edit_revision, vers->edit_tag, vers->edit_bugid, NULL);
 	if (!quiet)
 	    error (0, 0, "scheduling `%s' for removal", fn_root(finfo->fullname));
 	removed_files++;

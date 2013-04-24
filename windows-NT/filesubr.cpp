@@ -459,24 +459,32 @@ FILE *open_file (const char *name, const char *mode)
  */
 void make_directory(const char *name)
 {
+	TRACE(3,"make_directory(%s)",name);
 	uc_name fn = name;
 	DWORD fa = GetFileAttributes(fn);
 
 	if(fa!=0xFFFFFFFF)
 	{
 		if(!(fa&FILE_ATTRIBUTE_DIRECTORY))
+		{
+			TRACE(3,"make_directory() already exists but is not a directory");
 			error (0, 0, "%s already exists but is not a directory", fn_root(name));
+		}
 		else
 		{
+			TRACE(3,"make_directory() already exists - return");
 			return;
 		}
 	}
 
 	if (!noexec && !CreateDirectory(fn,NULL))
 	{
+		TRACE(3,"make_directory() cannot make directory - get last error");
 		_dosmaperr(GetLastError());
+		TRACE(3,"make_directory() cannot make directory - give error");
 		error (1, errno, "cannot make directory %s", fn_root(name));
 	}
+	TRACE(3,"make_directory() made directory OK");
 }
 
 /*
@@ -485,9 +493,10 @@ void make_directory(const char *name)
  */
 static void _tmake_directories(const char *name, const TCHAR *fn)
 {
+	TRACE(3,"make_directories(%s,%s)",name,(fn)?"fn passed in":"fn not passed in");
 	DWORD fa;
-	TCHAR *dir;
-	TCHAR *cp;
+	TCHAR *dir=NULL;
+	TCHAR *cp=NULL;
 
     if (noexec)
 		return;
@@ -538,12 +547,15 @@ static void _tmake_directories(const char *name, const TCHAR *fn)
 		return;
 	}
 	xfree(dir);
+	TRACE(3,"_tmake_directories() return");
 }
 
 void make_directories (const char *name)
 {
+	TRACE(3,"make_directories(%s)",name);
 	uc_name fn = name;
 	_tmake_directories(name,fn);
+	TRACE(3,"make_directories() return");
 }
 
 /* Create directory NAME if it does not already exist; fatal error for
@@ -638,9 +650,17 @@ int readlink (char *path, char *buf, int buf_size)
     return -1;
 }
 
+// From win32.cpp
+bool validate_filename(const char *path, bool warn);
+
 /* Rename for NT which works for read only files.  */
 int wnt_rename (const char *from, const char *to)
 {
+	if(!validate_filename(from,false))
+		return -1;
+	if(!validate_filename(to,false))
+		return -1;
+
     int result, save_errno, count;
 	uc_name fn_from = from;
 	uc_name fn_to = to;

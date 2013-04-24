@@ -36,13 +36,14 @@ typedef struct
 	const char *directory_version;
 } directory_data;
 
-static directory_data *directory_stack, *current_directory;
-int directory_stack_size, directory_stack_count;
+static directory_data *directory_stack=NULL, *current_directory=NULL;
+static int directory_stack_size=0, directory_stack_rubbish=0, directory_stack_count=0;
 
 static int modules2_struct_sort(const void *_a, const void *_b)
 {
 	modules2_struct *a = (modules2_struct*)_a;
 	modules2_struct *b = (modules2_struct*)_b;
+	TRACE(4,"modules2_struct_sort(%s,%s)",PATCH_NULL(a->name),PATCH_NULL(b->name));
 	return fncmp(a->name,b->name);
 }
 
@@ -93,6 +94,8 @@ int free_modules2()
 	}
 	xfree(directory_stack);
 	directory_stack_size=0;
+	directory_stack_rubbish=0;
+	TRACE(3,"free_modules2() directory_stack_size and rubbish set to zero");
 	return 0;
 }
 
@@ -110,7 +113,7 @@ static void load_modules2()
 	sprintf(path,"%s/%s/%s",current_parsed_root->directory,CVSROOTADM,CVSROOTADM_MODULES2);
 
 #ifdef _WIN32
-	assert(server_active || !current_parsed_root->isremote);
+	assert(!current_parsed_root->isremote);
 #endif
 	TRACE(3,"Loading modules2 from %s",PATCH_NULL(path));
 	if((f=fopen(path,"r"))==NULL)
@@ -291,6 +294,7 @@ static void load_modules2()
 
 static modules2_struct *lookup_repository_module(const char *module)
 {
+	TRACE(3,"lookup_repository_module(%s)",PATCH_NULL(module));
 	modules2_struct term = {0};
 	term.name=module;
 	if(!modules2_list)
@@ -343,7 +347,7 @@ static int _lookup_module2(const char *file, char *left, char *right, int lookup
 	char tmp[MAX_PATH],*p;
 	modules2_struct *mod;
 	modules2_module_struct *dir;
-	int partial_match,subdir_match;
+	int partial_match=0,subdir_match=0;
 	int l;
 
 	/* Search the modules2 file if required */
@@ -353,26 +357,32 @@ static int _lookup_module2(const char *file, char *left, char *right, int lookup
 	if(pmod) *pmod=NULL;
 	if(pdir) *pdir=NULL;
 
-	TRACE(3,"lookup_module2(%s,%d)",PATCH_NULL(file),lookupid);
+	TRACE(3,"_lookup_module2(%s,%d)",PATCH_NULL(file),lookupid);
 
 	/* Special case.. ls does this */
 	if(!*file)
 		return 0;
 
-	p=strchr(file,'/');
+	p=(char*)strchr(file,'/');
 	if(!p)
+	{
+		TRACE(3,"_lookup_module2 !p lookup_repository_module(%s)",PATCH_NULL(file));
 		mod = lookup_repository_module(file);
+	}
 	else
 	{
 		strncpy(tmp,file,p-file);
 		tmp[p-file]='\0';
+		TRACE(3,"_lookup_module2 p!=NULL lookup_repository_module(%s)",PATCH_NULL(tmp));
 		mod = lookup_repository_module(tmp);
 	}
 
 	if(!mod)
 	{
+		TRACE(3,"lookup_module2() calls to lookup_repository_module() returned nothing");
 		if(left) left[0]='\0';
 		if(right) strcpy(right,file);
+		TRACE(3,"_lookup_module2 !mod return 0 left,right(%s,%s)",PATCH_NULL(left),PATCH_NULL(right));
 		return 0;
 	}
 
@@ -385,9 +395,12 @@ static int _lookup_module2(const char *file, char *left, char *right, int lookup
 
 	do
 	{
+		TRACE(3,"_lookup_module2 lookup_repository_directory(%s,%d,%d)",PATCH_NULL(tmp),partial_match, subdir_match);
 		dir = lookup_repository_directory(mod, tmp, &partial_match, &subdir_match);
+		TRACE(3,"_lookup_module2 lookup_repository_directory results \"%s\",%d,%d",PATCH_NULL(tmp),partial_match, subdir_match);
 		if(dir)
 		{
+			TRACE(3,"lookup_module2() call to lookup_repository_directory() returned something");
 			if(dir->lookupid == lookupid)
 				error(1,0,"Recursive repository definition for %s",fn_root(file));
 			dir->lookupid = lookupid;
@@ -396,22 +409,26 @@ static int _lookup_module2(const char *file, char *left, char *right, int lookup
 		{
 			if(left)
 				sprintf(left,"%s%s%s",mod->name,tmp[0]?"/":"",tmp);
+			TRACE(3,"lookup_module2() partial match left is %s",PATCH_NULL(left));
 			if(right)
 			{
 				l=strlen(tmp);
 				strcpy(right,file+strlen(mod->name)+(l?l+1:0));
 			}
+			TRACE(3,"lookup_module2() partial match right is %s",PATCH_NULL(right));
 			return 3;
 		}
 		if(subdir_match)
 		{
 			if(left)
 				sprintf(left,"%s%s%s",mod->name,tmp[0]?"/":"",tmp);
+			TRACE(3,"lookup_module2() subdir match left is %s",PATCH_NULL(left));
 			if(right)
 			{
 				l=strlen(tmp);
 				strcpy(right,file+strlen(mod->name)+(l?l+1:0));
 			} 
+			TRACE(3,"lookup_module2() subdir match right is %s",PATCH_NULL(right));
 			return 4;
 		}
 		if(dir)
@@ -423,8 +440,10 @@ static int _lookup_module2(const char *file, char *left, char *right, int lookup
 	} while(l);
 
 	if(!dir)
+	{
+		TRACE(3,"_lookup_module2 return 0 !dir left,right(%s,%s)",PATCH_NULL(left),PATCH_NULL(right));
 		return 0;
-
+	}
 	if(pdir)
 		*pdir = dir;
 
@@ -437,6 +456,8 @@ static int _lookup_module2(const char *file, char *left, char *right, int lookup
 		strcpy(left,dir->translation);
 	if(right)
 		strcpy(right,file+strlen(mod->name)+(l?l+1:0));
+	TRACE(3,"lookup_module2() left is %s",PATCH_NULL(left));
+	TRACE(3,"lookup_module2() right is %s",PATCH_NULL(right));
 	return dir->translation[0]?1:2;
 }
 
@@ -448,19 +469,27 @@ static int lookup_module2(const char *file, char *left, char *right, modules2_st
 	modules2_module_struct *saved_dir, *mydir;
 	int lookupid = ++global_lookupid;
 
+	TRACE(3,"lookup_module2(%s)",PATCH_NULL(file));
 	if(current_directory && current_directory->virtual_repos)
 	{
+		TRACE(3,"lookup_module2() check between file \"%s\" and virtual_repos \"%s\"",PATCH_NULL(file),PATCH_NULL(current_directory->virtual_repos));
 		if(!fncmp(file,current_directory->virtual_repos))
 		{
 			file = current_directory->real_repos;
 			renamed = 1;
 		}
-		else if(!fnncmp(file,current_directory->virtual_repos,strlen(current_directory->virtual_repos) && file[strlen(current_directory->virtual_repos)]=='/'))
+		else 
+		{
+		TRACE(3,"lookup_module2() check between virtual_repos length and file[%d]",strlen(current_directory->virtual_repos));
+		if(!fnncmp(file,current_directory->virtual_repos,strlen(current_directory->virtual_repos) && file[strlen(current_directory->virtual_repos)]=='/'))
 		{
 			sprintf(tmp,"%s%s",current_directory->real_repos,file+strlen(current_directory->virtual_repos));
 			file = tmp;
 			renamed = 1;
 		}
+		}
+		if (renamed)
+			TRACE(3,"lookup_module2() Already determined that the file is renamed");
 	}
 		
 	/* Replay the rename script backwards - rename scripts hold logical filenames in the users' sandbox */
@@ -468,29 +497,42 @@ static int lookup_module2(const char *file, char *left, char *right, modules2_st
 	{
 		int n;
 
+		TRACE(3,"lookup_module2 - Replay the rename script backwards - rename scripts hold logical filenames in the users' sandbox ");
 		for(n=current_directory->rename_script_count-1; n>=0 && file; --n)
 		{
+			TRACE(3,"lookup_module2(%s,%s)",PATCH_NULL(current_directory->rename_script[n].to),PATCH_NULL(current_directory->rename_script[n].from));
 			if(current_directory->rename_script[n].to && !fncmp(current_directory->rename_script[n].to,file))
 			{
 				file = current_directory->rename_script[n].from;
 				renamed = 1;
 			}
-			else if(!fncmp(current_directory->rename_script[n].from,file))
+			else 
+			{
+			TRACE(3,"lookup_module2() check between file \"%s\" and rename_script[%d].from \"%s\"",PATCH_NULL(file),n,PATCH_NULL(current_directory->rename_script[n].from));
+			if(!fncmp(current_directory->rename_script[n].from,file))
 			{
 				file = NULL;
 				renamed = 1;
 			}
+			}
 		}
+		if (renamed)
+			TRACE(3,"lookup_module2() Now determined that the file is renamed");
 	}
 
+	TRACE(3,"lookup_module2(%s) after rename?",PATCH_NULL(file));
 	if(!file)
 		return 2; /* Deleted */
 
 	strcpy(tmp,file);
 	do
 	{
+		TRACE(3,"lookup_module2() call _lookup_module2()");
 		ret = _lookup_module2(tmp,left,right,lookupid,pmod,&mydir);
+		TRACE(3,"lookup_module2() call _lookup_module2 returned %d",ret);
 		if(pdir) *pdir=mydir;
+		if(ret!=1 || (mydir && mydir->no_recursion)) 
+			TRACE(3,"lookup_module2() no recursion permitted so give up now",ret);
 		if(ret!=1 || (mydir && mydir->no_recursion)) break;
 		if(left) strcpy(saved_left,left);
 		if(right) strcpy(saved_right,right);
@@ -498,6 +540,7 @@ static int lookup_module2(const char *file, char *left, char *right, modules2_st
 		if(pdir) saved_dir=*pdir;
 		sprintf(tmp,"%s%s",PATCH_NULL(left),PATCH_NULL(right));
 		found=1;
+		TRACE(3,"lookup_module2() found \"%s\"",PATCH_NULL(tmp));
 	} while(ret==1);
 	if(found && !ret)
 	{
@@ -505,11 +548,18 @@ static int lookup_module2(const char *file, char *left, char *right, modules2_st
 		if(right) strcpy(right,saved_right);
 		if(pmod) *pmod=saved_mod;
 		if(pdir) *pdir=saved_dir;
+		TRACE(3,"lookup_module2() return 1");
 		ret=1;
 	}
 
+	if(current_directory)
+		TRACE(3,"lookup_module2() ret=%d, current_directory%s, current_directory->directory_mappings=%s",
+			ret,(current_directory)?"!=NULL":"==NULL",(current_directory->directory_mappings)?"!=NULL":"==NULL");
+	else
+		TRACE(3,"lookup_module2() ret=%d, current_directory==NULL, current_directory->directory_mappings=!!!!",ret);
 	if(ret!=2 && current_directory && current_directory->directory_mappings)
 	{
+		TRACE(3,"lookup_module2() lookup current_directory->directory_mappings");
 		Node *head,*p;
 		int may_be_deleted = 0;
 		sprintf(tmp,"%s%s",PATCH_NULL(left),PATCH_NULL(right));
@@ -522,6 +572,7 @@ static int lookup_module2(const char *file, char *left, char *right, modules2_st
 				{
 					left[0]='\0';
 					strcpy(right,p->key);
+					TRACE(3,"lookup_module2() file appears to be renamed");
 					renamed = 1;
 					ret = 1;
 					break;
@@ -534,6 +585,7 @@ static int lookup_module2(const char *file, char *left, char *right, modules2_st
 		}
 	}
 
+	TRACE(3,"lookup_module2() return ret=%d renamed=%d",ret,renamed);
 	return ret?ret:renamed;
 }
 
@@ -564,32 +616,41 @@ char *map_repository(const char *repository)
 	}
 
 	res = lookup_module2(relative_repos(repository),left,right, NULL, NULL);
+	if(r) TRACE(3,"map_repository - lookup_module2 returned %d ",res);
 
 	if(res==1) 
 	{
+		TRACE(3,"map_repository - lookup_module2 returned res==1");
 		char *ret = (char*)xmalloc(strlen(current_parsed_root->directory)+strlen(left)+strlen(right)+10);
 		sprintf(ret,"%s/%s%s",current_parsed_root->directory,PATCH_NULL(left),PATCH_NULL(right));
 		xfree(r);
+		TRACE(3,"map_repository - return(ret) \"%s\"",PATCH_NULL(ret));
 		return ret;
 	}
 
 	if(res==2) /* Deleted */
 	{
 		xfree(r);
+		TRACE(3,"map_repository - return(NULL)");
 		return NULL;
 	}
 
 	if((res==3 || res==4) && !*right)
 	{
+		TRACE(3,"map_repository - lookup_module2 returned res==1||4 (partial translation)");
 		/* Partial translation - use emptydir, or if the file/directory exists, use that */
 		char *ret = (char*)xmalloc(strlen(current_parsed_root->directory)+sizeof(CVSROOTADM)+sizeof(CVSNULLREPOS)+strlen(left)+strlen(right)+10);
 		sprintf(ret,"%s/%s%s",current_parsed_root->directory,PATCH_NULL(left),PATCH_NULL(right));
+		TRACE(3,"map_repository - look for %s",PATCH_NULL(ret));
 		if(!isfile(ret))
 			sprintf(ret,"%s/%s/%s",current_parsed_root->directory,CVSROOTADM,CVSNULLREPOS);
 		xfree(r);
+		TRACE(3,"map_repository - return(ret) \"%s\"",PATCH_NULL(ret));
 		return ret;
 	}
 
+	if(r) TRACE(3,"map_repository - return(r) \"%s\"",PATCH_NULL(r));
+	else TRACE(3,"map_repository - return(repository) \"%s\"",PATCH_NULL(repository));
 	if(r) return r;
 	else return xstrdup(repository);
 }
@@ -604,14 +665,17 @@ char *map_filename(const char *repository, const char *name, const char **reposi
 	/* Empty filename, assumed deleted */
 	if(!*name)
 	{
+		TRACE(3,"map_filename - * Empty filename, assumed deleted ");
 		if(repository_out) *repository_out=NULL;
 		return NULL;
 	}
 	snprintf(tmp,sizeof(tmp),"%s/%s",PATCH_NULL(repository),PATCH_NULL(name));
+	TRACE(3,"map_filename - call map_repository(%s)",PATCH_NULL(tmp));
 	*repository_out = map_repository(tmp);
 	if(!*repository_out)
 		return NULL;
-	p=strrchr(*repository_out,'/'); /* This cannot fail... */
+	TRACE(3,"map_filename - map_repository() returns %s",PATCH_NULL(*repository_out));
+	p=(char*)strrchr(*repository_out,'/'); /* This cannot fail... */
 	*p='\0';
 	return xstrdup(p+1);
 }
@@ -916,12 +980,14 @@ static void repository_checkoutproc (void *callerdat, const char *buffer, size_t
 	while(p-buffer<len && *p)
 	{
 		from=p;
-		to=p=strchr(p,'\n')+1;
+		to=p=strchr(p,'\n');
 		if(!p)
 			break;
-		p=strchr(p,'\n')+1;
+		to++; p++;
+		p=strchr(p,'\n');
 		if(!p)
 			break;
+		p++;
 		node = getnode();
 		node->type=FILES;
 		node->key=(char*)xmalloc(to-from);
@@ -943,8 +1009,28 @@ static void repository_checkoutproc (void *callerdat, const char *buffer, size_t
 int open_directory(const char *repository, const char *dir, const char *tag, const char *date, int nonbranch, const char *version, int remote)
 {
 	char *tmp,*pt;
-	TRACE(3,"open_directory(%s,%s,%s)",PATCH_NULL(repository),PATCH_NULL(tag),PATCH_NULL(date));
+	TRACE(3,"open_directory(%s,%s,%s,%d)",PATCH_NULL(repository),PATCH_NULL(tag),PATCH_NULL(date),remote);
+	if (current_directory)
+	{
+		TRACE(3,"current_directory is already set");
+		if ( current_directory->directory_mappings )
+		{
+			TRACE(3,"current_directory->directory_mappings is already set");
+		}
+	}
 
+	if ((current_directory)&&(!repository))
+	{
+		if ( current_directory->directory_mappings )
+		{
+			/* this is to handle the case where we are trying to checkout a renamed file to stdout
+			   it works around the case where open_directory() is called with all NULL params from
+			   unroll_files_proc() in recurse.cpp */
+			TRACE(3,"open_directory has been passed rubbish - but I've already got something better so I'm ignoring it");
+			directory_stack_rubbish++;
+			return -1;
+		}
+	}
 	if(directory_stack_size == directory_stack_count)
 	{
 		directory_stack_count *= 2;
@@ -962,6 +1048,7 @@ int open_directory(const char *repository, const char *dir, const char *tag, con
 	else
 		current_directory++;
 	directory_stack_size++;
+	TRACE(3,"open_directory() directory_stack_size increased by one to %d (rubbish %d)",directory_stack_size,directory_stack_rubbish);
 	memset(current_directory,0,sizeof(directory_data));
 
 	if(!remote)
@@ -977,21 +1064,63 @@ int open_directory(const char *repository, const char *dir, const char *tag, con
 			int retcode;
 			const char *rev = NULL;;
 			
+			TRACE(3,"Reading mapping file %s version=%s",
+						PATCH_NULL(current_directory->repository_rcsfile->path),
+						PATCH_NULL(version));
 			if(version && numdots(version))
+			{
 				rev = xstrdup(version);
+				TRACE(3,"Mapping file rev=%s",PATCH_NULL(rev));
+			}
 			else if(date || nonbranch || (version && !strcmp(version,"_H_")))
-					rev = RCS_getversion(current_directory->repository_rcsfile,(char*)tag,(char*)date,1,NULL);
+			{
+				TRACE(3,"Mapping file get rev using RCS_getversion tag=%s, date=%s",PATCH_NULL(tag),PATCH_NULL(date));
+				rev = RCS_getversion(current_directory->repository_rcsfile,(char*)tag,(char*)date,1,NULL);
+				TRACE(3,"Mapping file rev=%s",PATCH_NULL(rev));
+			}
+			else
+				TRACE(3,"Mapping file cannot get rev using tag=%s or date=%s",PATCH_NULL(tag),PATCH_NULL(date));
 			if(!rev)
-				rev = RCS_head(current_directory->repository_rcsfile);
+			{
+
+				int userevone=1;
+
+
+				if ((userevone)&&(tag||date))
+				{
+					// this seems to happen in Bo's test set - not really sure why
+					// - something about it causes nonbranch to be set...
+					//if(date || nonbranch || (version && !strcmp(version,"_H_")))
+					if(date || nonbranch )
+					{
+						TRACE(3,"Could not get rev using version or tag tag=%s or date=%s, so try not forcing tag match.",PATCH_NULL(tag),PATCH_NULL(date));
+						rev = RCS_getversion(current_directory->repository_rcsfile,(char*)tag,(char*)date,0,NULL);
+						TRACE(3,"Mapping file rev=%s",PATCH_NULL(rev));
+					}
+					if(!rev&&!date)
+					{
+						TRACE(3,"Could not get rev using version or tag or date, so use 1.1 because option set in server and tag=\"%s\".",PATCH_NULL(tag));
+						rev = xstrdup("1.1");
+					}
+				}
+				if(!rev)
+				{
+					TRACE(3,"Could not get rev using version or tag or date, so use HEAD");
+					rev = RCS_head(current_directory->repository_rcsfile);
+				}
+			}
 
 			retcode = RCS_checkout(current_directory->repository_rcsfile, NULL, (char*)rev, (char*)tag, NULL, NULL, repository_checkoutproc, NULL, NULL);
 			if (retcode != 0)
 				error (1, 0,
 				"failed to check out %s file", RCSREPOVERSION);
+			TRACE(3,"open_directory has successfully completed RCS_checkout.");
 			current_directory->directory_version = rev;
 		}
+		TRACE(3,"open_directory copy the tag and date.");
 		current_directory->repository_map_tag = xstrdup(tag);
 		current_directory->repository_map_date = xstrdup(date);
+		TRACE(3,"open_directory copied the tag and date.");
 	}
 
 	tmp = (char*)xmalloc(strlen(dir)+strlen(CVSADM_RENAME)+256);
@@ -1002,6 +1131,7 @@ int open_directory(const char *repository, const char *dir, const char *tag, con
 	}
 	else
 		pt=tmp;
+	TRACE(3,"Look for rename script file %s",CVSADM_RENAME);
 	strcpy(pt,CVSADM_RENAME);
 	if(isfile(tmp))
 	{
@@ -1009,6 +1139,7 @@ int open_directory(const char *repository, const char *dir, const char *tag, con
 		size_t n;
 		char *from, *to;
 
+		TRACE(3,"Rename script file exists so open it");
 		fp = CVS_FOPEN(tmp, "r");
 		if(!fp)
 			error(1,errno,"Couldn't open %s",CVSADM_RENAME);
@@ -1020,6 +1151,8 @@ int open_directory(const char *repository, const char *dir, const char *tag, con
 		{
 			from[strlen(from)-1]='\0';
 			to[strlen(to)-1]='\0';
+			TRACE(3,"Rename script file from: %s",PATCH_NULL(from));
+			TRACE(3,"Rename script file to: %s",PATCH_NULL(to));
 			if(!to[0])
 				xfree(to);
 			if(current_directory->rename_script_count==current_directory->rename_script_size)
@@ -1032,10 +1165,13 @@ int open_directory(const char *repository, const char *dir, const char *tag, con
 			current_directory->rename_script_count++;
 			from=to=NULL;
 		}
+		TRACE(3,"Rename script file exists so close it");
 		xfree(from);
 		xfree(to);
 		fclose(fp);
 	}
+	else
+		TRACE(3,"Rename script file does not exist");
 
 	strcpy(pt,CVSADM_VIRTREPOS);
     if(isfile(tmp))
@@ -1061,6 +1197,8 @@ int open_directory(const char *repository, const char *dir, const char *tag, con
 		fclose(fp);
 	} 
 	xfree(tmp);
+
+	TRACE(3,"directory opened");
 			
 	return 0;
 }
@@ -1156,6 +1294,7 @@ static int directory_commitproc(const char *filename, char **buffer, size_t *buf
 
 static int create_mapping_file(const char *repository, const char *message)
 {
+	TRACE(3,"create_mapping_file current_directory->repository_rcsfile=%d",(!current_directory->repository_rcsfile)?0:1);
 	if(!current_directory->repository_rcsfile)
 	{
 		char *fn = (char*)xmalloc(strlen(repository)+strlen(RCSREPOVERSION)+10);
@@ -1166,6 +1305,8 @@ static int create_mapping_file(const char *repository, const char *message)
 		current_directory->repository_rcsfile = RCS_parse(RCSREPOVERSION,repository);
 		if(!current_directory->repository_rcsfile)
 			error(1,errno,"Couldn't create %s",RCSREPOVERSION);
+		else
+			TRACE(3,"Created new directory mapping file %s",RCSREPOVERSION);
 	}
 	return 0;
 }
@@ -1174,10 +1315,13 @@ int commit_directory(const char *update_dir, const char *repository, const char 
 	char *newver = NULL;
 	const char *rev;
 
+	TRACE(3,"commit_directory current_directory->rename_script=%d",(!current_directory->rename_script)?0:1);
+
 	if(!current_directory->rename_script)
 		return 0;
 
 	TRACE(3,"commit_directory(%s,%s,%s)",PATCH_NULL(update_dir),PATCH_NULL(repository),PATCH_NULL(message));
+	TRACE(3,"commit_directory current_directory->repository_rcsfile=%d",(!current_directory->repository_rcsfile)?0:1);
 
 	if(!current_directory->repository_rcsfile)
 		create_mapping_file(repository,message);
@@ -1201,7 +1345,7 @@ int commit_directory(const char *update_dir, const char *repository, const char 
 			ver = RCS_getversion(current_directory->repository_rcsfile, current_directory->repository_map_tag, current_directory->repository_map_date, 0,  (int *) NULL);
 			rev = RCS_magicrev(current_directory->repository_rcsfile,ver);
 			RCS_settag(current_directory->repository_rcsfile,current_directory->repository_map_tag,rev,NULL);
-			cp = strrchr(rev,'.');
+			cp = (char*)strrchr(rev,'.');
 			for(--cp;*cp!='.';--cp)
 				;
 			strcpy(cp,cp+2);
@@ -1216,7 +1360,7 @@ int commit_directory(const char *update_dir, const char *repository, const char 
 			return 1;
 		}
 		rev = RCS_head(current_directory->repository_rcsfile);
-		*strchr(rev,'.')='\0';
+		*(char*)strchr(rev,'.')='\0';
 		
 	}
 
@@ -1238,10 +1382,10 @@ int commit_directory(const char *update_dir, const char *repository, const char 
 
 int close_directory()
 {
-	TRACE(3,"close_directory()");
+	TRACE(3,"close_directory() directory_stack_size %d, rubbish %d",directory_stack_size,directory_stack_rubbish);
 
 	if(!directory_stack_size)
-		error(1,0,"Directory stack overrun");
+		error(1,0,"Directory stack overrun -- directory_stack_size is zero");
 
 	if(current_directory->repository_rcsfile)
 		freercsnode(&current_directory->repository_rcsfile);
@@ -1251,6 +1395,7 @@ int close_directory()
 	xfree(current_directory->directory_version);
 
 	directory_stack_size--;
+	TRACE(3,"close_directory() directory_stack_size decreased by one to %d (rubbish %d)",directory_stack_size,directory_stack_rubbish);
 	if(!directory_stack_size)
 		current_directory = NULL;
 	else
@@ -1261,6 +1406,7 @@ int close_directory()
 
 int free_directory()
 {
+	TRACE(3,"free_directory() directory_stack_size = %d, rubbish = %d",directory_stack_size,directory_stack_rubbish);
 	while(directory_stack_size)
 		close_directory();
 	xfree(directory_stack);
@@ -1334,6 +1480,10 @@ int add_mapping(const char *directory, const char *oldfile, const char *newfile)
 
 const char *get_directory_version()
 {
+	if (current_directory)
+		TRACE(3,"get_directory_version() current_directory%sNULL, directory_version=%s",(current_directory)?"!=":"==",PATCH_NULL(current_directory->directory_version));
+	else
+		TRACE(3,"get_directory_version() current_directory%sNULL",(current_directory)?"!=":"==");
 	return (current_directory && current_directory->directory_version)?current_directory->directory_version:NULL;
 }
 
@@ -1351,7 +1501,7 @@ int get_directory_finfo(const char *repository, const char *dir, const char *upd
 	finfo->update_dir=(char*)update_dir;
 	finfo->repository=(char*)repository;
 	finfo->entries=getlist();
-	Fast_Register(finfo->entries,RCSREPOVERSION,current_directory->directory_version,"","",current_directory->repository_map_tag,current_directory->repository_map_date,"","","",0,"","","");
+	Fast_Register(finfo->entries,RCSREPOVERSION,current_directory->directory_version,"","",current_directory->repository_map_tag,current_directory->repository_map_date,"","","",0,"","","", NULL);
 
 	return 0;
 }

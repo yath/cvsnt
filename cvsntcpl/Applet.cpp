@@ -49,3 +49,11 @@ extern "C" LONG APIENTRY EXPORT CPlApplet(HWND hwndCPl, UINT uMsg, LONG lParam1,
 	return 0;
 }
 
+// Rundll32 interface
+extern "C" void APIENTRY EXPORT _CPlApplet(HWND hWnd,HINSTANCE hInstance,LPSTR szCmd,int nCmdShow)
+{
+	CPlApplet(hWnd,CPL_INIT,0,0);
+	CPlApplet(hWnd,CPL_DBLCLK,0,0);
+	CPlApplet(hWnd,CPL_STOP,0,0);
+	CPlApplet(hWnd,CPL_EXIT,0,0);
+}

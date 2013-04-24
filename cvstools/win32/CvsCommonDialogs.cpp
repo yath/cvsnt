@@ -552,30 +552,20 @@ void CBrowserDialog::PopulateLocal(HWND hTree, bool bStatic)
 
 	m_hLocalRoot = hRoot;
 
-	int nResp;
-	CMdnsHelperBase::mdnsType eResp = CMdnsHelperBase::mdnsDefault;
+	const char *pResp = NULL;
+	char szResp[64];
 
-  	if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderType",nResp))
+	// New responder string
+  	if(!CGlobalSettings::GetGlobalValue("cvsnt","PServer","ResponderName",szResp,sizeof(szResp)))
 	{
-		switch(nResp)
-		{
-		case 0:
+		pResp = szResp;
+		if(!strcmp(pResp,"none"))
 			return;
-		case 1:
-			eResp = CMdnsHelperBase::mdnsMini;
-			break;
-		case 2:
-			eResp = CMdnsHelperBase::mdnsApple;
-			break;
-		case 3:
-			eResp = CMdnsHelperBase::mdnsHowl;
-			break;
-		default:
-			eResp = CMdnsHelperBase::mdnsMini;
-			break;
-		}
+		if(!strcmp(pResp,"default"))
+			pResp = NULL;
 	}
-	CZeroconf zc(eResp, CGlobalSettings::GetLibraryDirectory(CGlobalSettings::GLDMdns));
+
+	CZeroconf zc(pResp, CGlobalSettings::GetLibraryDirectory(CGlobalSettings::GLDMdns));
 	const CZeroconf::server_struct_t *serv;
 	zc.BrowseForService("_cvspserver._tcp",CZeroconf::zcAddress);
 	bool first = true;

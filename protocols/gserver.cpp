@@ -13,6 +13,12 @@
 // LICENSE NOTE:  Inherits code from old CVS auth, so cannot be LGPL.
 // Only error handling and some krb5 stuff though
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,7 +187,7 @@ plugin_interface *get_plugin_interface()
 
 int gserver_connect(const struct protocol_interface *protocol, int verify_only)
 {
-    char buf[1024];
+    char buf[12288];
     gss_buffer_desc *tok_in_ptr, tok_in, tok_out;
     OM_uint32 stat_min, stat_maj;
     gss_name_t server_name;
@@ -198,7 +204,7 @@ int gserver_connect(const struct protocol_interface *protocol, int verify_only)
 		struct addrinfo *ai;
 		struct addrinfo hint={0};
 		hint.ai_flags=AI_CANONNAME;
-		if(!getaddrinfo(current_server()->current_root->hostname,NULL,&hint,&ai))
+		if(!getaddrinfo(cvs::idn(current_server()->current_root->hostname),NULL,&hint,&ai))
 		{
 			if(isdigit(ai->ai_canonname[0]))
 			{
@@ -206,10 +212,10 @@ int gserver_connect(const struct protocol_interface *protocol, int verify_only)
 				if(!getnameinfo(ai->ai_addr,ai->ai_addrlen,host,sizeof(host),NULL,0,0))
 					sprintf (buf, "cvs@%s", host);
 				else
-					sprintf (buf, "cvs@%s", ai->ai_canonname);
+					sprintf (buf, "cvs@%s", (const char *)cvs::decode_idn(ai->ai_canonname));
 			}
 			else
-				sprintf (buf, "cvs@%s", ai->ai_canonname);
+				sprintf (buf, "cvs@%s", (const char *)cvs::decode_idn(ai->ai_canonname));
 
 			freeaddrinfo(ai);
 		}
@@ -312,7 +318,7 @@ int gserver_auth_protocol_connect(const struct protocol_interface *protocol, con
     char hostname[MAXHOSTNAMELEN];
     struct addrinfo *ai,hints={0};
     gss_buffer_desc tok_in, tok_out;
-    char buf[4096];
+    char buf[4096], *gssreadstr=NULL;
     OM_uint32 stat_min, stat_maj, ret;
     gss_name_t server_name, client_name;
     gss_cred_id_t server_creds;
@@ -324,10 +330,10 @@ int gserver_auth_protocol_connect(const struct protocol_interface *protocol, con
 
 	gethostname (hostname, sizeof hostname);
 	hints.ai_flags=AI_CANONNAME;
-	if(getaddrinfo(hostname,NULL,&hints,&ai))
+	if(getaddrinfo(cvs::idn(hostname),NULL,&hints,&ai))
 		server_error (1, "can't get canonical hostname");
 
-    sprintf (buf, "cvs@%s", ai->ai_canonname);
+	sprintf (buf, "cvs@%s", (const char *)cvs::decode_idn(ai->ai_canonname));
     tok_in.value = buf;
     tok_in.length = strlen (buf);
 
@@ -350,6 +356,7 @@ int gserver_auth_protocol_connect(const struct protocol_interface *protocol, con
 
     gss_release_name (&stat_min, &server_name);
 
+	memset(buf,'\0',sizeof(buf)-1);
 	do
 	{
 		/* The client will send us a two byte length followed by that many
@@ -357,14 +364,22 @@ int gserver_auth_protocol_connect(const struct protocol_interface *protocol, con
 		if (read (current_server()->in_fd, buf, 2) != 2)
 			server_error (1, "read of length failed");
 
+		// the packet size of Kerberos on Windows 2003 Server is 12,000 bytes
 		nbytes = ntohs(*(short*)buf);
 
-		if (read (current_server()->in_fd, buf, nbytes) != nbytes)
+		gssreadstr = (char *)malloc(sizeof(char)*((((unsigned long)nbytes)<12188)?12288:((unsigned long)nbytes)+100));
+		if (gssreadstr==NULL)
+		{
+			CServerIo::trace(99,"gserver packet too large %lu (malloc failed)",(unsigned long)nbytes);
+			server_error (1, "gserver packet too large (cannot malloc)");
+			return CVSPROTO_FAIL;
+		}
+		if (read (current_server()->in_fd, gssreadstr, nbytes) != nbytes)
 			server_error (1, "read of data failed");
 
 		gcontext = GSS_C_NO_CONTEXT;
 		tok_in.length = nbytes;
-		tok_in.value = buf;
+		tok_in.value = gssreadstr;
 		tok_out.length=0;
 		tok_out.value=NULL;
 
@@ -394,6 +409,8 @@ int gserver_auth_protocol_connect(const struct protocol_interface *protocol, con
 			if (write(current_server()->out_fd, tok_out.value, tok_out.length) < 0)
 				server_error (1, "cannot send: %s", sock_strerror(socket_errno));
 		}
+		free(gssreadstr);
+		gssreadstr=NULL;
     }
     while (stat_maj == GSS_S_CONTINUE_NEEDED);
 

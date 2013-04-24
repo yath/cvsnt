@@ -15,6 +15,12 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
@@ -433,7 +439,7 @@ static int tcp_connect_socks4(const cvsroot *cvsroot)
 	int res;
 	hint.ai_protocol=IPPROTO_TCP;
 	hint.ai_socktype=SOCK_STREAM;
-	if((res=getaddrinfo(cvsroot->hostname,port,&hint,&tcp_addrinfo))!=0)
+	if((res=getaddrinfo(cvs::idn(cvsroot->hostname),port,&hint,&tcp_addrinfo))!=0)
 	{
 		server_error (1,"Error connecting to host %s: %s\n", cvsroot->hostname, gai_strerror(socket_errno));
 		return -1;
@@ -509,7 +515,7 @@ int tcp_connect_bind(const char *servername, const char *remote_port, int min_lo
 	int res,sock,localport,last_error;
 
 	hint.ai_socktype=SOCK_STREAM;
-	if((res=getaddrinfo(servername,remote_port,&hint,&tcp_addrinfo))!=0)
+	if((res=getaddrinfo(cvs::idn(servername),remote_port,&hint,&tcp_addrinfo))!=0)
 	{
 		server_error (1,"Error connecting to host %s: %s\n", servername, gai_strerror(socket_errno));
 		return -1;
@@ -612,7 +618,6 @@ int tcp_read(void *data, int length)
 		return read(_current_server->in_fd,data,length);
 	else
 	{
-		CServerIo::trace(4,"tcp_read(%d)",length);
 		int err = recv(tcp_fd,(char*)data,length,0);
 #ifdef _WIN32
 		if(err<0)
@@ -628,7 +633,6 @@ int tcp_write(const void *data, int length)
 		return write(_current_server->out_fd,data,length);
 	else
 	{
-		CServerIo::trace(4,"tcp_write(%d)",length);
 		int err = send(tcp_fd,(const char *)data,length,0);
 #ifdef _WIN32
 		if(err<0)

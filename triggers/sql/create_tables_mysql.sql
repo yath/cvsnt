@@ -1,14 +1,20 @@
 -- MySql specific configuration script
 
+Create Table %PREFIX%SchemaVersion (Version Integer);
+
+Insert Into %PREFIX%SchemaVersion (Version) Values (3);
+
 Create Table %PREFIX%SessionLog (Id Integer Auto_Increment Primary Key Not Null,
 	Command varchar(32),
-	Date datetime,
+	StartTime datetime,
+	EndTime datetime,
 	Hostname varchar(255),
 	Username varchar(255),
 	SessionId varchar(32),
 	VirtRepos varchar(255),
 	PhysRepos varchar(255),
-	Client varchar(64));
+	Client varchar(64),
+	FinalReturnCode Integer);
 
 Create Table %PREFIX%CommitLog (Id Integer Auto_Increment Primary Key Not Null,
 	SessionId Integer,

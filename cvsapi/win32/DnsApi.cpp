@@ -17,15 +17,14 @@
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 /* Win32 specific */
+#include <config.h>
+#include "../lib/api_system.h"
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <tchar.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <delayimp.h>
-
-#include <config.h>
-#include "../lib/api_system.h"
 
 #include "../ServerIo.h"
 #include "../cvs_string.h"
@@ -44,20 +43,6 @@ CDnsApi::~CDnsApi()
 
 bool CDnsApi::Lookup(const char *name, int rrType)
 {
-	__try
-	{
-		if (FAILED(__HrLoadAllImportsForDll("DNSAPI.dll")))
-		{
-			CServerIo::trace(3,"Couldn't find dnsapi.dll - failing dns api");
-			return false;
-		}
-	}
-	__except(EXCEPTION_EXECUTE_HANDLER)
-	{
-		CServerIo::trace(3,"Couldn't find dnsapi.dll - failing dns api");
-		return false;
-	}
-
 	Close();
 	DNS_STATUS ret = DnsQuery_UTF8(name, rrType, DNS_QUERY_TREAT_AS_FQDN, NULL, (PDNS_RECORD*)&m_pdnsBase, NULL);
 	if(!ret)

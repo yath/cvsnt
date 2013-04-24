@@ -14,6 +14,12 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA. */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -126,8 +132,8 @@ int enum_auth_protocol_connect(const struct protocol_interface *protocol, const 
 {
 	int context = 0;
 	const char *proto;
-	char buffer[MAX_PATH];
-	char token[1024],buffer2[MAX_PATH];
+	char buffer[PATH_MAX];
+	char token[1024],buffer2[PATH_MAX];
 	int n=0;
 	int def = 0;
 	int reps = 0;

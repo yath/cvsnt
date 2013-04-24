@@ -42,6 +42,9 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#ifdef HAVE_LIMITS_H
+#include <limits.h>
+#endif
 
 #define MODULE email
 
@@ -69,6 +72,7 @@ BOOL CALLBACK DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 int win32config(const struct plugin_interface *ui, void *wnd);
 #endif
 
+namespace {
 
 bool parse_emailinfo(const char *file, const char *directory, cvs::string& emailfile, bool& cache_valid, std::vector<cvs::string>& cache);
 const char *map_username(const char *user);
@@ -178,9 +182,9 @@ int init(const struct trigger_interface_t* cb, const char *command, const char *
 	addrinfo *addr,hint={0};
 	hint.ai_flags=AI_CANONNAME;
 
-	if(!getaddrinfo(host,NULL,&hint,&addr))
+	if(!getaddrinfo(cvs::idn(host),NULL,&hint,&addr))
 	{
-		strcpy(host,addr->ai_canonname);
+		strcpy(host,cvs::decode_idn(addr->ai_canonname));
 		freeaddrinfo(addr);
 	}
 
@@ -479,7 +483,7 @@ bool read_template(const char *filename, std::vector<cvs::string>& cache, cvs::s
 	return true;
 }
 
-int postcommand(const struct trigger_interface_t* cb, const char *directory)
+int postcommand(const struct trigger_interface_t* cb, const char *directory, int return_code)
 {
 	size_t pos;
 
@@ -772,66 +776,6 @@ int rcsdiff(const struct trigger_interface_t *cb, const char *file, const char *
 	return 0;
 }
 
-static int init(const struct plugin_interface *plugin);
-static int destroy(const struct plugin_interface *plugin);
-static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param);
-
-static trigger_interface callbacks =
-{
-	{
-		PLUGIN_INTERFACE_VERSION,
-		"Email notification extension",CVSNT_PRODUCTVERSION_STRING,"EmailTrigger",
-		init,
-		destroy,
-		get_interface,
-	#ifdef _WIN32
-		win32config
-	#else
-		NULL
-	#endif
-	},
-	init,
-	close,
-	pretag,
-	verifymsg,
-	loginfo,
-	history,
-	notify,
-	precommit,
-	postcommit,
-	precommand,
-	postcommand,
-	premodule,
-	postmodule,
-	get_template,
-	parse_keyword,
-	prercsdiff,
-	rcsdiff
-};
-
-static int init(const struct plugin_interface *plugin)
-{
-	return 0;
-}
-
-static int destroy(const struct plugin_interface *plugin)
-{
-	return 0;
-}
-
-static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param)
-{
-	if(interface_type!=pitTrigger)
-		return NULL;
-
-	return (void*)&callbacks;
-}
-
-plugin_interface *get_plugin_interface()
-{
-	return &callbacks.plugin;
-}
-
 bool parse_emailinfo(const char *file, const char *directory, cvs::string& emailfile, bool& cache_valid, std::vector<cvs::string>& cache)
 {
 	size_t current_line, default_current_line;
@@ -1088,7 +1032,7 @@ bool CSmtpMailIo::start_mail(const char *from, const std::vector<cvs::string>& t
 		else
 		{
 			CServerIo::trace(3,"SMTP C: RCPT TO:<%s@%s>",to[n].c_str(),emaildomain);
-			m_sock.printf("RCPT TO:<s@%s>\r\n",to[n].c_str(),emaildomain);
+			m_sock.printf("RCPT TO:<%s@%s>\r\n",to[n].c_str(),emaildomain);
 		}
 		if(!get_smtp_response(m_sock))
 			return false;
@@ -1124,9 +1068,13 @@ bool CSmtpMailIo::end_mail()
 
 bool CCommandMailIo::start_mail(const char *from, const std::vector<cvs::string>& to)
 {
+	CServerIo::trace(3,"email_trigger: Sending mail with command: %s",m_command.c_str());
 	m_run.setArgs(m_command.c_str());
 	for(size_t n=0; n<to.size(); n++)
+	{
+		CServerIo::trace(3,"email_trigger: Argument: %s",to[n].c_str());
 		m_run.addArg(to[n].c_str());
+	}
 	m_mail="";
 	m_pos=0;
 	return true;
@@ -1176,6 +1124,68 @@ int CCommandMailIo::mailInput(char *buf, size_t len)
 	memcpy(buf,m_mail.c_str()+m_pos,todo);
 	m_pos+=todo;
 	return todo;
+}
+
+} // anonymous namespace
+
+static int init(const struct plugin_interface *plugin);
+static int destroy(const struct plugin_interface *plugin);
+static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param);
+
+static trigger_interface callbacks =
+{
+	{
+		PLUGIN_INTERFACE_VERSION,
+		"Email notification extension",CVSNT_PRODUCTVERSION_STRING,"EmailTrigger",
+		init,
+		destroy,
+		get_interface,
+	#ifdef _WIN32
+		win32config
+	#else
+		NULL
+	#endif
+	},
+	init,
+	close,
+	pretag,
+	verifymsg,
+	loginfo,
+	history,
+	notify,
+	precommit,
+	postcommit,
+	precommand,
+	postcommand,
+	premodule,
+	postmodule,
+	get_template,
+	parse_keyword,
+	prercsdiff,
+	rcsdiff
+};
+
+static int init(const struct plugin_interface *plugin)
+{
+	return 0;
+}
+
+static int destroy(const struct plugin_interface *plugin)
+{
+	return 0;
+}
+
+static void *get_interface(const struct plugin_interface *plugin, unsigned interface_type, void *param)
+{
+	if(interface_type!=pitTrigger)
+		return NULL;
+
+	return (void*)&callbacks;
+}
+
+plugin_interface *get_plugin_interface()
+{
+	return &callbacks.plugin;
 }
 
 #ifdef _WIN32

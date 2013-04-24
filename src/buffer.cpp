@@ -117,6 +117,10 @@ get_buffer_data (void)
 
     ret = free_buffer_data;
     free_buffer_data = ret->next;
+	ret->next=NULL;
+	ret->size=0;
+    memset (ret->text, '\0', BUFFER_DATA_SIZE);
+	ret->bufp=ret->text;
     return ret;
 }
 
@@ -1767,3 +1771,14 @@ packetizing_buffer_shutdown (void *closure)
 
     return buf_shutdown (pb->buf);
 }
+
+void buf_md5(struct buffer *buf, CMD5Calc* md5)
+{
+	struct buffer_data *data = buf->data;
+	while(data)
+	{
+		md5->Update(data->bufp,data->size);
+		data=data->next;
+	}
+}
+

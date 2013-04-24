@@ -158,7 +158,7 @@ int xdiff(int argc, char **argv)
 	/* start the recursion processor */
 	err = start_recursion (xdiff_fileproc, xdiff_filesdoneproc, (PREDIRENTPROC) NULL, xdiff_direntproc,
 			xdiff_dirleaveproc, NULL, argc, argv, local,
-			which, 0, 1, (char *) NULL, NULL, 1, verify_read);
+			which, 0, 1, (char *) NULL, NULL, 1, verify_read, NULL);
 
 	xfree(xdiff_options);
     return err;
@@ -707,7 +707,7 @@ static int xdiff_exec (const char *name, const char *file1, const char *file2, c
 				if(pi->init(pi))
 				{
 					CServerIo::trace(3,"Not loading xdiff %s - initialisation failed",name);
-					return NULL;
+					return 0;
 				}
 			}
 
@@ -716,7 +716,7 @@ static int xdiff_exec (const char *name, const char *file1, const char *file2, c
 			if(!pi->get_interface || (xd = (xdiff_interface*)pi->get_interface(pi,pitXdiff,NULL))==NULL)
 			{
 					CServerIo::trace(3,"Xdiff library does not support protocol interface.");
-					return NULL;
+					return 0;
 			}
 		
 			const char *const*argv = line.toArgv(1);

@@ -16,16 +16,16 @@
 
 static const char *stored_repos; /* Current directory */
 static CXmlTree g_tree; /* Global xml context */
-static CXmlNode *stored_root; /* Node tree of current directory */
+static CXmlNodePtr stored_root; /* Node tree of current directory */
 static int modified; /* Set when tree changed */
 
 static void fileattr_read();
 
-static void fileattr_convert(CXmlNode *& root, const char *oldfile);
-static void owner_convert(CXmlNode *& root, const char *oldfile);
-static void perms_convert(CXmlNode *& root, const char *oldfile);
-static void fileattr_convert_write(CXmlNode *& root, const char *xmlfile);
-static void fileattr_convert_line(CXmlNode *node, char *line);
+static void fileattr_convert(CXmlNodePtr & root, const char *oldfile);
+static void owner_convert(CXmlNodePtr & root, const char *oldfile);
+static void perms_convert(CXmlNodePtr & root, const char *oldfile);
+static void fileattr_convert_write(CXmlNodePtr & root, const char *xmlfile);
+static void fileattr_convert_line(CXmlNodePtr node, char *line);
 
 static char printf_buf[512];
 
@@ -41,24 +41,27 @@ void fileattr_startdir (const char *repos)
 	TRACE(3,"fileattr_startdir(%s)",PATCH_NULL(repos));
 }
 
-CXmlNode *_fileattr_find(CXmlNode *node, const char *exp, ...)
+CXmlNodePtr _fileattr_find(CXmlNodePtr node, const char *exp, ...)
 {
 	va_list va;
 	va_start(va, exp);
 	vsnprintf(printf_buf,sizeof(printf_buf),exp,va);
 	va_end(va);
 
-	return (XmlHandle_t)node->Lookup(printf_buf,false);
+	CXmlNodePtr n = node->Clone();
+	if(!n->Lookup(printf_buf) || !n->XPathResultNext())
+		return NULL;
+	return n;
 }
 
 /* Search for a given node.  A little like xpath but not nearly as complex */
-XmlHandle_t fileattr_find(XmlHandle_t root, const char *exp, ...)
+CXmlNodePtr fileattr_find(CXmlNodePtr root, const char *exp, ...)
 {
 	TRACE(3,"fileattr_find(%s)",exp);
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *node=(CXmlNode*)root;
+	CXmlNodePtr node=root;
 	if(!node) node = stored_root;
 
 	va_list va;
@@ -66,59 +69,43 @@ XmlHandle_t fileattr_find(XmlHandle_t root, const char *exp, ...)
 	vsnprintf(printf_buf,sizeof(printf_buf),exp,va);
 	va_end(va);
 
-	return (XmlHandle_t)node->Lookup(printf_buf,false);
+	CXmlNodePtr n = node->Clone();
+	if(!n->Lookup(printf_buf) || !n->XPathResultNext())
+		return NULL;
+	return n;
 }
 
 /* Search for a given node.  A little like xpath but not nearly as complex */
 /* This version creates any nodes that aren't in the path */
-XmlHandle_t fileattr_create(XmlHandle_t root, const char *exp, ...)
+CXmlNodePtr fileattr_getroot()
 {
-	TRACE(3,"fileattr_create(%s)",exp);
+	TRACE(3,"fileattr_getroot()");
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *node=(CXmlNode*)root;
-	if(!node) node = stored_root;
-
-	va_list va;
-	va_start(va, exp);
-	vsnprintf(printf_buf,sizeof(printf_buf),exp,va);
-	va_end(va);
-
-	CXmlNode *ret = node->Lookup(printf_buf,false);
-	if(ret)
-		return (XmlHandle_t)ret;
-
-	modified = 1;
-	return (XmlHandle_t)node->Lookup(printf_buf,true);
+	return stored_root->Clone();
 }
 
-
 /* Return the next node on this level with this name, for walking lists */
-XmlHandle_t fileattr_next(XmlHandle_t root)
+CXmlNodePtr fileattr_next(CXmlNodePtr root)
 {
 	TRACE(3,"fileattr_next()");
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *node=(CXmlNode*)root;
-	if(!node) return NULL;
-	CXmlNode *next = node->Next();
-	if(!next) return NULL;
-	
-	if(!strcmp(node->GetName(),next->GetName()))
-		return (XmlHandle_t)next;
+	if(root->GetSibling(root->GetName()))
+		return root;
 	return NULL;
 }
 
 /* Delete a value under the node.  */
-void fileattr_delete(XmlHandle_t root, const char *exp, ...)
+void fileattr_delete(CXmlNodePtr root, const char *exp, ...)
 {
 	TRACE(3,"fileattr_delete(%s)",exp);
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *node=(CXmlNode*)root;
+	CXmlNodePtr node=root;
 	if(!node) node = stored_root;
 
 	va_list va;
@@ -126,17 +113,19 @@ void fileattr_delete(XmlHandle_t root, const char *exp, ...)
 	vsnprintf(printf_buf,sizeof(printf_buf),exp,va);
 	va_end(va);
 
-	CXmlNode *child = node->Lookup(printf_buf,false);
+	CXmlNodePtr n = node->Clone();
+	if(!n->Lookup(printf_buf))
+		return;
 
-	if(child)
+	while(n->XPathResultNext())
 	{
-		node->Delete(child);
+		n->Delete();
 		modified = 1;
 	}
 }
 
 /* Delete a value under the node.  */
-void fileattr_delete_child(XmlHandle_t parent, XmlHandle_t child)
+void fileattr_delete_child(CXmlNodePtr parent, CXmlNodePtr child)
 {
 	TRACE(3,"fileattr_delete_child()");
 
@@ -145,42 +134,50 @@ void fileattr_delete_child(XmlHandle_t parent, XmlHandle_t child)
 
 	if(child)
 	{
-		parent->Delete(child);
+		child->Delete();
 		modified = 1;
 	}
 }
 
 /* Delete a value under the node at the next prune.  */
-void fileattr_batch_delete(XmlHandle_t root)
+void fileattr_batch_delete(CXmlNodePtr root)
 {
 	TRACE(3,"fileattr_batch_delete()");
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *node=(CXmlNode*)root;
+	CXmlNodePtr node=root;
 	if(!node) node = stored_root;
 
-	node->BatchDelete();
+	node->Delete();
 	modified = 1;
 }
 
 /* Get a single value from a node.  Pass null to get value of this node. */
-const char *fileattr_getvalue(XmlHandle_t root, const char *name)
+const char *fileattr_getvalue(CXmlNodePtr root, const char *name)
 {
 	TRACE(3,"fileattr_getvalue(%s)",name);
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *node=(CXmlNode*)root;
+	CXmlNodePtr node=root;
 	if(!node) node = stored_root;
 
-	if(name) node = node->Lookup(name);
-	if(node) return node->GetValue();
-	return NULL;
+	if(name[0]=='@')
+	{
+		return node->GetAttrValue(name+1);
+	}
+	else
+	{
+		CXmlNodePtr n = node->Clone();
+		if(!n->GetChild(name))
+			return NULL;
+		return n->GetValue();
+	}
 }
 
 /* Set a single value for a node.  Pass null to set value of this node. */
-void fileattr_setvalue(XmlHandle_t root, const char *name, const char *value)
+void fileattr_setvalue(CXmlNodePtr root, const char *name, const char *value)
 {
 	TRACE(3,"fileattr_setvalue(%s,%s)",name,value?value:"");
 	if(!stored_root)
@@ -188,22 +185,27 @@ void fileattr_setvalue(XmlHandle_t root, const char *name, const char *value)
 
 	assert(!name || !strchr(name,'/'));
 
-	CXmlNode *node=(CXmlNode*)root;
-	CXmlNode *val;
+	CXmlNodePtr node=root;
+	CXmlNodePtr val;
 	if(!node) node = stored_root;
 
 	modified = 1;
 
-	val=node;
-	if(name) val = node->Lookup(name);
-	if(val) return val->SetValue(value);
-	else
+	if(name)
 	{
-		if(name[0]=='@')
-			node->NewAttribute(name+1,value);
+		CXmlNodePtr n = node->Clone();
+		if(!n->GetChild(name))
+		{
+			if(name[0]=='@')
+				n->NewAttribute(name+1,value);
+			else
+				n->NewNode(name,value);
+		}
 		else
-			node->NewNode(name,value);
+			n->SetValue(value);
 	}
+	else
+		node->SetValue(value);
 }
 
 void fileattr_newfile (const char *filename)
@@ -212,20 +214,27 @@ void fileattr_newfile (const char *filename)
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *dir_default = stored_root->Lookup("directory/default");
-	if(dir_default)
+	CXmlNodePtr dir_default = stored_root->Clone();
+	if(dir_default->GetChild("directory"))
 	{
-		CXmlNode *file = stored_root->NewNode("file",NULL);
-		file->NewAttribute("name",filename);
-		file->Paste(dir_default->Copy());
-		modified = 1;
+		if(!dir_default->GetChild("default"))
+			dir_default = NULL;
 	}
+	else
+		dir_default = NULL;
+
+	CXmlNodePtr file = stored_root->Clone();
+	file->NewNode("file");
+	file->NewAttribute("name",filename);
+	modified = 1;
+
+	if(dir_default)
+		file->CopySubtree(dir_default);
 }
 
 void fileattr_write ()
 {
 	char *fname;
-	FILE *fp;
 
 	TRACE(3,"fileattr_write()");
 	if(noexec)
@@ -242,114 +251,135 @@ void fileattr_write ()
 
     sprintf(fname,"%s/%s",stored_repos,CVSREP_FILEATTR);
 
-    fp = CVS_FOPEN (fname, FOPEN_BINARY_WRITE);
-    if (fp == NULL)
-    {
-		error (0, errno, "cannot write %s", fn_root(fname));
-		xfree (fname);
-		return;
-    }
-
-	if(!stored_root->WriteXmlFile(fp))
+	if(!g_tree.WriteXmlFile(fname))
 		error (0, errno, "cannot write %s", fn_root(fname));
 	xfree(fname);
-	fclose(fp);
 
 	modified = 0;
+	TRACE(3,"fileattr_write() return");
 }
 
 void fileattr_free ()
 {
 	TRACE(3,"fileattr_free()");
 	xfree(stored_repos);
-	delete stored_root;
 	stored_root = NULL;
+	g_tree.Close();
 }
 
 void fileattr_read()
 {
+	TRACE(3,"fileattr_read()");
 	_fileattr_read(stored_root, stored_repos);
 	if(!stored_root)
+	{
+		TRACE(3,"fileattr_read() Malformed fileattr.xml file.");
 		error(1,0,"Malformed fileattr.xml file in %s/CVS.  Please fix or delete this file",fn_root(stored_repos));
+	}
+	TRACE(3,"fileattr_read() return");
 }
 
-void _fileattr_read(CXmlNode*& root, const char *repos)
+void _fileattr_read(CXmlNodePtr& root, const char *repos)
 {
-	char *fname,*ofname;
-	FILE *fp;
+	char *fname=NULL,*ofname=NULL;
 
-	TRACE(3,"fileattr_read(%s)",repos);
+	TRACE(3,"_fileattr_read(%s)",repos);
+	if (repos==NULL)
+		TRACE(3,"_fileattr_read() repos is NULL - will crash!");
 
 	if(root)
+	{
+		TRACE(3,"_fileattr_read() no root, should never happen!!!");
 		return; /* Boilerplate, should never happen */
+	}
 
-    fname = (char*)xmalloc (strlen (repos)
-		     + sizeof (CVSREP_FILEATTR) + 20);
+	TRACE(3,"_fileattr_read() malloc [strlen(%s)=]%d+[sizeof(%s)=]%d+20=%d",repos,(int)strlen(repos),CVSREP_FILEATTR,(int)sizeof (CVSREP_FILEATTR),(int)(strlen (repos)+ sizeof (CVSREP_FILEATTR) + 20));
+    fname = (char*)xmalloc ((int)(strlen (repos)
+		     + sizeof (CVSREP_FILEATTR) + 20));
+
+	if (fname==NULL)
+		TRACE(3,"_fileattr_read() failed to allocate memory for fname - will now crash!");
+	else
+		TRACE(3,"_fileattr_read() allocated memory for fname - will now sprintf()");
 
 	sprintf(fname,"%s/%s",repos,CVSREP_FILEATTR);
 
 	if(!isfile(fname))
 	{
-		ofname = (char*)xmalloc (strlen (repos)
-				+ sizeof (CVSREP_OLDFILEATTR) + 20);
+		TRACE(3,"_fileattr_read() no file \"%s\", so allocate ofname of %d bytes.",fname,(int)(strlen (repos)+ sizeof (CVSREP_OLDFILEATTR) + 20));
+		ofname = (char*)xmalloc ((int)(strlen (repos)
+				+ sizeof (CVSREP_OLDFILEATTR) + 20));
+		if (ofname==NULL)
+			TRACE(3,"_fileattr_read() failed to allocate memory for ofname - will now crash!");
 		sprintf(ofname,"%s/%s",repos,CVSREP_OLDFILEATTR);
 		if(isfile(ofname))
 		{
+			TRACE(3,"_fileattr_read() found old \"%s\".",ofname);
 			fileattr_convert(root,ofname);
 			CVS_UNLINK(ofname);
 		}
+		else
+			TRACE(3,"_fileattr_read() no old \"%s\".",ofname);
 
 		sprintf(ofname,"%s/%s",repos,CVSREP_OLDOWNER);
 		if(isfile(ofname))
 		{
+			TRACE(3,"_fileattr_read() found old \"%s\".",ofname);
 			owner_convert(root,ofname);
 			CVS_UNLINK(ofname);
 		}
+		else
+			TRACE(3,"_fileattr_read() no old \"%s\".",ofname);
 
 		sprintf(ofname,"%s/%s",repos,CVSREP_OLDPERMS);
 		if(isfile(ofname))
 		{
+			TRACE(3,"_fileattr_read() found old \"%s\".",ofname);
 			perms_convert(root,ofname);
 			CVS_UNLINK(ofname);
 		}
+		else
+			TRACE(3,"_fileattr_read() no old \"%s\".",ofname);
 
 		if(root)
 		{
+			TRACE(3,"_fileattr_read() look for directory(\"%s\")",ofname);
 			sprintf(ofname,"%s/%s",repos,CVSADM);
 			if(!isdir(ofname))
 				make_directory(ofname);
+			TRACE(3,"_fileattr_read() fileattr_convert_write(\"%s\")",fname);
 			fileattr_convert_write(root,fname);
 		}
 		else
-			root = new CXmlNode(&g_tree,CXmlNode::XmlTypeNode,"fileattr",NULL);
+		{
+			TRACE(3,"_fileattr_read() CreateNewTree(\"fileattr\")");
+			g_tree.CreateNewTree("fileattr");
+			TRACE(3,"_fileattr_read() GetRoot()");
+			root = g_tree.GetRoot();
+		}
 
+		TRACE(3,"_fileattr_read() free filenames");
 		xfree(ofname);
 		xfree(fname);
 		return;
 	}
 
-    fp = CVS_FOPEN (fname, FOPEN_BINARY_READ);
-    if (fp == NULL)
-    {
-		if (!existence_error (errno))
-			error (0, errno, "cannot read %s", fn_root(fname));
-		xfree (fname);
-		root = new CXmlNode(&g_tree,CXmlNode::XmlTypeNode,"fileattr",NULL);
-		return;
-    }
-
-	root = g_tree.ReadXmlFile(fp);
-	fclose(fp);
+	TRACE(3,"_fileattr_read() ReadXmlFile(\"%s\")",fname);
+	g_tree.ReadXmlFile(fname);
+	TRACE(3,"_fileattr_read() get root");
+	root = g_tree.GetRoot();
+	TRACE(3,"_fileattr_read() free fname");
 	xfree(fname);
+	TRACE(3,"_fileattr_read() done");
 }
 
 /* Read an old-style fileattr file and convert it to new-style */
-void fileattr_convert(CXmlNode*& root, const char *oldfile)
+void fileattr_convert(CXmlNodePtr& root, const char *oldfile)
 {
 	FILE *fp;
 	char *line, *p;
 	size_t linesize;
-	CXmlNode *node;
+	CXmlNodePtr node;
 
 	TRACE(3,"fileattr_convert(%s)",oldfile);	
     fp = CVS_FOPEN (oldfile, FOPEN_BINARY_READ);
@@ -361,7 +391,10 @@ void fileattr_convert(CXmlNode*& root, const char *oldfile)
     }
 
 	if(!root)
-		root = new CXmlNode(&g_tree,CXmlNode::XmlTypeNode,"fileattr",NULL);
+	{
+		g_tree.CreateNewTree("fileattr");
+		root = g_tree.GetRoot();
+	}
 	line = NULL;
 
 	while(getline(&line,&linesize,fp)>=0)
@@ -382,13 +415,17 @@ void fileattr_convert(CXmlNode*& root, const char *oldfile)
 		switch(line[0])
 		{
 		case 'D':
-			node = root->Lookup("directory/default",true);
-			fileattr_convert_line(node,p);
+			if(!root->GetChild("directory")) root->NewNode("directory");
+			if(!root->GetChild("default")) root->NewNode("default");
+			fileattr_convert_line(root,p);
+			root->GetParent();
+			root->GetParent();
 			break;
 		case 'F':
-			node = root->NewNode("file",NULL);
-			node->NewAttribute("name",line+1);
-			fileattr_convert_line(node,p);
+			root->NewNode("file");
+			root->NewAttribute("name",line+1);
+			fileattr_convert_line(root,p);
+			root->GetParent();
 			break;
 		default:
 			error(0,0,"Unrecognized fileattr type '%c'.  Not converting.",line[0]);
@@ -400,7 +437,7 @@ void fileattr_convert(CXmlNode*& root, const char *oldfile)
 	xfree(line);
 }
 
-void owner_convert(CXmlNode *& root, const char *oldfile)
+void owner_convert(CXmlNodePtr& root, const char *oldfile)
 {
 	FILE *fp;
 	char *line, *p;
@@ -416,7 +453,10 @@ void owner_convert(CXmlNode *& root, const char *oldfile)
     }
 
 	if(!root)
-		root = new CXmlNode(&g_tree,CXmlNode::XmlTypeNode,"fileattr",NULL);
+	{
+		g_tree.CreateNewTree("fileattr");
+		root = g_tree.GetRoot();
+	}
 
 	line = NULL;
 	if(getline(&line,&linesize,fp)>=0)
@@ -428,15 +468,18 @@ void owner_convert(CXmlNode *& root, const char *oldfile)
 			while(isspace(*p))
 				*(p--)='\0';
 
-			CXmlNode *node = root->Lookup("directory/owner",true);
-			node->SetValue(line);
+			if(!root->GetChild("directory")) root->NewNode("directory");
+			if(!root->GetChild("owner")) root->NewNode("owner");
+			root->SetValue(line);
+			root->GetParent();
+			root->GetParent();
 		}
 	}
 	fclose(fp);
 	xfree(line);
 }
 
-void perms_convert(CXmlNode *& root, const char *oldfile)
+void perms_convert(CXmlNodePtr & root, const char *oldfile)
 {
 	FILE *fp;
 	char *line, *p;
@@ -452,7 +495,10 @@ void perms_convert(CXmlNode *& root, const char *oldfile)
     }
 
 	if(!root)
-		root = new CXmlNode(&g_tree,CXmlNode::XmlTypeNode,"fileattr",NULL);
+	{
+		g_tree.CreateNewTree("fileattr");
+		root = g_tree.GetRoot();
+	}
 
 	line = NULL;
 	while(getline(&line,&linesize,fp)>=0)
@@ -491,57 +537,51 @@ void perms_convert(CXmlNode *& root, const char *oldfile)
 		*(p++)='\0';
 		perms = p;
 
-		CXmlNode *node = root->Lookup("directory",true);
-		CXmlNode *acl;
+		if(!root->GetChild("directory")) root->NewNode("directory");
 		
-		acl = node->NewNode("acl",NULL);
+		root->NewNode("acl",NULL);
 		if(strcmp(user,"default"))
-			acl->NewAttribute("user",user);
+			root->NewAttribute("user",user);
 		if(branch)
-			acl->NewAttribute("branch",branch);
+			root->NewAttribute("branch",branch);
 		if(strchr(perms,'n'))
 		{
-			CXmlNode *n;
-			n=acl->NewNode("all",NULL);
-			n->NewAttribute("deny","1");
+			root->NewNode("all");
+			root->NewAttribute("deny","1");
+			root->GetParent();
 		}
 		else
 		{
 			if(strchr(perms,'r'))
-				acl->NewNode("read",NULL);
+				root->NewNode("read",NULL,false);
 			if(strchr(perms,'w'))
 			{
-				acl->NewNode("write",NULL);
-				acl->NewNode("tag",NULL);
+				root->NewNode("write",NULL,false);
+				root->NewNode("tag",NULL,false);
 			}
 			if(strchr(perms,'c'))
-				acl->NewNode("create",NULL);
+				root->NewNode("create",NULL,false);
 		}
+		root->GetParent();
+		root->GetParent();
 	}
 	fclose(fp);
 	xfree(line);
 }
 
-void fileattr_convert_write(CXmlNode *& root, const char *xmlfile)
+void fileattr_convert_write(CXmlNodePtr& root, const char *xmlfile)
 {
-	FILE *fp = fopen(xmlfile,FOPEN_BINARY_WRITE);
-    if (fp == NULL)
-    {
-		error (0, errno, "cannot write %s", fn_root(xmlfile));
-		return;
-	}
-	if(!root->WriteXmlFile(fp))
+	if(!g_tree.WriteXmlFile(xmlfile))
 	{
 		error (0, errno, "cannot write %s", fn_root(xmlfile));
 		return;
 	}
-	fclose(fp);
 }
 
-void fileattr_convert_line(CXmlNode *node, char *line)
+void fileattr_convert_line(CXmlNodePtr node, char *line)
 {
 	char *l = line, *e, *p, *type,*name,*next, *att, *nextatt;
-	CXmlNode *subnode;
+	CXmlNodePtr subnode;
 	do
 	{
 		p = strchr(l,'=');
@@ -554,7 +594,7 @@ void fileattr_convert_line(CXmlNode *node, char *line)
 
 		if(!strcmp(l,"_watched"))
 		{
-			node->NewNode("watched",NULL);
+			node->NewNode("watched",NULL,false);
 		}
 		else if(!strcmp(l,"_watchers"))
 		{
@@ -569,18 +609,19 @@ void fileattr_convert_line(CXmlNode *node, char *line)
 				if(next)
 					*(next++)='\0';
 
-				subnode=node->NewNode("watcher",NULL);
-				subnode->NewAttribute("name",name);
+				node->NewNode("watcher",NULL);
+				node->NewAttribute("name",name);
 				att=type;
 				do
 				{
 					nextatt=strchr(att,'+');
 					if(nextatt)
 						*(nextatt++)='\0';
-					subnode->NewNode(att,NULL);
+					node->NewNode(att,NULL,false);
 					att=nextatt;
 				} while(att);
 				name = next;
+				node->GetParent();
 			} while(name);
 		}
 		else if(!strcmp(l,"_editors"))
@@ -596,27 +637,28 @@ void fileattr_convert_line(CXmlNode *node, char *line)
 				if(next)
 					*(next++)='\0';
 
-				subnode=node->NewNode("editor",NULL);
-				subnode->NewAttribute("name",name);
+				node->NewNode("editor",NULL);
+				node->NewAttribute("name",name);
 				att=type;
 
 				nextatt=strchr(att,'+');
 				if(nextatt)
 					*(nextatt++)='\0';
-				subnode->NewNode("time",att);
+				node->NewNode("time",att,false);
 
 				att=nextatt;
 				nextatt=strchr(att,'+');
 				if(nextatt)
 					*(nextatt++)='\0';
-				subnode->NewNode("hostname",att);
+				node->NewNode("hostname",att,false);
 
 				att=nextatt;
 				nextatt=strchr(att,'+');
 				if(nextatt)
 					*(nextatt++)='\0';
-				subnode->NewNode("pathname",att);
+				node->NewNode("pathname",att,false);
 
+				node->GetParent();
 				att=nextatt;
 				name = next;
 			} while(name);
@@ -629,23 +671,23 @@ void fileattr_convert_line(CXmlNode *node, char *line)
 	} while(l);
 }
 
-void fileattr_prune(XmlHandle_t node)
+void fileattr_prune(CXmlNodePtr node)
 {
 	if(!node)
 		return;
 
-	((CXmlNode*)node)->Prune();
+//	node->Prune();
 }
 
-XmlHandle_t fileattr_copy(XmlHandle_t root)
+CXmlNodePtr fileattr_copy(CXmlNodePtr root)
 {
 	if(!root)
 		return NULL;
 	
-	return (XmlHandle_t)((CXmlNode*)root)->Copy();
+	return root->DuplicateNode();
 }
 
-void fileattr_paste(XmlHandle_t root, XmlHandle_t source)
+void fileattr_paste(CXmlNodePtr root, CXmlNodePtr source)
 {
 	if(!source)
 		return;
@@ -653,21 +695,17 @@ void fileattr_paste(XmlHandle_t root, XmlHandle_t source)
 	if(!stored_root)
 		fileattr_read();
 
-	CXmlNode *node=(CXmlNode*)root;
+	CXmlNodePtr node=root;
 	if(!node) node = stored_root;
 
-	node->Paste((CXmlNode*)source);
+	node->CopySubtree(source);
 	modified = 1;
 }
 
 
-void fileattr_free_subtree(XmlHandle_t *root)
+void fileattr_free_subtree(CXmlNodePtr& root)
 {
-	if(!root || !*root)
-		return;
-
-	delete *(CXmlNode**)root;
-	*root=NULL;
+	root=NULL;
 }
 
 void fileattr_modified()

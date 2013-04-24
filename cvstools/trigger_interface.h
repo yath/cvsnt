@@ -59,7 +59,7 @@ typedef struct trigger_interface_t
 	int (*precommit)(const struct trigger_interface_t* cb, int name_list_count, const char **name_list, const char *message, const char *directory);
 	int (*postcommit)(const struct trigger_interface_t* cb, const char *directory);
 	int (*precommand)(const struct trigger_interface_t* cb, int argc, const char **argv);
-	int (*postcommand)(const struct trigger_interface_t* cb, const char *directory);
+	int (*postcommand)(const struct trigger_interface_t* cb, const char *directory, int return_code);
 	int (*premodule)(const struct trigger_interface_t* cb, const char *module);
 	int (*postmodule)(const struct trigger_interface_t* cb, const char *module);
 	int (*get_template)(const struct trigger_interface_t *cb, const char *directory, const char **template_ptr);

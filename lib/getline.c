@@ -21,7 +21,7 @@ General Public License for more details.  */
 #include "getline.h"
 #include "getdelim.h"
 
-int getline (char **lineptr, size_t *n, FILE *stream)
+int getline(char **lineptr, size_t *n, FILE *stream)
 {
   return getdelim(lineptr, n, '\n', stream);
 }

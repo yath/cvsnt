@@ -16,11 +16,13 @@
     License along with this library; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+#include <config.h>
 #include "lib/api_system.h"
 #include "cvs_string.h"
 #include "cvs_smartptr.h"
 #include "Codepage.h"
-#include "Xmlapi.h"
+#include "XmlNode.h"
+#include "XmlTree.h"
 #include "rpcBase.h"
 
 CrpcBase::CrpcBase()
@@ -31,212 +33,226 @@ CrpcBase::~CrpcBase()
 {
 }
 
-CXmlNode *CrpcBase::createNewParams(CXmlTree& tree)
+CXmlNodePtr CrpcBase::createNewParams(CXmlTree& tree)
 {
-	return new CXmlNode(&tree, CXmlNode::XmlTypeNode, "params", NULL);
+	if(!tree.CreateNewTree("params"))
+		return NULL;
+	return tree.GetRoot();
 }
 
-bool CrpcBase::addParam(CXmlNode *params, const char *name, const char *value)
+bool CrpcBase::addParam(CXmlNodePtr params, const char *name, const char *value)
 {
-	CXmlNode *param;
-	
-	if(!strcmp(params->GetName(),"params"))
-		param = params->NewNode("param", NULL);
-	else if(!strcmp(params->GetName(),"struct"))
+	CXmlNodePtr param = params->Clone();
+
+	if(!strcmp(param->GetName(),"params"))
+		param->NewNode("param", NULL);
+	else if(!strcmp(param->GetName(),"struct"))
 	{
-		param = params->NewNode("member", NULL);
+		param->NewNode("member", NULL);
 		if(name)
-			param->NewNode("name",name);
+			param->NewNode("name",name,false);
 	}
-	else
-		param = params; // array (name will also be null)
-	CXmlNode *val = param->NewNode("value",NULL);
-	val->NewNode("string",value);
+	param->NewNode("value",NULL);
+	param->NewNode("string",value);
 	return true;
 }
 
-bool CrpcBase::addParam(CXmlNode *params, const char *name, int value)
+bool CrpcBase::addParam(CXmlNodePtr params, const char *name, int value)
 {
 	char tmp[32];
 	snprintf(tmp,sizeof(tmp),"%d",value);
-	CXmlNode *param;
-	
-	if(!strcmp(params->GetName(),"params"))
-		param = params->NewNode("param", NULL);
-	else if(!strcmp(params->GetName(),"struct"))
+	CXmlNodePtr param = params->Clone();
+
+	if(!strcmp(param->GetName(),"params"))
+		param->NewNode("param", NULL);
+	else if(!strcmp(param->GetName(),"struct"))
 	{
-		param = params->NewNode("member", NULL);
+		param->NewNode("member", NULL);
 		if(name)
-			param->NewNode("name",name);
+			param->NewNode("name",name,false);
 	}
-	else
-		param = params; // array (name will also be null)
-	CXmlNode *val = param->NewNode("value",NULL);
-	val->NewNode("i4",tmp);
+	param->NewNode("value",NULL);
+	param->NewNode("i4",tmp);
 	return true;
 }
 
-bool CrpcBase::addParam(CXmlNode *params, const char *name, rpcObject *obj)
+bool CrpcBase::addParam(CXmlNodePtr params, const char *name, rpcObject *obj)
 {
-	CXmlNode *param;
-	
-	if(!strcmp(params->GetName(),"params"))
-		param = params->NewNode("param", NULL);
-	else if(!strcmp(params->GetName(),"struct"))
+	CXmlNodePtr param = params->Clone();
+
+	if(!strcmp(param->GetName(),"params"))
+		param->NewNode("param", NULL);
+	else if(!strcmp(param->GetName(),"struct"))
 	{
-		param = params->NewNode("member", NULL);
+		param->NewNode("member", NULL);
 		if(name)
-			param->NewNode("name",name);
+			param->NewNode("name",name,false);
 	}
-	else
-		param = params; // array (name will also be null)
-	CXmlNode *val = param->NewNode("value",NULL);
-	return obj->Marshall(val);
+	param->NewNode("value",NULL);
+
+	return obj->Marshall(param);
 }
 
-bool CrpcBase::rpcInt(CXmlNode *param, const char *name, int& value)
+bool CrpcBase::rpcInt(CXmlNodePtr param, const char *name, int& value)
 {
 	cvs::string fnd;
-	CXmlNode *val, *obj;
+	CXmlNodePtr val;
 
-	if(!strcmp(param->GetName(),"param")) 
-		val=param->getChild(0);
-	else
-		val = param;
-	if(val && !strcmp(val->GetName(),"struct"))
+	val = param->Clone();
+	if(!strcmp(val->GetName(),"param")) 
+		val->GetChild();
+	if(!strcmp(val->GetName(),"struct"))
 	{
 		if(name)
 		{
 			cvs::sprintf(fnd,64,"member[@name='%s']",name);
-			val = val->Lookup(fnd.c_str());
-			if(!val)
+			if(!val->Lookup(fnd.c_str()))
+				return false;
+			if(!val->XPathResultNext())
 				return false;
 		}
 		else
-			val = param->getChild(0);
-		val = val->Lookup("value");
+			val->GetChild();
+		val->GetChild("value");
 	}
-	if(!val || strcmp(val->GetName(),"value"))
+	if(strcmp(val->GetName(),"value"))
 		return false;
-	obj = val->getChild(0);
-	if(!obj || strcmp(obj->GetName(),"i4"))
+	if(!val->GetChild())
 		return false;
-	value = atoi(obj->GetValue());
+	if(strcmp(val->GetName(),"i4"))
+		return false;
+	value = atoi(val->GetValue());
 	return true;
 }
 
-bool CrpcBase::rpcString(CXmlNode *param, const char *name, cvs::string& value)
+bool CrpcBase::rpcString(CXmlNodePtr param, const char *name, cvs::string& value)
 {
 	cvs::string fnd;
-	CXmlNode *val, *obj;
+	CXmlNodePtr val;
 
-	if(!strcmp(param->GetName(),"param")) 
-		val=param->getChild(0);
-	else
-		val = param;
-	if(val && !strcmp(val->GetName(),"struct"))
+	val = param->Clone();
+	if(!strcmp(val->GetName(),"param")) 
+		val->GetChild();
+	if(!strcmp(val->GetName(),"struct"))
 	{
 		if(name)
 		{
 			cvs::sprintf(fnd,64,"member[@name='%s']",name);
-			val = val->Lookup(fnd.c_str());
-			if(!val)
+			if(!val->Lookup(fnd.c_str()))
+				return false;
+			if(!val->XPathResultNext())
 				return false;
 		}
 		else
-			val = param->getChild(0);
-		val = val->Lookup("value");
+			val->GetChild();
+		val->GetChild("value");
 	}
-	if(!val || strcmp(val->GetName(),"value"))
+	if(strcmp(val->GetName(),"value"))
 		return false;
-	obj = val->getChild(0);
-	if(!obj || strcmp(obj->GetName(),"string"))
+	if(!val->GetChild())
 		return false;
-	value = obj->GetValue();
+	if(!strcmp(val->GetName(),"string"))
+		return false;
+	value = val->GetValue();
 	return true;
 }
 
-bool CrpcBase::rpcArray(CXmlNode* param, const char *name, CXmlNode*& node)
+bool CrpcBase::rpcArray(CXmlNodePtr param, const char *name, CXmlNodePtr& node)
 {
-	CXmlNode *val;
-	if(!strcmp(param->GetName(),"param"))
-		val=param->getChild(0);
-	else
-		val = param;
-	if(!val || strcmp(val->GetName(),"array"))
+	CXmlNodePtr val = param->Clone();
+
+	if(!strcmp(val->GetName(),"param"))
+		val->GetChild();
+	if(!strcmp(val->GetName(),"array"))
 		return false;
 
 	if(!node)
 	{
-		CXmlNode *data = val->getChild(0);
-		if(!data || strcmp(data->GetName(),"data"))
+		if(!val->GetChild())
 			return false;
-		node = data->getChild(0);
+		if(!strcmp(val->GetName(),"data"))
+			return false;
+		node = val->Clone();
 		return true;
 	}
 	else
 	{
-		node = node->getParent()->Next();
-		if(!node || strcmp(node->GetName(),"data"))
+		if(!node->GetParent()) return false;
+		if(!node->GetSibling()) return false;
+		if(!strcmp(node->GetName(),"data"))
 			return false;
-		node = node->getChild(0);
+		if(!node->GetChild()) return false;
 		return true;
 	}
 }
 
-bool CrpcBase::rpcObj(CXmlNode* param, const char *name, rpcObject *rpcObj)
+bool CrpcBase::rpcObj(CXmlNodePtr param, const char *name, rpcObject *rpcObj)
 {
 	cvs::string fnd;
-	CXmlNode *val, *obj;
+	CXmlNodePtr val;
 
-	if(!strcmp(param->GetName(),"param")) 
-		val=param->getChild(0);
-	else
-		val = param;
-	if(val && !strcmp(val->GetName(),"struct"))
+	val = param->Clone();
+	if(!strcmp(val->GetName(),"param")) 
+		val->GetChild();
+	if(!strcmp(val->GetName(),"struct"))
 	{
 		if(name)
 		{
 			cvs::sprintf(fnd,64,"member[@name='%s']",name);
-			val = val->Lookup(fnd.c_str());
-			if(!val)
+			if(!val->Lookup(fnd.c_str()))
+				return false;
+			if(!val->XPathResultNext())
 				return false;
 		}
 		else
-			val = param->getChild(0);
-		val = val->Lookup("value");
+			val->GetChild();
+		val->GetChild("value");
 	}
-	if(!val || strcmp(val->GetName(),"value"))
+	if(strcmp(val->GetName(),"value"))
 		return false;
-	obj = val->getChild(0);
-	if(!obj || strcmp(obj->GetName(),"struct"))
+	if(!val->GetChild())
 		return false;
-	return rpcObj->Marshall(obj);
+	if(strcmp(val->GetName(),"struct"))
+		return false;
+	return rpcObj->Marshall(val);
 }
 
-CXmlNode *CrpcBase::rpcFault(CXmlTree& tree, int err, const char *error)
+CXmlNodePtr CrpcBase::rpcFault(CXmlTree& tree, int err, const char *error)
 {
-	CXmlNode *fault = new CXmlNode(&tree, CXmlNode::XmlTypeNode, "fault", NULL);
-	CXmlNode *value = fault->NewNode("value", NULL);
-	CXmlNode *struc = value->NewNode("struct", NULL);
-	addParam(struc,"faultCode",err);
-	addParam(struc,"faultString",error);
+	if(!tree.CreateNewTree("fault")) return NULL;
+	CXmlNodePtr fault = tree.GetRoot();
+	fault->NewNode("value", NULL);
+	fault->NewNode("struct", NULL);
+	addParam(fault,"faultCode",err);
+	addParam(fault,"faultString",error);
+	fault->GetParent();
+	fault->GetParent();
 	return fault;
 }
 
-CXmlNode *CrpcBase::rpcResponse(CXmlNode* result)
+CXmlNodePtr CrpcBase::rpcResponse(CXmlNodePtr result)
 {
-	CXmlNode *response = new CXmlNode(result->getTree(), CXmlNode::XmlTypeNode, "methodResponse", NULL);
-	CXmlNode *params = response->NewNode("params",NULL);
-	params->Paste(result);
+	// Looks dodgy.. probably broken
+	// Not sure what this is actually supposed to do right now - fix later
+	CXmlTree *tree = result->GetTree();
+	if(!tree->CreateNewTree("methodResponse")) return NULL;
+	CXmlNodePtr response = tree->GetRoot();
+	response->NewNode("params");
+	response->CopySubtree(result);
+	response->GetParent();
 	return response;
 }
 
-CXmlNode *CrpcBase::rpcCall(const char *method, CXmlNode *param)
+CXmlNodePtr CrpcBase::rpcCall(const char *method, CXmlNodePtr param)
 {
-	CXmlNode *methodNode = new CXmlNode(param->getTree(), CXmlNode::XmlTypeNode, "methodCall", NULL);
-	methodNode->NewNode("methodName",method);
-	CXmlNode *params = methodNode->NewNode("params",NULL);
-	params->Paste(param);
+	// Looks dodgy.. probably broken
+	// Not sure what this is actually supposed to do right now - fix later
+	CXmlTree *tree = param->GetTree();
+	if(!tree->CreateNewTree("methodCall")) return NULL;
+	CXmlNodePtr methodNode = tree->GetRoot();
+	methodNode->NewNode("methodName",method,false);
+	methodNode->NewNode("params");
+	methodNode->CopySubtree(param);
+	methodNode->GetParent();
 	return methodNode;
 }

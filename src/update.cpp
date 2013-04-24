@@ -87,6 +87,7 @@ static int rewrite_tag;
 static int nonbranch;
 static int run_module_prog = 1;
 static int update_baserev;
+static int inverse_merges;
 
 /* If we set the tag or date for a subdirectory, we use this to undo
    the setting.  See update_dirent_proc.  */
@@ -119,7 +120,7 @@ extern int client_overwrite_existing;
 
 static const char *const update_usage[] =
 {
-    "Usage: %s %s [-ACPdflRpbmt] [-k kopt] [-r rev] [-D date] [-j rev]\n",
+    "Usage: %s %s [-ACPdfilRpbmt] [-k kopt] [-r rev] [-D date] [-j rev]\n",
     "    [-B bugid] [-I ign] [-W spec] [files...]\n",
     "\t-3\tProduce 3-way conflicts.\n",
     "\t-A\tReset any sticky tags/date/kopts.\n",
@@ -131,6 +132,7 @@ static const char *const update_usage[] =
     "\t-d\tBuild directories, like checkout does.\n",
 	"\t-e[bugid]\tAutomatically edit modified/merged files.\n",
     "\t-f\tForce a head revision match if tag/date not found.\n",
+       "\t-i\tUse bidirectional mergepoints (A->B == B->A).\n",
     "\t-I ign\tMore files to ignore (! to reset).\n",
     "\t-j rev\tMerge in changes made between current revision and rev.\n",
     "\t-k kopt\tUse RCS kopt -k option on checkout. (is sticky)\n",
@@ -161,7 +163,7 @@ int update (int argc, char **argv)
 
     /* parse the args */
     optind = 0;
-	while ((c = getopt (argc, argv, "+AB:pCcPflRQqduk:r:D:j:bmI:W:3Stxe::")) != -1)
+	while ((c = getopt (argc, argv, "+AB:pCcPflRQqduk:r:D:j:bmI:W:3Stxe::i")) != -1)
     {
 	switch (c)
 	{
@@ -171,8 +173,8 @@ int update (int argc, char **argv)
 		case'B':
 			if(merge_bugid)
 				error(1,0,"Cannot specify multiple -B options");
-			if(!RCS_check_bugid(optarg))
-				error(1,0,"Invalid characters in bug identifier.  Please avoid ,\"'");
+			if(!RCS_check_bugid(optarg,false))
+				error(1,0,"Invalid characters in bug identifier.  Please avoid \"'");
 			merge_bugid = optarg;
 			break;
 	    case 'C':
@@ -183,6 +185,9 @@ int update (int argc, char **argv)
 		break;
 	    case 'I':
 		ign_add (optarg, 0);
+		break;
+	    case 'i':
+		inverse_merges = 1;
 		break;
 	    case 'W':
 		wrap_add (optarg, false, false, true, false); // Don't set fromCommand here
@@ -312,6 +317,8 @@ int update (int argc, char **argv)
 		send_arg("-C");
 	    if (update_prune_dirs)
 		send_arg("-P");
+	    if (inverse_merges)
+		send_arg("-i");
 	    client_prune_dirs = update_prune_dirs;
 	    option_with_arg ("-r", tag);
 	    if (options && options[0] != '\0')
@@ -549,14 +556,14 @@ int do_update (int argc, char **argv, const char *xoptions, const char *xtag, co
     /* setup the join support */
     join_rev1 = xjoin_rev1;
     join_rev2 = xjoin_rev2;
-    if (join_rev1 && (cp = strchr (join_rev1, ':')) != NULL)
+    if (join_rev1 && (cp = (char*)strchr (join_rev1, ':')) != NULL)
     {
 	*cp++ = '\0';
 	date_rev1 = Make_Date (cp);
     }
     else
 	date_rev1 = (char *) NULL;
-    if (join_rev2 && (cp = strchr (join_rev2, ':')) != NULL)
+    if (join_rev2 && (cp = (char*)strchr (join_rev2, ':')) != NULL)
     {
 	*cp++ = '\0';
 	date_rev2 = Make_Date (cp);
@@ -568,7 +575,7 @@ int do_update (int argc, char **argv, const char *xoptions, const char *xtag, co
     err = start_recursion (update_fileproc, update_filesdone_proc, update_predirent_proc,
 			   update_dirent_proc, update_dirleave_proc, NULL,
 			   argc, argv, local, which, aflag, 1,
-			   preload_update_dir, preload_repository, 1, verify_read);
+			   preload_update_dir, preload_repository, 1, verify_read, join_rev1);
 
     if (server_active)
 		return err;
@@ -770,7 +777,7 @@ static int update_fileproc (void *callerdat, struct file_info *finfo)
                         Register (finfo->entries, finfo->file, 
                                     vers->vn_rcs, vers->ts_rcs,
                                     vers->options, vers->tag,
-									vers->date, (char *)0, NULL, NULL, vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid);
+									vers->date, (char *)0, NULL, NULL, vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid, NULL);
                     }
                 }
                 if (!retval)
@@ -817,10 +824,11 @@ static int update_fileproc (void *callerdat, struct file_info *finfo)
 		/* Regegister to take into account new options/tags */
 		if(!is_rcs)
 		{
+			TRACE(3,"checkout_file() call Register if !is_rcs and T_ADDED");
 			if(vers->tag && isdigit(vers->tag[0]))
 				error(1,0,"Numeric revision '%s' illegal for new file",vers->tag);
 			Register(finfo->entries, finfo->file, "0", vers->ts_user,
-				  vers->options, vers->tag, NULL, NULL, NULL, NULL, (time_t)-1, vers->edit_revision, vers->edit_tag, vers->edit_bugid);
+				  vers->options, vers->tag, NULL, NULL, NULL, NULL, (time_t)-1, vers->edit_revision, vers->edit_tag, vers->edit_bugid, NULL);
 #ifdef SERVER_SUPPORT
 			if (server_active)
 			{
@@ -891,14 +899,14 @@ int rcs_update_fileproc(struct file_info *finfo,
     /* setup the join support */
     join_rev1 = xjoin_rev1;
     join_rev2 = xjoin_rev2;
-    if (join_rev1 && (cp = strchr (join_rev1, ':')) != NULL)
+    if (join_rev1 && (cp = (char*)strchr (join_rev1, ':')) != NULL)
     {
 		*cp++ = '\0';
 		date_rev1 = Make_Date (cp);
     }
     else
 		date_rev1 = (char *) NULL;
-    if (join_rev2 && (cp = strchr (join_rev2, ':')) != NULL)
+    if (join_rev2 && (cp = (char*)strchr (join_rev2, ':')) != NULL)
     {
 		*cp++ = '\0';
 		date_rev2 = Make_Date (cp);
@@ -1052,18 +1060,22 @@ static int update_predirent_proc (void *callerdat, char *dir, char *repository, 
 		if (server_active)
 			server_template (update_dir, virtual_repository);
 
-		if(!current_parsed_root->isremote || server_active)
+		if(!current_parsed_root->isremote)
 		{
+			int openres1, openres2;
 			/* This should be made more efficient.  FIXME */
-			open_directory(repository,dir,dirtag,dirdate,nonbranch,olddir_vers,0);
-			open_directory(repository,dir,dirtag,dirdate,nonbranch,"_H_",0);
+			openres1=open_directory(repository,dir,dirtag,dirdate,nonbranch,olddir_vers,0);
+			openres2=open_directory(repository,dir,dirtag,dirdate,nonbranch,"_H_",0);
 
 			ent = Entries_Open_Dir(0,dir,NULL);
 			upgrade_entries(repository,dir,&ent, &renamed_file_list);
 			Entries_Close_Dir(ent,dir);
 
-			close_directory();
-			close_directory();
+			TRACE(3,"more efficient - close directory twice in update_predirent_proc?");
+			if (openres1==0)
+				close_directory();
+			if (openres2==0)
+				close_directory();
 		}
 
 		xfree(olddir_vers);
@@ -1095,6 +1107,7 @@ static Dtype update_dirent_proc (void *callerdat, char *dir, char *repository, c
 {
 	const char *msg;
 
+    TRACE(1,"debug: update_dirent_proc");
     if (ignore_directory (update_dir))
     {
 	/* print the warm fuzzy message */
@@ -1125,6 +1138,7 @@ static Dtype update_dirent_proc (void *callerdat, char *dir, char *repository, c
 		}
 	}
 
+    TRACE(1,"debug: udp1");
     if (!isdir (dir))
     {
 	/* if we aren't building dirs, blow it off */
@@ -1148,9 +1162,11 @@ static Dtype update_dirent_proc (void *callerdat, char *dir, char *repository, c
 	       want to continue to give an error, so clients make
 	       sure to do this.  */
 
+    TRACE(1,"debug: udp2");
 	    if(!server_active && !isdir (repository))
 		    return R_SKIP_ALL;
 
+    TRACE(1,"debug: udp3");
 	if (noexec)
 	{
 		if(compat[compat_level].old_checkout_n_behaviour)
@@ -1181,18 +1197,23 @@ static Dtype update_dirent_proc (void *callerdat, char *dir, char *repository, c
 	    if ((tag == NULL && date == NULL) && ! aflag)
 	    {
 			ParseTag(&tag,&date,&nonbranch,NULL); /* Was olddir_vers...? */
+    TRACE(1,"debug: udp4");
 			if (tag != NULL || date != NULL)
 				tag_update_dir = xstrdup (update_dir);
 	    }
 
+    TRACE(1,"debug: udp4");
 	    make_directory (dir);
+    TRACE(1,"debug: udp5");
 	    Create_Admin (dir, update_dir, virtual_repository, tag, date,
 			  /* This is a guess.  We will rewrite it later
 			     via WriteTag.  */
 			  0,
 			  0);
+    TRACE(1,"debug: udp6");
 		if (server_active)
 			server_template (update_dir, virtual_repository);
+    TRACE(1,"debug: udp7");
 	    rewrite_tag = 1;
 	    nonbranch = 0;
 	    Subdir_Register (entries, (char *) NULL, dir);
@@ -1485,12 +1506,12 @@ int checkout_file (struct file_info *finfo, Vers_TS *vers_ts, int adding,
     int set_time, retval = 0;
     int status;
     int file_is_dead;
-    struct buffer *revbuf;
+    struct buffer *newrevbuf;
 	mode_t mode=0666;
 	const char *xfile = finfo->file;
 
     backup = NULL;
-    revbuf = NULL;
+    newrevbuf = NULL;
 
 	if(vers_ts && vers_ts->filename)
 		xfile = vers_ts->filename;
@@ -1565,11 +1586,15 @@ VERS: ", 0);
 	    && ! pipeout
 	    && ! joining ())
 	{
-	    revbuf = buf_nonio_initialize ((BUFMEMERRPROC) NULL);
+	    newrevbuf = buf_nonio_initialize ((BUFMEMERRPROC) NULL);
+		TRACE(3,"checkout_file: revbuf%sNULL",(newrevbuf==NULL)?"==":"!=");
+		if (newrevbuf!=NULL) TRACE(3,"checkout_file: revbuf->data%sNULL",(newrevbuf->data==NULL)?"==":"!=");
 	    status = RCS_checkout (vers_ts->srcfile, (char *) NULL,
 				   vn_rcs, vers_ts->vn_tag,
 				   vers_ts->options, RUN_TTY,
-				   checkout_to_buffer, revbuf, &mode);
+				   checkout_to_buffer, newrevbuf, &mode);
+		TRACE(3,"checkout_file: after RCS_checkout revbuf%sNULL",(newrevbuf==NULL)?"==":"!=");
+		if (newrevbuf!=NULL) TRACE(3,"checkout_file: after RCS_checkout revbuf->data%sNULL",(newrevbuf->data==NULL)?"==":"!=");
 	}
 	else
 #endif
@@ -1609,14 +1634,16 @@ VERS: ", 0);
 		kflag kftmp;
 
 		RCS_get_kflags(vers_ts->options,false,kftmp);
+		CXmlNodePtr node = fileattr_getroot();
+		node->xpathVariable("name",xfile);
 
 		if (!is_rcs
 		&& cvswrite
 		&& !file_is_dead
-		&& !fileattr_find (NULL,"file[@name=F'%s']/watched",xfile)
+		&& (!node->Lookup("file[cvs:filename(@name,$name)]/watched") || !node->XPathResultNext())
 		&& !(kftmp.flags&KFLAG_RESERVED_EDIT))
 		{
-			if (revbuf == NULL)
+			if (newrevbuf == NULL)
 				xchmod (xfile, 1);
 
 			mode = modify_mode(mode, 
@@ -1635,7 +1662,7 @@ VERS: ", 0);
 		xvers_ts = Version_TS (finfo, options, tag, date, 
 				force_tag_match, set_time, 0);
 
-		if (revbuf != NULL)
+		if (newrevbuf != NULL)
 		{
 			/* If we stored the file data into a buffer, then we
 					didn't create a file at all, so xvers_ts->ts_user
@@ -1683,17 +1710,21 @@ VERS: ", 0);
 		}
 		else
 		{
+			TRACE(3,"checkout_file() call Register if !is_rcs");
 			if(!is_rcs)
 			  Register(finfo->entries, xfile,
 				adding ? "0" : xvers_ts->vn_rcs,
 				xvers_ts->ts_user, xvers_ts->options,
 				xvers_ts->tag, xvers_ts->date,
-				(char *)0, merge_rev1, merge_rev2, xvers_ts->tt_rcs, update_baserev?xvers_ts->vn_rcs:vers_ts->edit_revision, update_baserev?vers_ts->tag:vers_ts->edit_tag, vers_ts->edit_bugid); /* Clear conflict flag on fresh checkout */
+				(char *)0, merge_rev1, merge_rev2, xvers_ts->tt_rcs, update_baserev?xvers_ts->vn_rcs:vers_ts->edit_revision, update_baserev?vers_ts->tag:vers_ts->edit_tag, vers_ts->edit_bugid, NULL); /* Clear conflict flag on fresh checkout */
+			TRACE(3,"checkout_file() call to Register complete");
 		}
 
+		TRACE(3,"checkout_file() vers_ts%sNULL, xvers_ts%sNULL, finfo%sNULL, command_name%sNULL",(vers_ts==NULL)?"==":"!=",(xvers_ts==NULL)?"==":"!=",(finfo==NULL)?"==":"!=",(command_name==NULL)?"==":"!=");
 		/* fix up the vers structure, in case it is used by join */
 		if (join_rev1)
 		{
+			TRACE(3,"fix up the vers structure, in case it is used by join.");
 			if (vers_ts->vn_user != NULL)
 				xfree (vers_ts->vn_user);
 			if (vn_rcs != NULL)
@@ -1704,33 +1735,67 @@ VERS: ", 0);
 
 		/* If this is really Update and not Checkout, recode history */
 		if (strcmp (command_name, "update") == 0)
+		{
+			TRACE(3,"If this is really Update and not Checkout, recode history.");
 			history_write ('U', finfo->update_dir, xvers_ts->vn_rcs, xfile,
 				finfo->repository, xvers_ts->edit_bugid, NULL);
-
+		}
+		TRACE(3,"free xvers_ts");
 		freevers_ts (&xvers_ts);
+		TRACE(3,"free xvers_ts OK");
 
 		if (!really_quiet && !file_is_dead && !is_rcs)
 		{
+			TRACE(3,"!really_quiet && !file_is_dead && !is_rcs, so write the letter 'U'");
 			write_letter (finfo, 'U');
 		}
 	}
 
 #ifdef SERVER_SUPPORT
 	if (update_server && server_active)
+	{
+		TRACE(3,"checkout_file: update_server && server_active, so calculate the md5");
+		CMD5Calc *md5 = NULL;
+		TRACE(3,"checkout_file: is revbuf?");
+		if (newrevbuf!=NULL)
+		{
+		size_t newrevbuf_length;
+
+		TRACE(3,"checkout_file: we have a revbuf therefore find the buffer length (buf->data%sNULL).",(newrevbuf->data==NULL)?"==":"!=");
+		newrevbuf_length=buf_length(newrevbuf);
+
+		TRACE(3,"checkout_file: revbuf%sNULL len=%d, threshhold=%d",(newrevbuf==NULL)?"==":"!=",(int)newrevbuf_length,(int)server_checksum_threshold);
+		if(newrevbuf_length>=server_checksum_threshold)
+		{
+			TRACE(3,"checkout_file: create the md5");
+			md5 = new CMD5Calc;
+			buf_md5(newrevbuf,md5);
+		}
+		}
+		else
+			TRACE(3,"checkout_file: revbuf is NULL (therefore no md5)");
+
+		TRACE(3,"checkout_file: server_updated (with md5)");
 		server_updated (finfo, vers_ts,
 			merging ? SERVER_MERGED : SERVER_UPDATED,
-			mode, NULL, revbuf);
+			mode, md5, newrevbuf);
+
+		delete md5;
+	}
 #endif
 	}
 	else
 	{
+		TRACE(3,"checkout_file: !(update_server && server_active), so no need to calculate the md5");
 		if (backup != NULL)
 		{
+			TRACE(3,"checkout_file: there was a backup, so free it");
 			rename_file (backup, xfile);
 			xfree (backup);
 			backup = NULL;
 		}
 
+		TRACE(3,"checkout_file: could not check out...");
 		error (0, 0, "could not check out %s", fn_root(finfo->fullname));
 
 		retval = status;
@@ -1738,18 +1803,24 @@ VERS: ", 0);
 
 	if (backup != NULL)
 	{
+		TRACE(3,"checkout_file: there was a backup...");
 		/* If -f/-t wrappers are being used to wrap up a directory,
 		then backup might be a directory instead of just a file.  */
 		if (unlink_file_dir (backup) < 0)
 		{
+			TRACE(3,"checkout_file: If -f/-t wrappers are being used to wrap up a directory,");
+			TRACE(3,"               then backup might be a directory instead of just a file.  ");
 			/* Not sure if the existence_error check is needed here.  */
 			if (!existence_error (errno))
+			TRACE(3,"checkout_file: Not sure if the existence_error check is needed here.  ");
 			/* FIXME: should include update_dir in message.  */
 			error (0, errno, "error removing %s", backup);
 		}
+		TRACE(3,"checkout_file: free the backup.");
 		xfree (backup);
 	}
 
+	TRACE(3,"checkout_file: compelted.");
 	return (retval);
 }
 
@@ -1927,8 +1998,11 @@ static int patch_file (struct file_info *finfo, Vers_TS *vers_ts, int *docheckou
 		md5->Final();
     }	  
 
+    CXmlNodePtr node = fileattr_getroot();
+    node->xpathVariable("name",finfo->file);
+
     if (cvswrite
-	&& !fileattr_find(NULL,"file[@name=F'%s']/watched",finfo->file)
+	&& (!node->Lookup("file[cvs:filename(@name,$name)]/watched") || !node->XPathResultNext())
 	&& !(kf.flags&KFLAG_RESERVED_EDIT))
 	{
 		mode = modify_mode(mode, 
@@ -1986,8 +2060,11 @@ static int patch_file (struct file_info *finfo, Vers_TS *vers_ts, int *docheckou
 	    char buf[sizeof BINARY];
 	    unsigned int c;
 
+	   CXmlNodePtr node = fileattr_getroot();
+	   node->xpathVariable("name",finfo->file);
+
    	    if (cvswrite
-			&& !fileattr_find(NULL,"file[@name=F'%s']/watched",finfo->file)
+			&& (!node->Lookup("file[cvs:filename(@name,$name)]/watched") || !node->XPathResultNext())
 			&& !(kf.flags&KFLAG_RESERVED_EDIT))
 		{
 			xchmod (finfo->file, 1);
@@ -2024,7 +2101,7 @@ static int patch_file (struct file_info *finfo, Vers_TS *vers_ts, int *docheckou
 
 	Register (finfo->entries, finfo->file, xvers_ts->vn_rcs,
 		  xvers_ts->ts_user, xvers_ts->options,
-		  xvers_ts->tag, xvers_ts->date, NULL, NULL, NULL, xvers_ts->tt_rcs, update_baserev?xvers_ts->vn_rcs:vers_ts->edit_revision, update_baserev?vers_ts->tag:vers_ts->edit_tag, vers_ts->edit_bugid);
+		  xvers_ts->tag, xvers_ts->date, NULL, NULL, NULL, xvers_ts->tt_rcs, update_baserev?xvers_ts->vn_rcs:vers_ts->edit_revision, update_baserev?vers_ts->tag:vers_ts->edit_tag, vers_ts->edit_bugid, NULL);
 
 	if (CVS_STAT (finfo->file, &file_info) < 0)
 	    error (1, errno, "could not stat %s", finfo->file);
@@ -2153,6 +2230,7 @@ static int merge_file (struct file_info *finfo, Vers_TS *vers)
 	kflag kf;
 	kflag kftmp;
 	mode_t mode = 0644; /* stupid default! */
+	CXmlNodePtr node;
 
     /*
      * The users currently modified file is moved to a backup file name
@@ -2232,9 +2310,12 @@ static int merge_file (struct file_info *finfo, Vers_TS *vers)
 
 	RCS_get_kflags(vers->options,false,kftmp);
 
+	node=fileattr_getroot();
+	node->xpathVariable("name",finfo->file);
+
 	if (!is_rcs
 		&& cvswrite
-		&& !fileattr_find (NULL,"file[@name=F'%s']/watched",finfo->file)
+		&& (!node->Lookup("file[cvs:filename(@name,$name)]/watched") || !node->XPathResultNext())
 		&& !(kftmp.flags&KFLAG_RESERVED_EDIT))
 	{
 		mode = modify_mode(mode, 
@@ -2267,7 +2348,7 @@ static int merge_file (struct file_info *finfo, Vers_TS *vers)
 		}
 		Register (finfo->entries, finfo->file, vers->vn_rcs,
 			"Result of merge", vers->options, vers->tag,
-			vers->date, cp, NULL, NULL, vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid);
+			vers->date, cp, NULL, NULL, vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid, NULL);
 		if (cp)
 			xfree (cp);
     }
@@ -2288,6 +2369,7 @@ static int merge_file (struct file_info *finfo, Vers_TS *vers)
     {
         server_copy_file (finfo->file, finfo->update_dir, finfo->repository,
 			  backup);
+
 		server_updated (finfo, vers, SERVER_MERGED, mode, NULL, (struct buffer *) NULL);
     }
 #endif
@@ -2599,14 +2681,11 @@ static void join_file (struct file_info *finfo, Vers_TS *vers)
 		}
 		else
 		{
-			char *rev_tmp = gca (vers->vn_rcs, rev2);
-			char *branchpoint = branchpoint_of(vers->srcfile, vers->tag);
-
-			//TH: removed bidirectional mergepoint handling,
-			//since it doesn't make logical sense (A->B != B->A)
+ 			char *rev_tmp = gca (vers->vn_rcs, rev2);
+ 			char *branchpoint = branchpoint_of(vers->srcfile, vers->tag);
 
 			/* Special case if we're at the branchpoint and/or there are no revisions on the branch */
-			if(merge_from_branchpoint || (rev_tmp && !strcmp(rev2,rev_tmp)) || (branchpoint && !strcmp(vers->vn_rcs, branchpoint)))
+			if(merge_from_branchpoint || (branchpoint && !strcmp(vers->vn_rcs, branchpoint)) || (branchpoint && !strcmp(rev2, branchpoint)))
 			{
 				rev1 = rev_tmp;
 				xfree(branchpoint);
@@ -2614,10 +2693,24 @@ static void join_file (struct file_info *finfo, Vers_TS *vers)
 			else
 			{
 				/* We found the branchpoint, now find the highest mergepoint with this prefix */
-				rev1 = getmergepoint(vers->srcfile, rev_tmp, vers->vn_rcs, rev2);
-				TRACE(3,"getmergepoint(%s, %s, %s)=%s",PATCH_NULL(rev_tmp),PATCH_NULL(vers->vn_rcs),PATCH_NULL(rev2),PATCH_NULL(rev1));
-				xfree(rev_tmp);
-				xfree(branchpoint);
+				if(inverse_merges)
+				{
+					char *rev1_tmp;
+					rev1_tmp = getmergepoint(vers->srcfile, rev_tmp, vers->vn_rcs, rev2);
+					TRACE(3,"getmergepoint(%s, %s, %s)=%s",PATCH_NULL(rev_tmp),PATCH_NULL(vers->vn_rcs),PATCH_NULL(rev2),PATCH_NULL(rev1_tmp));
+
+					rev1 = getmergepoint(vers->srcfile, rev1_tmp, rev2, vers->vn_rcs);
+					TRACE(3,"getmergepoint(%s, %s, %s)=%s", PATCH_NULL(rev1_tmp),PATCH_NULL(rev2),PATCH_NULL(vers->vn_rcs),PATCH_NULL(rev1));
+
+					xfree(rev1_tmp);
+				}
+				else
+				{
+					rev1 = getmergepoint(vers->srcfile, rev_tmp, vers->vn_rcs, rev2);
+					TRACE(3,"getmergepoint(%s, %s, %s)=%s",PATCH_NULL(rev_tmp),PATCH_NULL(vers->vn_rcs),PATCH_NULL(rev2),PATCH_NULL(rev1));
+					xfree(rev_tmp);
+					xfree(branchpoint);
+				}
 			}
 		}
     }
@@ -2763,8 +2856,9 @@ static void join_file (struct file_info *finfo, Vers_TS *vers)
 			    NULL, (struct buffer *) NULL);
 	}
 #endif
+	TRACE(3,"join_file() call Register (client or server)");
 	Register(finfo->entries, finfo->file, mrev, vers->ts_rcs,
-		vers->options, vers->tag, vers->date, vers->ts_conflict, merge_bugid?NULL:(join_rev2?rev1:rev2), merge_bugid?NULL:(join_rev2?rev2:NULL), vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid);
+		vers->options, vers->tag, vers->date, vers->ts_conflict, merge_bugid?NULL:(join_rev2?rev1:rev2), merge_bugid?NULL:(join_rev2?rev2:NULL), vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid, NULL);
 	xfree (mrev);
 	/* We need to check existence_error here because if we are
            running as the server, and the file is up to date in the
@@ -3034,9 +3128,12 @@ static void join_file (struct file_info *finfo, Vers_TS *vers)
 	kflag kftmp;
 	RCS_get_kflags(vers->options,false,kftmp);
 
+	CXmlNodePtr node=fileattr_getroot();
+	node->xpathVariable("name",finfo->file);
+
 	if (!is_rcs
 		&& cvswrite
-		&& !fileattr_find (NULL,"file[@name=F'%s']/watched",finfo->file)
+		&& (!node->Lookup("file[cvs:filename(@name,$name)]/watched") || !node->XPathResultNext())
 		&& !(kftmp.flags&KFLAG_RESERVED_EDIT))
 	{
 		mode = modify_mode(mode, 
@@ -3079,7 +3176,7 @@ static void join_file (struct file_info *finfo, Vers_TS *vers)
 	}
 	Register (finfo->entries, finfo->file,
 		  vers->vn_rcs ? vers->vn_rcs : "0", "Result of merge",
-		  vers->options, vers->tag, vers->date, cp, join_rev2?rev1:rev2, join_rev2?rev2:NULL, vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid);
+		  vers->options, vers->tag, vers->date, cp, join_rev2?rev1:rev2, join_rev2?rev2:NULL, vers->tt_rcs, update_baserev?vers->vn_rcs:vers->edit_revision, update_baserev?vers->tag:vers->edit_tag, vers->edit_bugid, NULL);
 	if (cp)
 	    xfree(cp);
     }
@@ -3091,6 +3188,7 @@ static void join_file (struct file_info *finfo, Vers_TS *vers)
     {
 		server_copy_file (finfo->file, finfo->update_dir, finfo->repository,
 				backup);
+
 		server_updated (finfo, vers, SERVER_MERGED,
 				mode, NULL,
 				(struct buffer *) NULL);

@@ -331,10 +331,13 @@ static size_t do_lock_server(const char *object, const char *directory, const ch
 				if(path)
 					*(path++)='\0';
 
-				if(host && *host)
-					error(0,0,"[%s] waiting for %s on %s's lock in %s", tm, owner, host, fn_root(path));
-				else
-					error(0,0,"[%s] waiting for %s's lock in %s", tm, owner, fn_root(path));
+				if(!(bWaited%5)) // No need to keep going on about it..
+				{
+					if(host && *host)
+						error(0,0,"[%s] waiting for %s on %s's lock in %s", tm, owner, host, fn_root(path));
+					else
+						error(0,0,"[%s] waiting for %s's lock in %s", tm, owner, fn_root(path));
+				}
 				bWaited++;
 				if(bWaited==20)
 					error(1,0,"Failed to obtain lock on %s",fn_root(object));
@@ -354,14 +357,7 @@ size_t do_lock_file(const char *file, const char *repository, int write, int wai
 {
 	if(!lock_server)
 		return (size_t)-1;
-	return do_lock_server(file,repository,write?"Write Full":"Read Full", wait);
-}
-
-size_t do_lock_advisory(const char *file, const char *repository, int write, int wait)
-{
-	if(!lock_server)
-		return (size_t)-1;
-	return do_lock_server(file,repository,write?"Write Advisory":"Read Advisory", wait);
+	return do_lock_server(file,repository,write?"Write":"Read", wait);
 }
 
 /* Cleanup lock(s) */
@@ -1240,7 +1236,7 @@ void lock_tree_for_write (int argc, char **argv, int local, int which, int aflag
     err = start_recursion ((FILEPROC) NULL, lock_filesdoneproc,
 			   (PREDIRENTPROC) NULL, (DIRENTPROC) NULL, (DIRLEAVEPROC) NULL, NULL, argc,
 			   argv, local, which, aflag, 0, (char *) NULL, NULL, 0,
-			   NULL);
+			   NULL, NULL);
     sortlist (lock_tree_list, fsortcmp);
     if (Writer_Lock (lock_tree_list) != 0)
 		error (1, 0, "lock failed - giving up");

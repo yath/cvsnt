@@ -20,38 +20,42 @@
 
 #include "SqlVariant.h"
 #include "SqlRecordset.h"
+#include "SqlConnectionInformation.h"
 
-enum SqlConnectionType
-{
-  sqtSqlite,
-  sqtMysql,
-  sqtPostgres,
-  sqtOdbc,
-  sqtMssql,
-  sqtFirebird,
-  sqtDb2
-};
+#include <vector>
 
 class CSqlConnection
 {
 public:
-	CSqlConnection() { }
-	virtual ~CSqlConnection() { }
+	typedef std::vector<std::pair<cvs::string, cvs::string> > connectionList_t;
 
-	static CVSAPI_EXPORT CSqlConnection* Alloc(SqlConnectionType type, const char *library_dir);
+	CSqlConnection() { m_ConnectionInformation = NULL; }
+	virtual ~CSqlConnection() { if(m_ConnectionInformation) delete m_ConnectionInformation; }
+
+	static CVSAPI_EXPORT CSqlConnection* CreateConnection(const char *db, const char *library_dir);
+	static CVSAPI_EXPORT bool GetConnectionList(connectionList_t& list, const char *library_dir);
 
 	virtual bool Create(const char *hostname, const char *database, const char *username, const char *password) =0;
+	virtual bool Create() =0;
 	virtual bool Open(const char *hostname, const char *database, const char *username, const char *password) =0;
+	virtual bool Open() =0;
 	virtual bool IsOpen() =0;
 	virtual bool Close() =0;
 	virtual bool Bind(int variable, CSqlVariant value) =0;
 	virtual CSqlRecordsetPtr Execute(const char *string, ...) =0;
+	virtual unsigned ExecuteAndReturnIdentity(const char *string, ...) =0;
 	virtual bool Error() const =0;
 	virtual const char *ErrorString() =0;
 	virtual unsigned GetInsertIdentity(const char *table_hint) =0;
 	virtual bool BeginTrans() = 0;
 	virtual bool CommitTrans() = 0;
 	virtual bool RollbackTrans() = 0;
+
+	virtual CSqlConnectionInformation* GetConnectionInformation() =0;
+	virtual const char *parseTableName(const char *szName) = 0;
+
+protected:
+	CSqlConnectionInformation *m_ConnectionInformation;
 };
 
 #endif

@@ -27,6 +27,8 @@
 #endif
 #include <vector>
 
+#include <stdlib.h>
+
 typedef unsigned char Byte;
 class ByteArray
 { 

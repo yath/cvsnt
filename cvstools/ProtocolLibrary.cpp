@@ -121,7 +121,10 @@ namespace
 				}
 				m_lib.UnloadProtocol(protocol);
 			}
-			CServerIo::trace(3,"Returning protocol :%s:",proto);
+			if(proto)
+				CServerIo::trace(3,"Returning protocol :%s:",proto);
+			else
+				CServerIo::trace(3,"No more protocols");
 			return proto;
 		} while(1);
 	}
@@ -252,14 +255,21 @@ bool CProtocolLibrary::UnloadProtocol(const protocol_interface *protocol)
 			protocol_interface_data *dat = (protocol_interface_data *)proto->plugin.__cvsnt_reserved;
 			if(!--dat->refcount)
 			{
+				char protocolname[200];
+				strcpy(protocolname,protocol->name);
 				if(proto->plugin.destroy)
 					proto->plugin.destroy(&proto->plugin);
-				CServerIo::trace(3,"Unloading %s",protocol->name);
-				m_loaded_protocols.erase(m_loaded_protocols.find(protocol->name));
+				CServerIo::trace(3,"Eraseing %s",protocolname);
+				m_loaded_protocols.erase(m_loaded_protocols.find(protocolname));
+				CServerIo::trace(3,"Freeing %s",protocolname);
 				free((void*)((protocol_interface *)protocol)->name);
+				CServerIo::trace(3,"Freed %s",protocolname);
 				CLibraryAccess lib(dat->library);
+				CServerIo::trace(3,"Unloading %s",protocolname);
 				lib.Unload();
+				CServerIo::trace(3,"Delete %s",protocolname);
 				delete dat;
+				CServerIo::trace(3,"Deleted %s",protocolname);
 			}
 		}
 	}

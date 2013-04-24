@@ -407,7 +407,7 @@ int diff (int argc, char **argv)
 		/* start the recursion processor */
 		err = start_recursion (diff_fileproc, diff_filesdoneproc, (PREDIRENTPROC) NULL, diff_dirproc,
 				diff_dirleaveproc, NULL, argc, argv, local,
-				which, 0, 1, (char *) NULL, NULL, 1, verify_read);
+				which, 0, 1, (char *) NULL, NULL, 1, verify_read, diff_rev1);
 	}
 
     /* clean up */
@@ -644,21 +644,37 @@ static int diff_fileproc (void *callerdat, struct file_info *finfo)
     if (!have_rev1_label)
     {
 	if (empty_file == DIFF_ADDED)
+	{
+	    TRACE(3,"diff_fileproc(); !have_rev1_label; empty_file == DIFF_ADDED make_file_label(is_rcs=%d)",is_rcs);
+
 	    label1 =
 		make_file_label (DEVNULL, NULL, NULL, is_rcs);
+	}
 	else
+	{
+	    TRACE(3,"diff_fileproc(); !have_rev1_label; empty_file != DIFF_ADDED make_file_label(is_rcs=%d)",is_rcs);
+
 	    label1 =
 		make_file_label (is_rcs?fn_root(finfo->file):fn_root(finfo->fullname), use_rev1, vers ? vers->srcfile : NULL, is_rcs);
+	}
     }
 
     if (!have_rev2_label)
     {
 	if (empty_file == DIFF_REMOVED)
+	{
+	    TRACE(3,"diff_fileproc(); !have_rev2_label; empty_file == DIFF_REMOVED make_file_label(is_rcs=%d)",is_rcs);
+
 	    label2 =
 		make_file_label (DEVNULL, NULL, NULL, is_rcs);
+	}
 	else
+	{
+	    TRACE(3,"diff_fileproc(); !have_rev2_label; empty_file != DIFF_REMOVED make_file_label(is_rcs=%d)",is_rcs);
+
 	    label2 =
 		make_file_label (is_rcs?fn_root(finfo->file):fn_root(finfo->fullname), use_rev2, vers ? vers->srcfile : NULL, is_rcs);
+	}
     }
 
     if (empty_file == DIFF_ADDED || empty_file == DIFF_REMOVED)
@@ -976,6 +992,7 @@ static enum diff_file diff_file_nodiff(struct file_info *finfo, Vers_TS *vers, e
      * should bother with it at all.
      */
 
+	TRACE(3,"RCS_cmp_file() called in diff_file_nodiff()");
     retcode = RCS_cmp_file (vers->srcfile, use_rev1,
 			    *options ? options : vers->options,
 			    finfo->file, 0);

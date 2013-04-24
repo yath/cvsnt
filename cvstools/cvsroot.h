@@ -19,9 +19,16 @@
 #ifndef CVSROOT__H
 #define CVSROOT__H
 
+enum RootType
+{
+	RootTypeStandard = 1,
+	RootTypeProxyAll = 2,
+	RootTypeProxyWrite = 3
+};
+
 struct cvsroot {
     const char *original;		/* the complete source CVSroot string */
-    const char *method;		/* protocol name */
+    char *method;		/* protocol name */
     const char *username;		/* the username or NULL if method == local */
     const char *password;		/* the username or NULL if method == local */
     const char *hostname;		/* the hostname or NULL if method == local */
@@ -42,8 +49,14 @@ struct cvsroot {
 	const char *optional_6; /* Protocol defined keyword */
 	const char *optional_7; /* Protocol defined keyword */
 	const char *optional_8; /* Protocol defined keyword */
-    bool isremote;	/* nonzero if we are doing remote access */
-	bool password_used; /* nonzero if original root had password */
+    bool isremote;	/* true if we are doing remote access */
+	bool password_used; /* true if original root had password */
+	bool readwrite; /* true if repository is read/write */
+	RootType type; /* type of root */
+	const char *remote_server;	/* Server to proxy to */
+	const char *remote_repository; /* Repository to proxy to */
+	const char *remote_passphrase; /* Passphrase to authenticate us to proxy */
+	const char *proxy_repository_root; /* the physical directory above the CVSROOT for the proxy server trigger files */
 };
 
 #endif

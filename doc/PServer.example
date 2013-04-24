@@ -13,6 +13,15 @@
 # the default repository for autoconfiguring clients.
 #
 # A repository may be marked temporarily offline by setting its Online setting to 0. 
+#
+# Proxy support:
+# Set RepositoryXXType to: 2 (full proxy), or 3 (write proxy)
+# Set RepositoryXXRemoteServer to remote server name
+# Set RepositoryXXRemoteRepository to remote repository name
+# Set RepositoryXXRemotePassphrase to remote passphrase
+# Set RepositoryXXProxyPhysicalFiles to a 'local' repository for the proxy server administration files
+# Set RepositoryXXProxyPasswdFiles to 1=use passwd file from RepositoryXXProxyPhysicalFiles, 0=use passwd from RepositoryXX
+
 
 #Repository0=/usr/local/cvs
 #Repository0Name=/cvs
@@ -48,6 +57,11 @@
 #
 #CertificateFile=/etc/ssh/cvsnt.pem
 #PrivateKeyFile=/etc/ssh/cvsnt.pem
+
+#
+# ServerPassphrase Passphrase used for server synchronisation
+#
+#ServerPassphrase=
 
 #
 # NoReverseDns	   Disable Reverse lookups by the server to help broken
@@ -120,14 +134,14 @@
 #Locale=en_GB.UTF-8
 
 #
-# ResponderType   Set Zeroconf publication type.  Default dependent on platform.
+# ResponderName   Set Zeroconf publication type.  Default dependent on platform.
 #
-# 0 - No publication
-# 1 - Internal mdns responder
-# 2 - Apple mdns responder (default on OSX)
-# 3 - Howl mdns responder
+# none - No publication
+# default - Use platform default
 #
-#ResponderType=1
+# If different from above uses names of installed mdns helper libraries
+#
+#ResponderName=default
 
 #
 # ServerName       Autoconf/mDNS name of server
@@ -167,23 +181,33 @@
 # Enabled when AuditTrigger=1 in the Plugins file
 
 # Database credentials - dbname, username and password
+# Note: for oracle the DatabaseName is the name in tnsnames.ora
+#       or if you are not running TNS Listener then it is the 
+#       complete connection string, eg:
+# AuditDatabaseHost=(DESCRIPTION = (ADDRESS_LIST = (ADDRESS = (PROTOCOL = TCP)(HOST = w2kora9.march-hare.local)(PORT = 1521))) (CONNECT_DATA = (SERVICE_NAME = oratst9.marchhare)))
+#
 #
 # AuditDatabaseName=
 # AuditDatabasePassword=
 # AuditDatabaseUsername=
 
-# Database type
+# Database engine
 #
-# 0 - Mysql
-# 1 - Sqlite
-# 2 - PostgresQL
-# 3 - ODBC
+# Taken from installed databases
 #
-# AuditDatabaseType=
+# AuditDatabaseEngine=
 
-# Database table prefix
+# Database specific environment variables
 #
-# AuditDatabasePrefix=
+# AuditDatabase_XXXX
+#
+# Example entries
+#
+# AuditDatabase_mysql_PREFIX - Table prefix
+# AuditDatabase_oracle_SCHEMA - Schema to use
+# AuditDatabase_oracle_home - ORACLE_HOME to use (install location)
+# AuditDatabase_oracle_TABLESPACE=CVSNT
+# See docs. of database
 
 # Audit logging flags
 #

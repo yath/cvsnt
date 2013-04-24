@@ -1,5 +1,0 @@
-#!/bin/sh
-# Makefile for XCode 2.1 dual platform binaries
-
-make clean
-./configure CC="gcc -arch ppc -arch i386" CXX="g++ -arch ppc -arch i386" CPP="gcc -E" CXXCPP="g++ -E" CXXFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk" CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk" LDFLAGS="-Wl,-syslibroot,/Developer/SDKs/MacOSX10.4u.sdk"

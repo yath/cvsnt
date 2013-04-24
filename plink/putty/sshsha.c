@@ -1,3 +1,9 @@
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
 /*
  * SHA1 hash algorithm. Used in SSH2 as a MAC, and the transform is
  * also used as a `stirring' function for the PuTTY random number

@@ -119,6 +119,9 @@ bool CRunFile::run(const char *path, bool bShow /* = false */)
   	int pid;
   	int fd1[2],fd2[2],fd3[2];
 
+	const char* args=m_args->toString();
+	CServerIo::trace(3,"CreateProcess(%s,%s)",path?path:"",args?args:"");
+
 	if(m_inputFn && m_inputFn != StandardInput)
   	{
 		pipe(fd1);

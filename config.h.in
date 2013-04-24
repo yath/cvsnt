@@ -3,6 +3,15 @@
 /* Define to 1 if the `closedir' function returns void instead of `int'. */
 #undef CLOSEDIR_VOID
 
+/* Define target_cpu */
+#undef CVSNT_TARGET_CPU
+
+/* Define target_os */
+#undef CVSNT_TARGET_OS
+
+/* Define target_vendor */
+#undef CVSNT_TARGET_VENDOR
+
 /* Define to OS specific seek routine */
 #undef CVS_FSEEK
 
@@ -26,17 +35,48 @@
    relevant when using GSSAPI. */
 #undef GSS_C_NT_HOSTBASED_SERVICE
 
+/* Define to 1 if you have the `argz_add' function. */
+#undef HAVE_ARGZ_ADD
+
+/* Define to 1 if you have the `argz_append' function. */
+#undef HAVE_ARGZ_APPEND
+
+/* Define to 1 if you have the `argz_count' function. */
+#undef HAVE_ARGZ_COUNT
+
+/* Define to 1 if you have the `argz_create_sep' function. */
+#undef HAVE_ARGZ_CREATE_SEP
+
+/* Define to 1 if you have the <argz.h> header file. */
+#undef HAVE_ARGZ_H
+
+/* Define to 1 if you have the `argz_insert' function. */
+#undef HAVE_ARGZ_INSERT
+
+/* Define to 1 if you have the `argz_next' function. */
+#undef HAVE_ARGZ_NEXT
+
+/* Define to 1 if you have the `argz_stringify' function. */
+#undef HAVE_ARGZ_STRINGIFY
+
 /* Define to 1 if you have the <arpa/inet.h> header file. */
 #undef HAVE_ARPA_INET_H
+
+/* Use Avahi/DNS-SD registration */
+#undef HAVE_AVAHI
+
+/* Define to 1 if you have the `closedir' function. */
+#undef HAVE_CLOSEDIR
 
 /* Define if connect is supported */
 #undef HAVE_CONNECT
 
-/* Define if crypt is supported */
-#undef HAVE_CRYPT
-
 /* Define to 1 if you have the `daemon' function. */
 #undef HAVE_DAEMON
+
+/* Define to 1 if you have the declaration of `cygwin_conv_path', and to 0 if
+   you don't. */
+#undef HAVE_DECL_CYGWIN_CONV_PATH
 
 /* Define to 1 if you have the <direct.h> header file. */
 #undef HAVE_DIRECT_H
@@ -45,8 +85,23 @@
    */
 #undef HAVE_DIRENT_H
 
+/* Define if you have the GNU dld library. */
+#undef HAVE_DLD
+
+/* Define to 1 if you have the <dld.h> header file. */
+#undef HAVE_DLD_H
+
+/* Define to 1 if you have the `dlerror' function. */
+#undef HAVE_DLERROR
+
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
+
+/* Define to 1 if you have the <dl.h> header file. */
+#undef HAVE_DL_H
+
+/* Use Bonjour/DNS-SD registration */
+#undef HAVE_DNS_SD
 
 /* Define to 1 if you have the <dns_sd.h> header file. */
 #undef HAVE_DNS_SD_H
@@ -54,8 +109,14 @@
 /* Define to 1 if you have the `dup2' function. */
 #undef HAVE_DUP2
 
+/* Define if you have the _dyld_func_lookup function. */
+#undef HAVE_DYLD
+
 /* Define to 1 if you have the <errno.h> header file. */
 #undef HAVE_ERRNO_H
+
+/* Define to 1 if the system has the type `error_t'. */
+#undef HAVE_ERROR_T
 
 /* Define to 1 if you have the `fchdir' function. */
 #undef HAVE_FCHDIR
@@ -147,14 +208,14 @@
 /* Define to 1 if you have the <gssapi.h> header file. */
 #undef HAVE_GSSAPI_H
 
-/* Define to 1 if you have the <howl.h> header file. */
-#undef HAVE_HOWL_H
-
 /* Define to 1 if you have the <iconv.h> header file. */
 #undef HAVE_ICONV_H
 
 /* Define to 1 if you have the `iconv_open' function. */
 #undef HAVE_ICONV_OPEN
+
+/* Define to 1 if you have the <idna.h> header file. */
+#undef HAVE_IDNA_H
 
 /* Define to 1 if you have the `inet_aton' function. */
 #undef HAVE_INET_ATON
@@ -171,17 +232,38 @@
 /* Define to 1 if you have the <langinfo.h> header file. */
 #undef HAVE_LANGINFO_H
 
+/* Define to 1 if you have the `avahi-client' library (-lavahi-client). */
+#undef HAVE_LIBAVAHI_CLIENT
+
 /* Define to 1 if you have the <libcharset.h> header file. */
 #undef HAVE_LIBCHARSET_H
 
+/* Define to 1 if you have the `crypt' library (-lcrypt). */
+#undef HAVE_LIBCRYPT
+
+/* Define if you have the libdl library or equivalent. */
+#undef HAVE_LIBDL
+
+/* Define if libdlloader will be built on this platform */
+#undef HAVE_LIBDLLOADER
+
+/* Define to 1 if you have the `dns_sd' library (-ldns_sd). */
+#undef HAVE_LIBDNS_SD
+
 /* Define to 1 if you have the `libiconv_open' function. */
 #undef HAVE_LIBICONV_OPEN
+
+/* Define to 1 if you have the `idn' library (-lidn). */
+#undef HAVE_LIBIDN
 
 /* Define to 1 if you have the <libpq-fe.h> header file. */
 #undef HAVE_LIBPQ_FE_H
 
 /* Define to 1 if you have the `socket' library (-lsocket). */
 #undef HAVE_LIBSOCKET
+
+/* Define to 1 if you have the `xml2' library (-lxml2). */
+#undef HAVE_LIBXML2
 
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
@@ -197,6 +279,12 @@
 
 /* Define to 1 if you support file names longer than 14 characters. */
 #undef HAVE_LONG_FILE_NAMES
+
+/* Define this if a modern libltdl is already installed */
+#undef HAVE_LTDL
+
+/* Define to 1 if you have the <mach-o/dyld.h> header file. */
+#undef HAVE_MACH_O_DYLD_H
 
 /* Define to 1 if you have the <malloc.h> header file. */
 #undef HAVE_MALLOC_H
@@ -249,6 +337,9 @@
 /* Defined if ODBC is available */
 #undef HAVE_ODBC
 
+/* Define to 1 if you have the `opendir' function. */
+#undef HAVE_OPENDIR
+
 /* Support for PAM authentication */
 #undef HAVE_PAM
 
@@ -261,11 +352,11 @@
 /* Define to 1 if you have the <paths.h> header file. */
 #undef HAVE_PATHS_H
 
-/* defined if posix PCRE is available */
-#undef HAVE_PCRE
-
 /* Defined if Postgres is available */
 #undef HAVE_POSTGRES
+
+/* Define if libtool can extract symbol lists from object files. */
+#undef HAVE_PRELOADED_SYMBOLS
 
 /* Define if you have POSIX threads libraries and header files. */
 #undef HAVE_PTHREAD
@@ -278,6 +369,9 @@
 
 /* Define to 1 if you have the `putenv' function. */
 #undef HAVE_PUTENV
+
+/* Define to 1 if you have the `readdir' function. */
+#undef HAVE_READDIR
 
 /* Define to 1 if you have the `readlink' function. */
 #undef HAVE_READLINK
@@ -305,6 +399,9 @@
 
 /* Define to 1 if you have the `setlocale' function. */
 #undef HAVE_SETLOCALE
+
+/* Define if you have the shl_load function. */
+#undef HAVE_SHL_LOAD
 
 /* Define to 1 if you have the `sigaction' function. */
 #undef HAVE_SIGACTION
@@ -366,16 +463,22 @@
 /* Define to 1 if you have the <string.h> header file. */
 #undef HAVE_STRING_H
 
+/* Define to 1 if you have the `strlcat' function. */
+#undef HAVE_STRLCAT
+
+/* Define to 1 if you have the `strlcpy' function. */
+#undef HAVE_STRLCPY
+
 /* Define to 1 if you have the `strstr' function. */
 #undef HAVE_STRSTR
 
 /* Define to 1 if you have the `strtoul' function. */
 #undef HAVE_STRTOUL
 
-/* Define to 1 if `st_blksize' is member of `struct stat'. */
+/* Define to 1 if `struct stat' is a member of `st_blksize'. */
 #undef HAVE_STRUCT_STAT_ST_BLKSIZE
 
-/* Define to 1 if `st_rdev' is member of `struct stat'. */
+/* Define to 1 if `struct stat' is a member of `st_rdev'. */
 #undef HAVE_STRUCT_STAT_ST_RDEV
 
 /* Define to 1 if you have the <syslog.h> header file. */
@@ -387,6 +490,9 @@
 /* Define to 1 if you have the <sys/dir.h> header file, and it defines `DIR'.
    */
 #undef HAVE_SYS_DIR_H
+
+/* Define to 1 if you have the <sys/dl.h> header file. */
+#undef HAVE_SYS_DL_H
 
 /* Define to 1 if you have the <sys/file.h> header file. */
 #undef HAVE_SYS_FILE_H
@@ -482,6 +588,9 @@
 /* Define to 1 if you have the <wchar.h> header file. */
 #undef HAVE_WCHAR_H
 
+/* This value is set to 1 to indicate that the system argz facility works */
+#undef HAVE_WORKING_ARGZ
+
 /* Define to 1 if `fork' works. */
 #undef HAVE_WORKING_FORK
 
@@ -491,11 +600,34 @@
 /* Define if we have standard wstring */
 #undef HAVE_WSTRING
 
-/* Support CVS lock server */
-#undef LOCKSERVER_SUPPORT
+/* Define if the OS needs help to load dependent libraries for dlopen(). */
+#undef LTDL_DLOPEN_DEPLIBS
+
+/* Define to the system default library search path. */
+#undef LT_DLSEARCH_PATH
+
+/* The archive extension */
+#undef LT_LIBEXT
+
+/* Define to the extension used for runtime loadable modules, say, ".so". */
+#undef LT_MODULE_EXT
+
+/* Define to the name of the environment variable that determines the run-time
+   module search path. */
+#undef LT_MODULE_PATH_VAR
+
+/* Define to the sub-directory in which libtool stores uninstalled libraries.
+   */
+#undef LT_OBJDIR
 
 /* Support for Mac HFS filesystem */
 #undef MAC_HFS_STUFF
+
+/* Define if dlsym() requires a leading underscore in symbol names. */
+#undef NEED_USCORE
+
+/* Operating system version */
+#undef OS_VERSION
 
 /* Name of package */
 #undef PACKAGE
@@ -512,11 +644,11 @@
 /* Define to the one symbol short name of this package. */
 #undef PACKAGE_TARNAME
 
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
-
-/* Path to the pr utility */
-#undef PR_PROGRAM
 
 /* Support for :pserver: */
 #undef PSERVER_PROTOCOL_SUPPORT
@@ -537,13 +669,13 @@
 /* Support CVS remote server */
 #undef SERVER_SUPPORT
 
-/* The size of a `int', as computed by sizeof. */
+/* The size of `int', as computed by sizeof. */
 #undef SIZEOF_INT
 
-/* The size of a `long', as computed by sizeof. */
+/* The size of `long', as computed by sizeof. */
 #undef SIZEOF_LONG
 
-/* The size of a `short', as computed by sizeof. */
+/* The size of `short', as computed by sizeof. */
 #undef SIZEOF_SHORT
 
 /* Support for :sserver: */
@@ -576,8 +708,14 @@
 /* Define for large files, on AIX-style hosts. */
 #undef _LARGE_FILES
 
+/* Define so that glibc/gnulib argp.h does not typedef error_t. */
+#undef __error_t_defined
+
 /* Defined to string_char_traits on gcc 2.95 */
 #undef char_traits
+
+/* Define to a type to use for `error_t' if it is not otherwise available. */
+#undef error_t
 
 /* Define to `int' if <sys/types.h> doesn't define. */
 #undef gid_t
@@ -594,13 +732,13 @@
 /* Define to `int' if <sys/types.h> does not define. */
 #undef mode_t
 
-/* Define to `long' if <sys/types.h> does not define. */
+/* Define to `long int' if <sys/types.h> does not define. */
 #undef off_t
 
 /* Define to `int' if <sys/types.h> does not define. */
 #undef pid_t
 
-/* Define to `unsigned' if <sys/types.h> does not define. */
+/* Define to `unsigned int' if <sys/types.h> does not define. */
 #undef size_t
 
 /* Define to `int' if neither <sys/types.h> nor <sys/socket.h> define. */

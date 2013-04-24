@@ -18,33 +18,204 @@
 //
 
 #include "stdafx.h"
+#include <stdlib.h>
+#include <string.h>
 
 #include "../../version.h"
 
 #include "../setuid/libsuid/suid.h"
 
-char *get_os_version()
-{
-	static char osv[256];
-	OSVERSIONINFO os = {sizeof(OSVERSIONINFO)};
-	GetVersionEx(&os);
+#ifndef SM_SERVERR2
+#define SM_SERVERR2 89
+#endif
 
-	/* We will always be NT so no need to check that */
-	if(os.dwMajorVersion>=5)
+const char *get_os_version()
+{
+	DWORD dwType,major,minor;
+	static char os[256];
+
+	typedef void (WINAPI *PGNSI)(LPSYSTEM_INFO);
+	typedef BOOL (WINAPI *PGPI)(DWORD, DWORD, DWORD, DWORD, PDWORD);
+
+	OSVERSIONINFOEXA vi = {sizeof(OSVERSIONINFOEXA)};
+	if(!GetVersionExA((OSVERSIONINFOA*)&vi))
+		return "NT4 or older";
+
+	SYSTEM_INFO si = {0};
+	PGNSI pGNSI = (PGNSI)GetProcAddress(GetModuleHandle("kernel32.dll"), "GetNativeSystemInfo");
+	if(pGNSI) pGNSI(&si);
+	else GetSystemInfo(&si);
+
+	major = vi.dwMajorVersion;
+	minor = vi.dwMinorVersion;
+
+	if (vi.dwPlatformId==VER_PLATFORM_WIN32_NT && vi.dwMajorVersion >4)
 	{
-		if(os.dwMinorVersion==0)
-			strcpy(osv,"Windows 2000");
-		else if(os.dwMinorVersion==1)
-			strcpy(osv,"Windows XP");
-		else
-			strcpy(osv,"Windows 2003");
+		if (vi.dwMajorVersion == 6)
+		{
+			if(vi.dwMinorVersion == 0)
+			{
+				if(vi.wProductType == VER_NT_WORKSTATION)
+					strcpy(os,"Windows Vista");
+				else strcpy(os,"Windows Server 2008");
+			}
+			else if(vi.dwMinorVersion == 1)
+			{
+				if(vi.wProductType == VER_NT_WORKSTATION)
+					strcpy(os,"Windows 7");
+				else strcpy(os,"Windows Server 2008 R2");
+			}
+			else
+			{
+				strcpy(os,"unknown OS");
+			}
+
+			PGPI pGPI = (PGPI) GetProcAddress(GetModuleHandle("kernel32.dll"), "GetProductInfo");
+			pGPI( 6, 0, 0, 0, &dwType);
+
+			switch( dwType )
+			{
+			case PRODUCT_ULTIMATE:
+				strcat(os, " Ultimate");
+				break;
+			case PRODUCT_HOME_PREMIUM:
+				strcat(os," Home Premium");
+				break;
+			case PRODUCT_HOME_BASIC:
+				strcat(os," Home Basic");
+				break;
+			case PRODUCT_ENTERPRISE:
+				strcat(os," Enterprise");
+				break;
+			case PRODUCT_BUSINESS:
+				strcat(os," Business");
+				break;
+			case PRODUCT_STARTER:
+				strcat(os, " Starter");
+				break;
+			case PRODUCT_CLUSTER_SERVER:
+				strcat(os, " Cluster Server");
+				break;
+			case PRODUCT_DATACENTER_SERVER:
+				strcat(os, " Datacenter");
+				break;
+			case PRODUCT_DATACENTER_SERVER_CORE:
+				strcat(os, " Datacenter (core)");
+				break;
+			case PRODUCT_ENTERPRISE_SERVER:
+				strcat(os," Enterprise");
+				break;
+			case PRODUCT_ENTERPRISE_SERVER_CORE:
+				strcat(os," Enterprise (core)");
+				break;
+			case PRODUCT_ENTERPRISE_SERVER_IA64:
+				strcat(os, " Enterprise for Itanium");
+				break;
+			case PRODUCT_SMALLBUSINESS_SERVER:
+				strcat(os, " Small Business Server");
+				break;
+			case PRODUCT_SMALLBUSINESS_SERVER_PREMIUM:
+				strcat(os, " Small Business Server Premium");
+				break;
+			case PRODUCT_STANDARD_SERVER:
+				strcat(os, " Standard");
+				break;
+			case PRODUCT_STANDARD_SERVER_CORE:
+				strcat(os, " Standard (core)");
+				break;
+			case PRODUCT_WEB_SERVER:
+				strcat(os, " Web Server");
+				break;
+			default:
+				{
+					char t[64];
+					_snprintf(t,64,"Unknown type %d",dwType);
+					strcat(os,t);
+				}
+				break;
+			}
+			if ( si.wProcessorArchitecture==PROCESSOR_ARCHITECTURE_AMD64 )
+			strcat(os, " (64bit)");
+			else if (si.wProcessorArchitecture==PROCESSOR_ARCHITECTURE_INTEL )
+			strcat(os, " (32-bit)");
+		}
+
+		if ( vi.dwMajorVersion == 5 && vi.dwMinorVersion == 2 )
+		{
+			if( GetSystemMetrics(SM_SERVERR2) )
+				strcpy(os,"Windows 2003 R2");
+			else if ( vi.wSuiteMask==VER_SUITE_STORAGE_SERVER )
+				strcpy(os,"Windows Storage Server 2003");
+			else if( vi.wProductType == VER_NT_WORKSTATION &&
+					si.wProcessorArchitecture==PROCESSOR_ARCHITECTURE_AMD64)
+				strcpy(os,"Windows XP x64");
+			else
+				strcpy(os,"Windows 2003");
+
+			// Test for the server type.
+			if ( vi.wProductType != VER_NT_WORKSTATION )
+			{
+				if ( si.wProcessorArchitecture==PROCESSOR_ARCHITECTURE_IA64 )
+				{
+					if( vi.wSuiteMask & VER_SUITE_DATACENTER )
+						strcat(os, " Datacenter for Itanium");
+					else if( vi.wSuiteMask & VER_SUITE_ENTERPRISE )
+						strcat(os, " Enterprise for Itanium");
+				}
+				else if ( si.wProcessorArchitecture==PROCESSOR_ARCHITECTURE_AMD64 )
+				{
+					if( vi.wSuiteMask & VER_SUITE_DATACENTER )
+						strcat(os, " Datacenter x64");
+					else if( vi.wSuiteMask & VER_SUITE_ENTERPRISE )
+						strcat(os, " Enterprise x64");
+					else
+						strcat(os, " Standard x64" );
+				}
+				else
+				{
+					if ( vi.wSuiteMask & VER_SUITE_COMPUTE_SERVER )
+						strcat(os, " Compute Cluster" );
+					else if( vi.wSuiteMask & VER_SUITE_DATACENTER )
+						strcat(os, " Datacenter");
+					else if( vi.wSuiteMask & VER_SUITE_ENTERPRISE )
+						strcat(os, " Enterprise");
+					else if ( vi.wSuiteMask & VER_SUITE_BLADE )
+						strcat(os, " Web");
+					else
+						strcat(os, " Standard");
+				}
+			}
+		}
+
+		if (vi.dwMajorVersion == 5 && vi.dwMinorVersion == 1)
+		{
+			strcpy(os,"Windows XP ");
+			if( vi.wSuiteMask & VER_SUITE_PERSONAL )
+				strcat(os,"Home");
+			else
+				strcat(os,"Professional");
+		}
+
+		if ( vi.dwMajorVersion == 5 && vi.dwMinorVersion == 0 )
+		{
+			strcpy(os,"Windows 2000");
+
+			if ( vi.wProductType == VER_NT_WORKSTATION )
+				strcat(os," Professional");
+			else 
+			{
+				if( vi.wSuiteMask & VER_SUITE_DATACENTER )
+					strcat(os," Datacenter Server");
+				else if( vi.wSuiteMask & VER_SUITE_ENTERPRISE )
+					strcat(os," Advanced Server");
+				else
+					strcat(os," Server");
+			}
+		}
 	}
-	else
-		strcpy(osv,"Windows NT");
-	sprintf(osv+strlen(osv)," %d.%d.%d",os.dwMajorVersion,os.dwMinorVersion,os.dwBuildNumber);
-	if(os.szCSDVersion[0])
-		sprintf(osv+strlen(osv)," (%s)",os.szCSDVersion);
-	return osv;
+
+	sprintf(os+strlen(os)," %s [%u.%u]",vi.szCSDVersion,major,minor);
+	return os;
 }
 
 /* This function is a cut/paste from the internet.  There was no attribution on 

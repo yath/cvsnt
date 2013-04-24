@@ -59,7 +59,11 @@ protected:
 	PDNS_RECORDA m_pdnsBase, m_pdnsCurrent;
 #else
 	unsigned char *m_pdnsBase, *m_pdnsCurrent, *m_pdnsEnd;
+#if defined __HP_aCC
+	unsigned char m_dnsName[256],m_dnsTmp[256];
+#else
 	char m_dnsName[256],m_dnsTmp[256];
+#endif
 	unsigned short m_type;
 	unsigned short m_class;
 	int m_ttl;

@@ -40,41 +40,36 @@
 #define CVSREP_OLDPERMS "/.perms"
 #define CVSREP_FILEATTR "CVS/fileattr.xml"
 
-class CXmlNode;
-typedef CXmlNode *XmlHandle_t;
-
 /* Prepare for a new directory with repository REPOS.  If REPOS is NULL,
    then prepare for a "non-directory"; the caller can call fileattr_write
    and fileattr_free, but must not call fileattr_get or fileattr_set.  */
 void fileattr_startdir(const char *repos);
 
 /* Search for a given node.  A little like xpath but not nearly as complex */
-XmlHandle_t fileattr_find(XmlHandle_t root, const char *exp, ...);
+CXmlNodePtr fileattr_find(CXmlNodePtr root, const char *exp, ...);
 
-/* Search for a given node.  A little like xpath but not nearly as complex */
-/* This version creates any nodes that aren't in the path */
-XmlHandle_t fileattr_create(XmlHandle_t root, const char *exp, ...);
+CXmlNodePtr fileattr_getroot();
 
 /* Return the next node on this level with this name, for walking lists */
-XmlHandle_t fileattr_next(XmlHandle_t node);
+CXmlNodePtr fileattr_next(CXmlNodePtr node);
 
 /* Delete a value under the node. */
-void fileattr_delete(XmlHandle_t root, const char *exp, ...);
+void fileattr_delete(CXmlNodePtr root, const char *exp, ...);
 
 /* Delete a value under the node. */
-void fileattr_delete_child(XmlHandle_t root, XmlHandle_t child);
+void fileattr_delete_child(CXmlNodePtr root, CXmlNodePtr child);
 
 /* Delete a value under the node at the next prune operation */
-void fileattr_batch_delete(XmlHandle_t root);
+void fileattr_batch_delete(CXmlNodePtr root);
 
 /* If this node has no children, delete it & recurse upwards.  Rinse. Wash. Repeat. */
-void fileattr_prune(XmlHandle_t node);
+void fileattr_prune(CXmlNodePtr node);
 
 /* Get a single value from a node.  Pass null to get value of this node. */
-const char *fileattr_getvalue(XmlHandle_t root, const char *name);
+const char *fileattr_getvalue(CXmlNodePtr root, const char *name);
 
 /* Set a single value for a node.  Pass null to set value of this node. */
-void fileattr_setvalue(XmlHandle_t root, const char *name, const char *value);
+void fileattr_setvalue(CXmlNodePtr root, const char *name, const char *value);
 
 /* Set the attributes for file FILENAME in whatever manner is appropriate
    for a newly created file.  */
@@ -87,20 +82,18 @@ void fileattr_write();
 void fileattr_free();
 
 /* Create a copy of a subtree */
-XmlHandle_t fileattr_copy(XmlHandle_t root);
+CXmlNodePtr fileattr_copy(CXmlNodePtr root);
 
 /* Copy a subtree into an existing tree */
-void fileattr_paste(XmlHandle_t root, XmlHandle_t source);
+void fileattr_paste(CXmlNodePtr root, CXmlNodePtr source);
 
 /* Free a copied subtree */
-void fileattr_free_subtree(XmlHandle_t *root);
+void fileattr_free_subtree(CXmlNodePtr& root);
 
 /* Force modified */
 void fileattr_modified();
 
-class CXmlNode;
-/* This is is a read/convert and is better than just calling CXmlNode */
-void _fileattr_read(CXmlNode*& root, const char *repos);
-CXmlNode *_fileattr_find(CXmlNode *node, const char *exp, ...);
+void _fileattr_read(CXmlNodePtr& root, const char *repos);
+CXmlNodePtr _fileattr_find(CXmlNodePtr node, const char *exp, ...);
 
 #endif /* fileattr.h */

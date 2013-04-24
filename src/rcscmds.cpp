@@ -189,6 +189,7 @@ static struct diff_callbacks call_diff_stdout_callbacks =
     call_diff_flush_output,
     call_diff_write_stdout,
     call_diff_error,
+    cvs_trace,
 	call_diff_fopen,
 	call_diff_open,
 	call_diff_stat
@@ -203,6 +204,7 @@ static struct diff_callbacks call_diff_file_callbacks =
     (void (*)()) NULL,
     call_diff_write_stdout,
     call_diff_error,
+    cvs_trace,
 	call_diff_fopen,
 	call_diff_open,
 	call_diff_stat
@@ -360,7 +362,7 @@ int RCS_merge(RCSNode *rcs, const char *path, const char *workfile, const char *
 
     if (diffout)
 	{
-		LineType crlf=CRLF_DEFAULT;
+		LineType crlf=crlf_mode;
 		if(kf.flags&KFLAG_MAC)
 			crlf=ltCr;
 		else if(kf.flags&KFLAG_DOS)

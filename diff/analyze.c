@@ -29,6 +29,12 @@ GNU General Public License for more details.
    Information and Control Vol. 64, 1985, pp. 100-118.  */
 
 #ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
+#ifdef _WIN32
 #include <io.h>
 #endif
 

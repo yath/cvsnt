@@ -27,6 +27,13 @@
 	#define _WIN32_WINNT 0x501
 #endif
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
+
 #include <windows.h>
 #include <tchar.h>
 #define SECURITY_WIN32
@@ -34,6 +41,9 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <wspiapi.h>
+#else
+#include <stdlib.h>
+#include <limits.h>
 #endif
 
 #ifdef _WIN32
@@ -61,20 +71,17 @@
 #include "SplitPath.h"
 #include "SocketIO.h"
 #include "md5calc.h"
-#include "Xmlapi.h"
+#include "XmlTree.h"
+#include "XmlNode.h"
 #include "rpcBase.h"
 #include "SSPIHandler.h"
 #include "HttpSocket.h"
 #include "Zeroconf.h"
 #include "LibraryAccess.h"
 #include "DnsApi.h"
-
+#include "crypt.h"
 #include "lib/getdate.h"
-
-#ifdef _WIN32
-#include "apiloader/apiloader.h"
-#include "win32/manifest.h"
-#endif
+#include "lib/GetOsVersion.h"
 
 #endif
 

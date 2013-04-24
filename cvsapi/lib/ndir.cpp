@@ -22,6 +22,13 @@
 /* Win32 port for CVS/NT by Tony Hoyle, January 2000 */
 /* Adapted for Unicode/UTF8 by Tony Hoyle, November 2004 */
 
+#ifdef _WIN32
+// Microsoft braindamage reversal.  
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_DEPRECATE
+#define _SCL_SECURE_NO_WARNINGS
+#endif
+
 #define WIN32_LEAN_AND_MEAN
 #define STRICT
 #include <Windows.h>
@@ -85,6 +92,11 @@ DIR *opendirA (const char *name)
 		FindClose(h);
 		dir->current = NULL;
 	}
+	else
+	{
+	   errno=EIO;
+	   return NULL;
+	}
 	return dir;
 }
 
@@ -145,6 +157,11 @@ DIR *opendirW (const char *name)
 		} while(FindNextFileW(h,&fd));
 		FindClose(h);
 		dir->current = NULL;
+	}
+	else
+	{
+		errno = EIO;
+		return NULL;
 	}
 	return dir;
 }

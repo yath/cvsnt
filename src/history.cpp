@@ -299,6 +299,7 @@ static const char *const history_usg[] =
     "        -r <rev/tag>    Since rev or tag (looks inside RCS files!)\n",
     "        -t <tag>        Since tag record placed in history file (by anyone).\n",
     "        -u <user>       For user name (repeatable)\n",
+    "        -Z              Output for local time zone\n",
     "        -z <tz>         Output for time zone <tz> (e.g. -z -0700)\n",
 	"        -B <bugid>      Containing bug <bugid>\n",
     NULL};
@@ -378,7 +379,7 @@ int history (int argc, char **argv)
 		usage (history_usg);
 
     optind = 0;
-	while ((c = getopt (argc, argv, "+Tacelow?D:b:f:m:n:p:r:t:u:x:z:B:")) != -1)
+	while ((c = getopt (argc, argv, "+Tacelow?D:b:f:m:n:p:r:t:u:x:z:ZB:")) != -1)
     {
 	switch (c)
 	{
@@ -469,6 +470,19 @@ int history (int argc, char **argv)
 			if (!strchr (logHistory, *cp))
 				error (1, 0, "%c is not a valid report type", *cp);
 		rec_types = optarg;
+		break;
+	    case 'Z':
+		tz_local = 0; // static short
+		tz_seconds_east_of_GMT = get_local_time_offset();
+		tz_name = (char*)xmalloc(10);
+		i = tz_seconds_east_of_GMT / 60;
+		snprintf((char*)tz_name,10,"%+05d",((i/60)*100)+(i%60));
+		// Of course this suffers from the DST bug... as do all the other -T commands now I come to
+		// think about it..  not so critical for status and log since you're generally looking at stuff
+		// done in the last couple of days anyway - but for history it may be more obvious.
+
+		// The solution for Unix is probably to pass real timezone information (Europe/London), use localtime
+		// and modify TZ temporarily.  Needs some thought maybe for 2.6.
 		break;
 	    case 'z':
 		tz_local = 
@@ -925,7 +939,7 @@ static void fill_hrec (char *line, hrec_t *hr)
 	if(!strcmp(hr->user.c_str(),"(null)")) // Old bug
 	    NEXT_BAR (user,return);
 	NEXT_BAR (dir,return);
-    if ((cp = strrchr (hr->dir.c_str(), '*')) != NULL)
+    if ((cp = (char*)strrchr (hr->dir.c_str(), '*')) != NULL)
     {
 		*cp++ = '\0';
 		hr->end = line + strtoul (cp, NULL, 16);
@@ -1232,7 +1246,7 @@ static void report_hrecs ()
 
 		ty = lr->type;
 		cvs::filename repos = lr->repos;
-		if ((cp = strrchr (repos.c_str(), '/')) != NULL)
+		if ((cp = (char*)strrchr (repos.c_str(), '/')) != NULL)
 		{
 			if (lr->mod.size() && !fncmp (++cp, lr->mod.c_str()))
 				strcpy (cp, "*");
@@ -1284,14 +1298,14 @@ static void report_hrecs ()
 		cvs::filename workdir,repos;
 		cvs::sprintf(workdir,80, "%s%s", lr->dir.c_str(), lr->end.c_str());
 
-		if ((cp = strrchr (workdir.c_str(), '/')) != NULL)
+		if ((cp = (char*)strrchr (workdir.c_str(), '/')) != NULL)
 		{
 			if (lr->mod.size() && !fncmp (++cp, lr->mod.c_str()))
 				strcpy (cp, "*");
 		}
 
 		repos = lr->repos;
-		if ((cp = strrchr (repos.c_str(), '/')) != NULL)
+		if ((cp = (char*)strrchr (repos.c_str(), '/')) != NULL)
 		{
 			if (lr->mod.size() && !fncmp (++cp, lr->mod.c_str()))
 				strcpy (cp, "*");

@@ -1,14 +1,20 @@
 -- MS SQL specific configuration script
 
+Create Table %PREFIX%SchemaVersion (Version Integer);
+
+Insert Into %PREFIX%SchemaVersion (Version) Values (3);
+
 Create Table %PREFIX%SessionLog (Id Integer Identity Primary Key Not Null,
 	Command nvarchar(32),
-	Date datetime,
+	StartTime Datetime,
+	EndTime Datetime,
 	Hostname nvarchar(256),
 	Username nvarchar(256),
 	SessionId nvarchar(32),
 	VirtRepos nvarchar(256),
 	PhysRepos nvarchar(256),
-	Client nvarchar(64));
+	Client nvarchar(64),
+	FinalReturnCode Integer);
 
 Create Table %PREFIX%CommitLog (Id Integer Identity Primary Key Not Null,
 	SessionId Integer,

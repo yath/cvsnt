@@ -32,7 +32,7 @@ public:
 
 	/// Split string.  Initialises member variables.
 	/// with details.  Understands format
-	/// :protocol;keywords:user:password@server:port:/directory*module.
+	/// :protocol;keywords:user:password\@server:port:/directory*module.
 
 	CVSTOOLS_EXPORT bool Split(const char *root);
 

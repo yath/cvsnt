@@ -64,7 +64,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 // Dialog
 //
 
-IDD_DIALOG1 DIALOGEX 0, 0, 360, 182
+IDD_DIALOG1 DIALOGEX 0, 0, 360, 137
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | 
     WS_CAPTION | WS_SYSMENU
 CAPTION "Audit settings"
@@ -72,35 +72,31 @@ FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
     CONTROL         "Plugin enabled",IDC_CHECK6,"Button",BS_AUTOCHECKBOX | 
                     WS_TABSTOP,7,7,62,10
-    GROUPBOX        "Database",IDC_STATIC,7,26,163,130
+    GROUPBOX        "Database",IDC_STATIC,7,26,225,83
     LTEXT           "Type",IDC_STATIC,30,40,17,8
-    COMBOBOX        IDC_COMBO1,58,37,103,84,CBS_DROPDOWNLIST | WS_VSCROLL | 
+    COMBOBOX        IDC_COMBO1,58,37,168,84,CBS_DROPDOWNLIST | WS_VSCROLL | 
                     WS_TABSTOP
-    LTEXT           "Name",IDC_STATIC,28,56,19,8
-    EDITTEXT        IDC_EDIT1,58,53,103,14,ES_AUTOHSCROLL
-    LTEXT           "Host",IDC_STATIC,31,72,16,8
-    EDITTEXT        IDC_EDIT5,58,69,103,14,ES_AUTOHSCROLL
-    LTEXT           "Prefix",IDC_STATIC,27,89,20,8
-    EDITTEXT        IDC_EDIT2,58,85,103,14,ES_AUTOHSCROLL
-    LTEXT           "Username",IDC_STATIC,14,105,33,8
-    EDITTEXT        IDC_EDIT3,58,101,103,14,ES_AUTOHSCROLL
-    LTEXT           "Password",IDC_STATIC,15,120,32,8
-    EDITTEXT        IDC_EDIT4,58,117,103,14,ES_PASSWORD | ES_AUTOHSCROLL
-    PUSHBUTTON      "&Test Connection",IDC_BUTTON1,17,135,69,14
-    PUSHBUTTON      "&Create Tables",IDC_BUTTON2,89,135,69,14
-    GROUPBOX        "Logging",IDC_STATIC,175,26,178,83
+    LTEXT           "Database",IDC_STATIC,18,56,32,8
+    LTEXT           "foo.db",IDC_TEXT1,59,56,142,8
+    PUSHBUTTON      "...",IDC_BUTTON3,207,52,18,14
+    LTEXT           "Server",IDC_STATIC,18,68,22,8
+    LTEXT           "foo.db",IDC_TEXT2,59,68,142,8
+    PUSHBUTTON      "&Test Connection",IDC_BUTTON1,13,90,69,14
+    PUSHBUTTON      "&Create Tables",IDC_BUTTON2,85,90,69,14
+    PUSHBUTTON      "&Upgrade",IDC_BUTTON4,157,90,69,14
+    GROUPBOX        "Logging",IDC_STATIC,237,26,116,83
     CONTROL         "Sessions",IDC_CHECK1,"Button",BS_AUTOCHECKBOX | 
-                    WS_TABSTOP,183,39,43,10
+                    WS_TABSTOP,245,39,43,10
     CONTROL         "Commits",IDC_CHECK2,"Button",BS_AUTOCHECKBOX | 
-                    WS_TABSTOP,183,53,43,10
+                    WS_TABSTOP,245,53,43,10
     CONTROL         "Store checkin differences",IDC_CHECK3,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,183,66,97,10
+                    BS_AUTOCHECKBOX | WS_TABSTOP,245,66,97,10
     CONTROL         "Tags",IDC_CHECK4,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,
-                    183,80,31,10
+                    245,80,31,10
     CONTROL         "History",IDC_CHECK5,"Button",BS_AUTOCHECKBOX | 
-                    WS_TABSTOP,183,93,39,10
-    DEFPUSHBUTTON   "OK",IDOK,128,161,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,181,161,50,14
+                    WS_TABSTOP,245,93,39,10
+    DEFPUSHBUTTON   "OK",IDOK,128,116,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,181,116,50,14
 END
 
 
@@ -117,7 +113,7 @@ BEGIN
         LEFTMARGIN, 7
         RIGHTMARGIN, 353
         TOPMARGIN, 7
-        BOTTOMMARGIN, 175
+        BOTTOMMARGIN, 130
     END
 END
 #endif    // APSTUDIO_INVOKED

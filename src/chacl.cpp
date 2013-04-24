@@ -60,18 +60,19 @@ static struct
 	char *access;
 } parms;
 
-static void set_attrs(CXmlNode *acl, const char *type, int deny, int noinherit)
+static void set_attrs(CXmlNodePtr acl, const char *type, int deny, int noinherit)
 {
-	CXmlNode *n = acl->NewNode(type,NULL);
+	acl->NewNode(type);
 	if(deny)
-		n->NewAttribute("deny","1");
+		acl->NewAttribute("deny","1");
 	if(noinherit)
-		n->NewAttribute("inherit","0");
+		acl->NewAttribute("inherit","0");
+	acl->GetParent();
 }
 
-static void set_acl(CXmlNode *base)
+static void set_acl(CXmlNodePtr base)
 {
-	CXmlNode *acl, *acl_to_set = NULL;
+	CXmlNodePtr acl, acl_to_set = NULL;
 	acl = fileattr_find(base,"acl");
 
 	while(acl)
@@ -96,20 +97,20 @@ static void set_acl(CXmlNode *base)
 		char *parm = xstrdup(parms.access);
 		char *acc = parm?strtok(parm,","):NULL;
 
-		acl = base->NewNode("acl",NULL);
+		base->NewNode("acl");
 		fileattr_modified();
 		if(parms.user)
-			acl->NewAttribute("user",parms.user);
+			base->NewAttribute("user",parms.user);
 		if(parms.branch)
-			acl->NewAttribute("branch",parms.branch);
+			base->NewAttribute("branch",parms.branch);
 		if(parms.merge)
-			acl->NewAttribute("merge",parms.merge);
+			base->NewAttribute("merge",parms.merge);
 		if(parms.priority && atoi(parms.priority))
-			acl->NewAttribute("priority",parms.priority);
+			base->NewAttribute("priority",parms.priority);
 		if(parms.message)
-			acl->NewNode("message",parms.message);
-		acl->NewNode("modified_by",getcaller());
-		acl->NewNode("modified_date",current_date);
+			base->NewNode("message",parms.message,false);
+		base->NewNode("modified_by",getcaller(),false);
+		base->NewNode("modified_date",current_date,false);
 		while(acc)
 		{
 			int deny=0;
@@ -119,24 +120,25 @@ static void set_acl(CXmlNode *base)
 				acc+=2;
 			}
 			if(!strcmp(acc,"all"))
-				set_attrs(acl,"all",deny,parms.noinherit);
+				set_attrs(base,"all",deny,parms.noinherit);
 			else if(!strcmp(acc,"none"))
-				set_attrs(acl,"all",!deny,parms.noinherit);
+				set_attrs(base,"all",!deny,parms.noinherit);
 			else if(!strcmp(acc,"read"))
-				set_attrs(acl,"read",deny,parms.noinherit);
+				set_attrs(base,"read",deny,parms.noinherit);
 			else if(!strcmp(acc,"write"))
-				set_attrs(acl,"write",deny,parms.noinherit);
+				set_attrs(base,"write",deny,parms.noinherit);
 			else if(!strcmp(acc,"create"))
-				set_attrs(acl,"create",deny,parms.noinherit);
+				set_attrs(base,"create",deny,parms.noinherit);
 			else if(!strcmp(acc,"tag"))
-				set_attrs(acl,"tag",deny,parms.noinherit);
+				set_attrs(base,"tag",deny,parms.noinherit);
 			else if(!strcmp(acc,"control"))
-				set_attrs(acl,"control",deny,parms.noinherit);
+				set_attrs(base,"control",deny,parms.noinherit);
 			else
 				error(1,0,"Invalid access control attribute '%s'",acc);
 			acc = strtok(NULL,",");
 		}
-		fileattr_prune(acl);
+		base->GetParent();
+		fileattr_prune(base);
 		xfree(parm);
 	}
 	else
@@ -148,7 +150,7 @@ static void set_acl(CXmlNode *base)
 
 static Dtype chacl_dirproc (void *callerdat, char *dir, char *repos, char *update_dir,  List *entries, const char *virtual_repository, Dtype hint)
 {
-	CXmlNode *curdir;
+	CXmlNodePtr curdir;
 
 	if(hint!=R_PROCESS)
 		return hint;
@@ -156,7 +158,8 @@ static Dtype chacl_dirproc (void *callerdat, char *dir, char *repos, char *updat
 	if(!quiet)
 		printf("%sing ACL for directory %s\n",parms.del?"delet":"sett",update_dir);
 
-	curdir = fileattr_create(NULL,"directory");
+	curdir = fileattr_getroot();
+	if(!curdir->GetChild("directory")) curdir->NewNode("directory");
 	set_acl(curdir);
 
 	xfree(acl_directory_set);
@@ -173,8 +176,7 @@ static int chacl_dirleaveproc(void *callerdat, char *dir, int err, char *update_
 
 int chacl_fileproc(void *callerdat, struct file_info *finfo)
 {
-	XmlHandle_t acl;
-	CXmlNode *curfile;
+	CXmlNodePtr acl;
 
 	/* If someone has specified 'chacl foo' and foo is a directory, you'll
        get a dirent plus every file in the directory.  We only want to set
@@ -194,11 +196,17 @@ int chacl_fileproc(void *callerdat, struct file_info *finfo)
 
 	if(!quiet)
 		printf("%sing ACL for file %s\n",parms.del?"delet":"sett",finfo->file);
+	
+	acl = fileattr_getroot();
+	acl->xpathVariable("name",finfo->file);
+	if(!acl->Lookup("file[cvs:filename(@name,$name)]") || !acl->XPathResultNext())
+	{
+		acl = fileattr_getroot();
+		acl->NewNode("file");
+		acl->NewAttribute("name",finfo->file);
+	}
 
-	acl = fileattr_find(NULL,"file[@name=F'%s']/acl",finfo->file);
-
-	curfile = fileattr_create(NULL,"file[@name=F'%s']",finfo->file);
-	set_acl(curfile);
+	set_acl(acl);
 	return 0;
 }
 
@@ -227,7 +235,7 @@ static int rchacl_proc(int argc, char **argv, const char *xwhere,
 	    char *path;
 
 	    /* if the portion of the module is a path, put the dir part on repos */
-	    if ((cp = strrchr (mfile, '/')) != NULL)
+	    if ((cp = (char*)strrchr (mfile, '/')) != NULL)
 	    {
 		*cp = '\0';
 		(void) strcat (repository, "/");
@@ -274,7 +282,7 @@ static int rchacl_proc(int argc, char **argv, const char *xwhere,
 	err = start_recursion (chacl_fileproc, (FILESDONEPROC) NULL, (PREDIRENTPROC) NULL, chacl_dirproc,
 			   (DIRLEAVEPROC) NULL, NULL,
 			   argc - 1, argv + 1, local_specified, W_REPOS, 0, 1,
-			   where, mapped_repository, 1, verify_control);
+			   where, mapped_repository, 1, verify_control, parms.branch);
 
 	xfree(current_date);
 	xfree (mapped_repository);
@@ -432,7 +440,7 @@ int chacl (int argc, char **argv)
 	{
 		current_date = date_from_time_t(global_session_time_t);
 		err = start_recursion(chacl_fileproc, NULL, (PREDIRENTPROC) NULL, chacl_dirproc, chacl_dirleaveproc, (void*)NULL,
-			argc, argv, local, W_LOCAL, 0, 0, (char*)NULL, NULL, 1, verify_control);
+			argc, argv, local, W_LOCAL, 0, 0, (char*)NULL, NULL, 1, verify_control, parms.branch);
 		xfree(current_date);
 	}
 
