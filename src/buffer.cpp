@@ -161,7 +161,7 @@ buf_count_mem (struct buffer *buf)
 void
 buf_output (struct buffer *buf, const char *data, int len)
 {
-    if (buf->data != NULL
+    if (buf != NULL && buf->data != NULL
 	&& (((buf->last->text + BUFFER_DATA_SIZE)
 	     - (buf->last->bufp + buf->last->size))
 	    >= len))
