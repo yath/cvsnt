@@ -1229,7 +1229,7 @@ char *xreadlink (const char *link)
 /* Return a pointer into PATH's last component.  */
 const char *last_component (const char *path)
 {
-    char *last = strrchr (path, '/');
+    const char *last = strrchr (path, '/');
     
     if (last && (last != path))
         return last + 1;
